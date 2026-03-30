@@ -1,0 +1,11 @@
+.worktrees/
+worktrees/
+contracts/ethereum/out/
+contracts/ethereum/cache/
+contracts/ethereum/broadcast/
+gen/
+bin/
+coverage/
+*.test
+*.out
+.DS_Store
