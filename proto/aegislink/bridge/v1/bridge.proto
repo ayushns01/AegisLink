@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package aegislink.bridge.v1;
+
+option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/bridge/v1;bridgev1";
+
+message ClaimIdentity {
+  string kind = 1;
+  string source_chain_id = 2;
+  string source_contract = 3;
+  string source_tx_hash = 4;
+  uint64 source_log_index = 5;
+  uint64 nonce = 6;
+  string message_id = 7;
+}
+
+message DepositClaim {
+  ClaimIdentity identity = 1;
+  string destination_chain_id = 2;
+  string asset_id = 3;
+  string amount = 4;
+  string recipient = 5;
+  uint64 deadline = 6;
+}
+
+message WithdrawalClaim {
+  ClaimIdentity identity = 1;
+  string destination_chain_id = 2;
+  string asset_id = 3;
+  string amount = 4;
+  string recipient = 5;
+  uint64 deadline = 6;
+}
+
+message Attestation {
+  string message_id = 1;
+  repeated string signers = 2;
+  uint32 threshold = 3;
+  uint64 expiry = 4;
+}

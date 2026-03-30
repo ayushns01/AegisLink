@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package aegislink.limits.v1;
+
+option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/limits/v1;limitsv1";
+
+message RateLimit {
+  string asset_id = 1;
+  uint64 window_seconds = 2;
+  string max_amount = 3;
+}

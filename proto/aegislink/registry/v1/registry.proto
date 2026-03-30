@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package aegislink.registry.v1;
+
+option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/registry/v1;registryv1";
+
+message Asset {
+  string asset_id = 1;
+  string source_chain_id = 2;
+  string source_contract = 3;
+  string denom = 4;
+  uint32 decimals = 5;
+  string display_name = 6;
+  bool enabled = 7;
+}
