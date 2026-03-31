@@ -3,6 +3,8 @@ worktrees/
 contracts/ethereum/out/
 contracts/ethereum/cache/
 contracts/ethereum/broadcast/
+cache/
+broadcast/
 gen/
 bin/
 coverage/
