@@ -4,8 +4,14 @@ package aegislink.bridge.v1;
 
 option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/bridge/v1;bridgev1";
 
+enum ClaimKind {
+  CLAIM_KIND_UNSPECIFIED = 0;
+  CLAIM_KIND_DEPOSIT = 1;
+  CLAIM_KIND_WITHDRAWAL = 2;
+}
+
 message ClaimIdentity {
-  string kind = 1;
+  ClaimKind kind = 1;
   string source_chain_id = 2;
   string source_contract = 3;
   string source_tx_hash = 4;
@@ -34,7 +40,8 @@ message WithdrawalClaim {
 
 message Attestation {
   string message_id = 1;
-  repeated string signers = 2;
-  uint32 threshold = 3;
-  uint64 expiry = 4;
+  string payload_hash = 2;
+  repeated string signers = 3;
+  uint32 threshold = 4;
+  uint64 expiry = 5;
 }

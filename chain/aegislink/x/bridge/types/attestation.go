@@ -6,15 +6,19 @@ import (
 )
 
 type Attestation struct {
-	MessageID string
-	Signers   []string
-	Threshold uint32
-	Expiry    uint64
+	MessageID   string
+	PayloadHash string
+	Signers     []string
+	Threshold   uint32
+	Expiry      uint64
 }
 
 func (a Attestation) ValidateBasic() error {
 	if strings.TrimSpace(a.MessageID) == "" {
 		return fmt.Errorf("%w: missing message id", ErrInvalidAttestation)
+	}
+	if strings.TrimSpace(a.PayloadHash) == "" {
+		return fmt.Errorf("%w: missing payload hash", ErrInvalidAttestation)
 	}
 	if len(a.Signers) == 0 {
 		return fmt.Errorf("%w: missing signers", ErrInvalidAttestation)

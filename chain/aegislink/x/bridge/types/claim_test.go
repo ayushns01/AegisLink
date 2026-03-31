@@ -124,6 +124,48 @@ func TestDepositClaimValidateBasic(t *testing.T) {
 	}
 }
 
+func TestDepositClaimDigestLocksTransferPayload(t *testing.T) {
+	base := DepositClaim{
+		Identity:           validClaimIdentity(ClaimKindDeposit),
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustAmount("100000000000000000000"),
+		Recipient:          "cosmos1recipient",
+		Deadline:           99,
+	}
+
+	first := base.Digest()
+	if first == "" {
+		t.Fatal("expected digest to be non-empty")
+	}
+
+	sameWithWhitespace := base
+	sameWithWhitespace.DestinationChainID = "  aegislink-1 "
+	sameWithWhitespace.AssetID = "\neth.usdc\t"
+	sameWithWhitespace.Recipient = " cosmos1recipient "
+	if first != sameWithWhitespace.Digest() {
+		t.Fatal("expected digest normalization to be stable across whitespace-only variants")
+	}
+
+	changedAmount := base
+	changedAmount.Amount = mustAmount("100000000000000000001")
+	if first == changedAmount.Digest() {
+		t.Fatal("expected digest to change when amount changes")
+	}
+
+	changedRecipient := base
+	changedRecipient.Recipient = "cosmos1another"
+	if first == changedRecipient.Digest() {
+		t.Fatal("expected digest to change when recipient changes")
+	}
+
+	changedDeadline := base
+	changedDeadline.Deadline = 100
+	if first == changedDeadline.Digest() {
+		t.Fatal("expected digest to change when deadline changes")
+	}
+}
+
 func TestWithdrawalClaimValidateBasic(t *testing.T) {
 	claim := WithdrawalClaim{
 		Identity:           validClaimIdentity(ClaimKindWithdrawal),
@@ -146,10 +188,11 @@ func TestWithdrawalClaimValidateBasic(t *testing.T) {
 
 func TestAttestationValidateBasic(t *testing.T) {
 	attestation := Attestation{
-		MessageID: validClaimIdentity(ClaimKindDeposit).MessageID,
-		Signers:   []string{"signer-1", "signer-2", "signer-3"},
-		Threshold: 2,
-		Expiry:    123,
+		MessageID:   validClaimIdentity(ClaimKindDeposit).MessageID,
+		PayloadHash: validDepositClaim().Digest(),
+		Signers:     []string{"signer-1", "signer-2", "signer-3"},
+		Threshold:   2,
+		Expiry:      123,
 	}
 
 	if err := attestation.ValidateBasic(); err != nil {
@@ -157,12 +200,13 @@ func TestAttestationValidateBasic(t *testing.T) {
 	}
 
 	cases := map[string]func(*Attestation){
-		"missing message id": func(a *Attestation) { a.MessageID = "" },
-		"missing signers":    func(a *Attestation) { a.Signers = nil },
-		"missing threshold":  func(a *Attestation) { a.Threshold = 0 },
-		"missing expiry":     func(a *Attestation) { a.Expiry = 0 },
-		"threshold overflow": func(a *Attestation) { a.Threshold = 4 },
-		"duplicate signer":   func(a *Attestation) { a.Signers = []string{"signer-1", "signer-1"} },
+		"missing message id":   func(a *Attestation) { a.MessageID = "" },
+		"missing payload hash": func(a *Attestation) { a.PayloadHash = "" },
+		"missing signers":      func(a *Attestation) { a.Signers = nil },
+		"missing threshold":    func(a *Attestation) { a.Threshold = 0 },
+		"missing expiry":       func(a *Attestation) { a.Expiry = 0 },
+		"threshold overflow":   func(a *Attestation) { a.Threshold = 4 },
+		"duplicate signer":     func(a *Attestation) { a.Signers = []string{"signer-1", "signer-1"} },
 	}
 
 	for name, mutate := range cases {
@@ -187,6 +231,17 @@ func validClaimIdentity(kind ClaimKind) ClaimIdentity {
 	}
 	identity.MessageID = identity.DerivedMessageID()
 	return identity
+}
+
+func validDepositClaim() DepositClaim {
+	return DepositClaim{
+		Identity:           validClaimIdentity(ClaimKindDeposit),
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustAmount("100000000000000000000"),
+		Recipient:          "cosmos1recipient",
+		Deadline:           99,
+	}
 }
 
 func mustAmount(value string) *big.Int {

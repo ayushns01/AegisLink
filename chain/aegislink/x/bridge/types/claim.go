@@ -88,6 +88,22 @@ func (c DepositClaim) ValidateBasic() error {
 	return nil
 }
 
+func (c DepositClaim) Digest() string {
+	return ClaimDigest(
+		c.Identity.Kind,
+		c.Identity.SourceChainID,
+		c.Identity.SourceContract,
+		c.Identity.SourceTxHash,
+		c.Identity.SourceLogIndex,
+		c.Identity.Nonce,
+		c.DestinationChainID,
+		c.AssetID,
+		c.Amount,
+		c.Recipient,
+		c.Deadline,
+	)
+}
+
 type WithdrawalClaim struct {
 	Identity           ClaimIdentity
 	DestinationChainID string
@@ -120,4 +136,20 @@ func (c WithdrawalClaim) ValidateBasic() error {
 		return fmt.Errorf("%w: missing deadline", ErrInvalidClaim)
 	}
 	return nil
+}
+
+func (c WithdrawalClaim) Digest() string {
+	return ClaimDigest(
+		c.Identity.Kind,
+		c.Identity.SourceChainID,
+		c.Identity.SourceContract,
+		c.Identity.SourceTxHash,
+		c.Identity.SourceLogIndex,
+		c.Identity.Nonce,
+		c.DestinationChainID,
+		c.AssetID,
+		c.Amount,
+		c.Recipient,
+		c.Deadline,
+	)
 }
