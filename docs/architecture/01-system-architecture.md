@@ -30,6 +30,11 @@ The bridge zone is the accounting and policy boundary. It is not just a message 
 - Submits verified claims to the bridge zone.
 - Can be fully replaced in v2 by a light-client verification path, but remains the v1 execution path.
 
+Current implementation note:
+
+- As of April 1, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, and file-backed local adapters for deposits, withdrawals, votes, and submission outboxes.
+- That local runtime is intentionally narrower than the future RPC-backed version. It exists to make the bridge executable in local development before the full localnet harness is wired up.
+
 ### Bridge zone on Cosmos-SDK
 
 - `bridge` module: verifies attestations, enforces replay protection, mints or releases representation assets, and tracks claim status.
@@ -140,17 +145,20 @@ This role makes the bridge zone the protocol's accounting center, which keeps th
 
 ## Recommended Repo and Service Boundaries
 
-For a recruiter-grade repository, keep the boundaries obvious:
+For a recruiter-grade repository, keep the boundaries obvious. In the current repo they map to:
 
-- `contracts/ethereum/`: gateway contracts, registry, pause control, events, and tests.
-- `apps/bridge-zone/`: Cosmos-SDK application wiring and module registration.
-- `modules/bridge/`: claim verification, replay protection, state transitions, and accounting.
-- `modules/registry/`: asset registry and denomination mapping.
-- `modules/limits/`: per-asset and per-route throttles.
-- `modules/pauser/`: emergency stop controls.
-- `modules/ibcrouter/`: IBC transfer orchestration and Osmosis path configuration.
-- `relayer/`: Ethereum watchers, attestation collection, claim submission, and metrics.
-- `shared/types/`: message schemas, constants, and cross-component identifiers.
+- `contracts/ethereum/`: gateway contracts, verifier logic, deployment script, and Foundry tests.
+- `chain/aegislink/app/`: Cosmos app shell and top-level chain configuration.
+- `chain/aegislink/x/bridge/`: claim verification, replay checks, state transitions, and accounting.
+- `chain/aegislink/x/registry/`: asset registry and canonical asset metadata.
+- `chain/aegislink/x/limits/`: per-asset throttles and limit policy.
+- `chain/aegislink/x/pauser/`: emergency stop controls.
+- `relayer/internal/evm/`: Ethereum-side event observation and release request handling.
+- `relayer/internal/cosmos/`: Cosmos-side withdrawal observation and claim submission handling.
+- `relayer/internal/attestations/`: vote collection and quorum assembly.
+- `relayer/internal/replay/`: durable replay and checkpoint state.
+- `relayer/internal/pipeline/`: forward and reverse bridge orchestration.
+- `proto/`: shared message schemas and cross-component identifiers.
 - `docs/`: architecture, security, and implementation specs.
 
 Prefer a monorepo layout if the team is small, but keep service boundaries explicit so the relayer can be swapped independently of the chain modules.

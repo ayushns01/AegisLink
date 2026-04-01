@@ -8,6 +8,8 @@
 
 **Tech Stack:** Go, Cosmos SDK, CometBFT, IBC-Go, Protobuf, buf, Solidity, Foundry, OpenZeppelin, Docker Compose, Anvil, GitHub Actions.
 
+**Current checkpoint:** As of April 1, 2026, Tasks 1 through 6 have already been implemented in the repository. The next active execution target is Task 7: prove the full local round-trip before Osmosis work begins.
+
 ---
 
 ## How To Use This Plan

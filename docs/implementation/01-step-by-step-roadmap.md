@@ -2,6 +2,18 @@
 
 AegisLink is an Ethereum-to-Cosmos interoperability layer. Phase 1 builds a custom Cosmos-SDK bridge zone that can verify Ethereum-originated actions with a practical security model. Phase 2 extends that bridge zone so assets can move onward to Osmosis over IBC for swaps and liquidity.
 
+## Current Checkpoint
+
+As of April 1, 2026, the repository has already completed the foundation through relayer phases:
+
+- repo bootstrap and shared message model
+- chain safety modules for registry, limits, and pause control
+- bridge verification and accounting state machine on the Cosmos side
+- Ethereum gateway and verifier contracts
+- relayer pipeline with durable replay state and local file-backed runtime adapters
+
+The next live milestone is `Phase 4: Prove The Full Loop`. That means the main implementation work has shifted from building isolated components to wiring the chain, contracts, and relayer together in one local round-trip.
+
 ## How The System Fits Together
 
 Think of AegisLink as four cooperating parts:
@@ -134,6 +146,7 @@ Milestone 7: Relayer
 - Build the service that watches Ethereum, gathers threshold attestations, and submits signed bridge messages.
 - Add backoff, retries, and durable checkpointing.
 - Make the relayer idempotent so restarts do not duplicate work.
+- In the current repository, the relayer already exists as a local file-backed runtime for end-to-end development. The next upgrade is to run it against the real local chain and devnet instead of isolated fixtures.
 
 Checklist:
 

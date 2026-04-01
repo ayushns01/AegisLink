@@ -1,6 +1,16 @@
 # AegisLink Tech Stack And Repo Plan
 
-This document recommends the initial technology choices and the repository layout for AegisLink. The goal is to keep phase 1 buildable by a small team, with a clean path to phase 2 and a stronger Ethereum verifier later.
+This document describes both the current technology choices already implemented in the repository and the planned upgrades that will come with the local round-trip and Osmosis phases. The goal is to keep phase 1 buildable by a small team, with a clean path to phase 2 and a stronger Ethereum verifier later.
+
+## Current Checkpoint
+
+As of April 1, 2026, the repo has already implemented:
+
+- the AegisLink chain app shell and bridge-domain modules in Go
+- the Ethereum gateway and verifier contracts in Solidity with Foundry tests
+- the Go relayer pipeline with watchers, attestation collection, replay persistence, and local file-backed runtime adapters
+
+The main thing that is still pending in this stack is the full local integration harness that runs all three surfaces together.
 
 ## Recommended Stack
 
@@ -35,14 +45,17 @@ Why this stack:
 ### Relayer and services
 
 - Language: Go
-- Libraries: `go-ethereum` for Ethereum RPC and logs
-- Cosmos client libraries for submitting bridge transactions
-- Config: YAML or TOML, loaded through Viper
+- Current runtime: standard-library JSON adapters for local event input, vote input, and durable submission outboxes
+- Current config: environment-variable loader in Go
+- Planned upgrade: `go-ethereum` for Ethereum RPC and logs
+- Planned upgrade: Cosmos client libraries for submitting bridge transactions directly into the chain
+- Planned upgrade: richer config loading once the runtime moves beyond local fixtures
 
 Why this stack:
 
 - Keeping the relayer in Go avoids a second systems language.
 - A single language reduces onboarding cost for an early-stage bridge project.
+- The current file-backed runtime keeps Task 6 testable without pretending the full node-to-node integration already exists.
 
 ### Local development and ops
 
@@ -53,11 +66,17 @@ Why this stack:
 
 ## Local Development Setup
 
-The default local setup should boot three things:
+The target local setup should boot three things:
 
 1. A local Ethereum devnet.
 2. an AegisLink local node.
 3. The relayer connected to both.
+
+The current checkpoint is one step earlier than that target:
+
+- the relayer can already run against local JSON-backed inputs and outboxes
+- the contracts and chain logic have their own passing test suites
+- the next milestone is to wire those parts into one deterministic local stack
 
 Recommended developer workflow:
 
@@ -97,12 +116,26 @@ Expected top-level structure:
 - `relayer/cmd/bridge-relayer/main.go`
 - `relayer/internal/attestations/collector.go`
 - `relayer/internal/attestations/collector_test.go`
+- `relayer/internal/attestations/file_source.go`
+- `relayer/internal/attestations/file_source_test.go`
+- `relayer/internal/config/config.go`
+- `relayer/internal/config/config_test.go`
+- `relayer/internal/evm/client.go`
+- `relayer/internal/evm/client_test.go`
 - `relayer/internal/evm/watcher.go`
 - `relayer/internal/evm/watcher_test.go`
+- `relayer/internal/evm/file_runtime.go`
+- `relayer/internal/evm/file_runtime_test.go`
 - `relayer/internal/cosmos/client.go`
 - `relayer/internal/cosmos/client_test.go`
+- `relayer/internal/cosmos/watcher.go`
+- `relayer/internal/cosmos/watcher_test.go`
+- `relayer/internal/cosmos/file_runtime.go`
+- `relayer/internal/cosmos/file_runtime_test.go`
 - `relayer/internal/replay/store.go`
 - `relayer/internal/replay/store_test.go`
+- `relayer/internal/pipeline/pipeline.go`
+- `relayer/internal/pipeline/pipeline_test.go`
 - `tests/e2e/bridge_roundtrip_test.go`
 - `tests/e2e/localnet_test.go`
 - `README.md`
@@ -167,3 +200,8 @@ Build in this order to reduce rework:
 8. Observability, runbooks, and hardening.
 
 The first milestone should prove one narrow happy path end to end before adding more asset types or more routes.
+
+Current progress against that order:
+
+- completed: steps 1 through 5
+- next: step 6, the localnet and end-to-end bridge flow

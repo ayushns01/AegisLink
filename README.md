@@ -67,8 +67,8 @@ Use these to build the project step by step:
 
 - [Step-by-step roadmap](docs/implementation/01-step-by-step-roadmap.md)
 - [Tech stack and repo plan](docs/implementation/02-tech-stack-and-repo-plan.md)
-- [Implementation plan](docs/superpowers/plans/2026-03-28-eth-cosmos-aegislink-implementation.md)
 - [0-to-100 execution plan](docs/superpowers/plans/2026-03-30-aegislink-0-to-100-implementation.md)
+- [Initial implementation plan, historical](docs/superpowers/plans/2026-03-28-eth-cosmos-aegislink-implementation.md)
 
 Use these for operational and launch thinking:
 
@@ -87,6 +87,24 @@ Use phrasing like:
 
 Do not describe v1 as fully trustless or fully light-client verified.
 
-## Repository status
+## Current checkpoint
 
-This repository currently starts from documentation and architecture first. The next step is to scaffold the monorepo described in the implementation plan and build the system incrementally from the bridge zone core outward.
+As of April 1, 2026, AegisLink is no longer documentation-only. The repository now includes:
+
+- a Cosmos chain app shell plus `bridge`, `registry`, `limits`, and `pauser` modules
+- Ethereum gateway and verifier contracts with Foundry tests
+- a relayer pipeline with Ethereum watchers, Cosmos watchers, attestation collection, replay persistence, and file-backed local runtime adapters
+
+The current repo shape is:
+
+- [chain/aegislink](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink): chain app shell, bridge state machine, and safety modules
+- [contracts/ethereum](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum): Ethereum event source and release verification contracts
+- [relayer](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer): observation, attestation, replay, and forward or reverse submission pipeline
+
+Fresh verification checkpoints that already pass in this repo:
+
+- `go test ./chain/aegislink/...`
+- `forge test --offline`
+- `go test ./relayer/...`
+
+The next active milestone is `Task 7`: prove the full local round-trip with the Ethereum side, AegisLink chain side, and relayer working together in one local flow before moving on to Osmosis routing.
