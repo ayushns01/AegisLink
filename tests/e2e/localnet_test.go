@@ -90,6 +90,41 @@ type persistedAttestation struct {
 	Expiry      uint64   `json:"expiry"`
 }
 
+type persistedWithdrawalState struct {
+	LatestHeight uint64                `json:"latest_height"`
+	Withdrawals  []persistedWithdrawal `json:"withdrawals"`
+}
+
+type persistedWithdrawal struct {
+	BlockHeight    uint64 `json:"block_height"`
+	Kind           string `json:"kind"`
+	SourceChainID  string `json:"source_chain_id"`
+	SourceContract string `json:"source_contract"`
+	SourceTxHash   string `json:"source_tx_hash"`
+	SourceLogIndex uint64 `json:"source_log_index"`
+	Nonce          uint64 `json:"nonce"`
+	MessageID      string `json:"message_id"`
+	AssetID        string `json:"asset_id"`
+	AssetAddress   string `json:"asset_address"`
+	Amount         string `json:"amount"`
+	Recipient      string `json:"recipient"`
+	Deadline       uint64 `json:"deadline"`
+	Signature      string `json:"signature"`
+}
+
+type persistedReleaseOutbox struct {
+	Requests []persistedReleaseRequest `json:"requests"`
+}
+
+type persistedReleaseRequest struct {
+	MessageID    string `json:"message_id"`
+	AssetAddress string `json:"asset_address"`
+	Amount       string `json:"amount"`
+	Recipient    string `json:"recipient"`
+	Deadline     uint64 `json:"deadline"`
+	Signature    string `json:"signature"`
+}
+
 func TestAegisLinkShellStartsWithSafetyModules(t *testing.T) {
 	t.Parallel()
 
@@ -194,6 +229,21 @@ func loadCosmosOutbox(t *testing.T, path string) []persistedClaimSubmission {
 		t.Fatalf("decode cosmos outbox: %v", err)
 	}
 	return outbox.Submissions
+}
+
+func loadEVMOutbox(t *testing.T, path string) []persistedReleaseRequest {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read evm outbox: %v", err)
+	}
+
+	var outbox persistedReleaseOutbox
+	if err := json.Unmarshal(data, &outbox); err != nil {
+		t.Fatalf("decode evm outbox: %v", err)
+	}
+	return outbox.Requests
 }
 
 func decodeSubmission(t *testing.T, submission persistedClaimSubmission) (bridgetypes.DepositClaim, bridgetypes.Attestation) {

@@ -58,6 +58,9 @@ func (w Withdrawal) Validate() error {
 	if strings.TrimSpace(w.Recipient) == "" {
 		return errors.New("missing recipient")
 	}
+	if isZeroHexAddress(w.Recipient) {
+		return errors.New("recipient must not be the zero address")
+	}
 	if w.Deadline == 0 {
 		return errors.New("missing deadline")
 	}
@@ -155,4 +158,8 @@ func cloneBytes(value []byte) []byte {
 		return nil
 	}
 	return append([]byte(nil), value...)
+}
+
+func isZeroHexAddress(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "0x0000000000000000000000000000000000000000")
 }

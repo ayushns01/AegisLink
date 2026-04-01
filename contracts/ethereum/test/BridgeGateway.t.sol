@@ -182,6 +182,16 @@ contract BridgeGatewayTest {
         gateway.release(address(token), payable(address(0xCA11)), amount, messageId, expiry, attestation);
     }
 
+    function testReleaseRejectsZeroRecipient() public {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        bytes32 messageId = _releaseMessageId(1, amount, expiry);
+        bytes memory attestation = _attestation(messageId, amount, expiry, attesterKey);
+
+        vm.expectRevert(BridgeGateway.InvalidRecipient.selector);
+        gateway.release(address(token), payable(address(0)), amount, messageId, expiry, attestation);
+    }
+
     function testPauseRejectsDepositAndRelease() public {
         uint256 amount = 25_000_000;
         uint64 expiry = uint64(block.timestamp + 1 days);

@@ -97,6 +97,9 @@ func (r ReleaseRequest) Validate() error {
 	if strings.TrimSpace(r.Recipient) == "" {
 		return errors.New("missing recipient")
 	}
+	if isZeroHexAddress(r.Recipient) {
+		return errors.New("recipient must not be the zero address")
+	}
 	if r.Deadline == 0 {
 		return errors.New("missing deadline")
 	}
@@ -172,4 +175,8 @@ func cloneBigInt(value *big.Int) *big.Int {
 		return nil
 	}
 	return new(big.Int).Set(value)
+}
+
+func isZeroHexAddress(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "0x0000000000000000000000000000000000000000")
 }

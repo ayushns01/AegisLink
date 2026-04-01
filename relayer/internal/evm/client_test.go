@@ -89,6 +89,23 @@ func TestReleaserValidatesAndForwardsRequest(t *testing.T) {
 	}
 }
 
+func TestReleaseRequestValidateRejectsZeroAddressRecipient(t *testing.T) {
+	t.Parallel()
+
+	request := ReleaseRequest{
+		MessageID:    "message-9",
+		AssetAddress: "0xasset",
+		Amount:       big.NewInt(42),
+		Recipient:    "0x0000000000000000000000000000000000000000",
+		Deadline:     88,
+		Signature:    []byte("proof"),
+	}
+
+	if err := request.Validate(); err == nil {
+		t.Fatalf("expected zero-address recipient to be rejected")
+	}
+}
+
 type stubReleaseTarget struct {
 	requests []ReleaseRequest
 	err      error

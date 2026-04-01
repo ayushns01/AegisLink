@@ -1,9 +1,11 @@
 package keeper
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
@@ -21,6 +23,8 @@ var (
 	ErrUnknownAsset                  = errors.New("unknown asset")
 	ErrAssetDisabled                 = errors.New("asset disabled")
 	ErrAssetPaused                   = errors.New("asset paused")
+	ErrInsufficientSupply            = errors.New("insufficient supply")
+	ErrInvalidWithdrawal             = errors.New("invalid withdrawal")
 )
 
 type ClaimStatus string
@@ -28,6 +32,9 @@ type ClaimStatus string
 const (
 	ClaimStatusAccepted ClaimStatus = "accepted"
 	ClaimStatusRejected ClaimStatus = "rejected"
+
+	withdrawalSourceChainID = "aegislink-1"
+	withdrawalSourceModule  = "aegislink.bridge"
 )
 
 type ClaimResult struct {
@@ -48,6 +55,9 @@ type Keeper struct {
 
 	processedClaims map[string]ClaimRecord
 	supplyByDenom   map[string]*big.Int
+	withdrawals     []WithdrawalRecord
+
+	nextWithdrawalNonce uint64
 }
 
 func NewKeeper(registry *registrykeeper.Keeper, limits *limitskeeper.Keeper, pauser *pauserkeeper.Keeper, allowedSigners []string, requiredThreshold uint32) *Keeper {
@@ -61,13 +71,14 @@ func NewKeeper(registry *registrykeeper.Keeper, limits *limitskeeper.Keeper, pau
 	}
 
 	return &Keeper{
-		registryKeeper:    registry,
-		limitsKeeper:      limits,
-		pauserKeeper:      pauser,
-		allowedSigners:    signerSet,
-		requiredThreshold: requiredThreshold,
-		processedClaims:   make(map[string]ClaimRecord),
-		supplyByDenom:     make(map[string]*big.Int),
+		registryKeeper:      registry,
+		limitsKeeper:        limits,
+		pauserKeeper:        pauser,
+		allowedSigners:      signerSet,
+		requiredThreshold:   requiredThreshold,
+		processedClaims:     make(map[string]ClaimRecord),
+		supplyByDenom:       make(map[string]*big.Int),
+		nextWithdrawalNonce: 1,
 	}
 }
 
@@ -106,10 +117,105 @@ func (k *Keeper) ExecuteDepositClaim(claim bridgetypes.DepositClaim, attestation
 	return k.acceptDepositClaim(claimKey, claim, asset), nil
 }
 
+func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (WithdrawalRecord, error) {
+	if amount == nil || amount.Sign() <= 0 {
+		return WithdrawalRecord{}, fmt.Errorf("%w: amount must be positive", ErrInvalidWithdrawal)
+	}
+	if strings.TrimSpace(assetID) == "" {
+		return WithdrawalRecord{}, fmt.Errorf("%w: missing asset id", ErrInvalidWithdrawal)
+	}
+	if strings.TrimSpace(recipient) == "" || isZeroHexAddress(recipient) {
+		return WithdrawalRecord{}, fmt.Errorf("%w: invalid recipient", ErrInvalidWithdrawal)
+	}
+	if deadline == 0 {
+		return WithdrawalRecord{}, fmt.Errorf("%w: missing deadline", ErrInvalidWithdrawal)
+	}
+	if len(signature) == 0 {
+		return WithdrawalRecord{}, fmt.Errorf("%w: missing signature", ErrInvalidWithdrawal)
+	}
+
+	asset, ok := k.registryKeeper.GetAsset(assetID)
+	if !ok {
+		return WithdrawalRecord{}, ErrUnknownAsset
+	}
+	if !asset.Enabled {
+		return WithdrawalRecord{}, ErrAssetDisabled
+	}
+	if err := k.pauserKeeper.AssertNotPaused(assetID); err != nil {
+		return WithdrawalRecord{}, fmt.Errorf("%w: %s", ErrAssetPaused, assetID)
+	}
+	if err := k.limitsKeeper.CheckTransfer(assetID, amount); err != nil {
+		return WithdrawalRecord{}, err
+	}
+
+	currentSupply, ok := k.supplyByDenom[asset.Denom]
+	if !ok || currentSupply.Cmp(amount) < 0 {
+		return WithdrawalRecord{}, ErrInsufficientSupply
+	}
+
+	record := k.newWithdrawalRecord(assetID, asset.SourceContract, amount, recipient, deadline, signature)
+	k.burnRepresentation(asset.Denom, amount)
+	k.withdrawals = append(k.withdrawals, record)
+
+	return cloneWithdrawalRecord(record), nil
+}
+
 func (k *Keeper) SupplyForDenom(denom string) *big.Int {
 	current, ok := k.supplyByDenom[denom]
 	if !ok {
 		return big.NewInt(0)
 	}
 	return new(big.Int).Set(current)
+}
+
+func (k *Keeper) Withdrawals(fromHeight, toHeight uint64) []WithdrawalRecord {
+	if fromHeight > toHeight {
+		return nil
+	}
+
+	withdrawals := make([]WithdrawalRecord, 0, len(k.withdrawals))
+	for _, withdrawal := range k.withdrawals {
+		if withdrawal.BlockHeight < fromHeight || withdrawal.BlockHeight > toHeight {
+			continue
+		}
+		withdrawals = append(withdrawals, cloneWithdrawalRecord(withdrawal))
+	}
+	return withdrawals
+}
+
+func (k *Keeper) newWithdrawalRecord(assetID, assetAddress string, amount *big.Int, recipient string, deadline uint64, signature []byte) WithdrawalRecord {
+	nonce := k.nextWithdrawalNonce
+	k.nextWithdrawalNonce++
+
+	txHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(
+		fmt.Sprintf("%d:%d:%s:%s:%s", k.currentHeight, nonce, assetID, strings.TrimSpace(recipient), amount.String()),
+	)))
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindWithdrawal,
+		SourceChainID:  withdrawalSourceChainID,
+		SourceContract: withdrawalSourceModule,
+		SourceTxHash:   txHash,
+		SourceLogIndex: 0,
+		Nonce:          nonce,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+
+	return WithdrawalRecord{
+		BlockHeight:  k.currentHeight,
+		Identity:     identity,
+		AssetID:      strings.TrimSpace(assetID),
+		AssetAddress: strings.TrimSpace(assetAddress),
+		Amount:       cloneAmount(amount),
+		Recipient:    strings.TrimSpace(recipient),
+		Deadline:     deadline,
+		Signature:    append([]byte(nil), signature...),
+	}
+}
+
+func isZeroHexAddress(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	return strings.EqualFold(trimmed, "0x0000000000000000000000000000000000000000")
 }

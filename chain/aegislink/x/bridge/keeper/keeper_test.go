@@ -124,6 +124,73 @@ func TestExecuteDepositClaimUpdatesAccountingExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestExecuteWithdrawalBurnsSupplyAndRecordsWithdrawal(t *testing.T) {
+	keeper, claim, attestation, _, _, _ := newKeeperFixture(t)
+
+	if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("expected deposit claim to succeed, got %v", err)
+	}
+
+	keeper.SetCurrentHeight(60)
+	withdrawal, err := keeper.ExecuteWithdrawal("eth.usdc", mustAmount("40000000"), "0xrecipient", 120, []byte("proof"))
+	if err != nil {
+		t.Fatalf("expected withdrawal to succeed, got %v", err)
+	}
+	if withdrawal.BlockHeight != 60 {
+		t.Fatalf("expected withdrawal height 60, got %d", withdrawal.BlockHeight)
+	}
+	if withdrawal.AssetAddress != "0xabc123" {
+		t.Fatalf("expected source contract 0xabc123, got %q", withdrawal.AssetAddress)
+	}
+	if withdrawal.Amount.Cmp(mustAmount("40000000")) != 0 {
+		t.Fatalf("expected withdrawal amount 40000000, got %s", withdrawal.Amount.String())
+	}
+
+	supply := keeper.SupplyForDenom("uethusdc")
+	if supply.Cmp(mustAmount("60000000")) != 0 {
+		t.Fatalf("expected remaining supply 60000000, got %s", supply.String())
+	}
+
+	withdrawals := keeper.Withdrawals(60, 60)
+	if len(withdrawals) != 1 {
+		t.Fatalf("expected one stored withdrawal, got %d", len(withdrawals))
+	}
+	if withdrawals[0].Identity.MessageID != withdrawal.Identity.MessageID {
+		t.Fatalf("expected stored withdrawal message id %q, got %q", withdrawal.Identity.MessageID, withdrawals[0].Identity.MessageID)
+	}
+}
+
+func TestExecuteWithdrawalRejectsWithoutMintedSupply(t *testing.T) {
+	keeper, _, _, _, _, _ := newKeeperFixture(t)
+	keeper.SetCurrentHeight(60)
+
+	_, err := keeper.ExecuteWithdrawal("eth.usdc", mustAmount("1"), "0xrecipient", 120, []byte("proof"))
+	if !errors.Is(err, ErrInsufficientSupply) {
+		t.Fatalf("expected insufficient supply error, got %v", err)
+	}
+}
+
+func TestExecuteWithdrawalRejectsOverLimitClaim(t *testing.T) {
+	keeper, claim, attestation, _, limits, _ := newKeeperFixture(t)
+
+	if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("expected deposit claim to succeed, got %v", err)
+	}
+	if err := limits.SetLimit(limittypes.RateLimit{
+		AssetID:       claim.AssetID,
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount("1"),
+	}); err != nil {
+		t.Fatalf("expected limit update to succeed, got %v", err)
+	}
+
+	keeper.SetCurrentHeight(60)
+	_, err := keeper.ExecuteWithdrawal(claim.AssetID, mustAmount("2"), "0xrecipient", 120, []byte("proof"))
+	if !errors.Is(err, limitskeeper.ErrRateLimitExceeded) {
+		t.Fatalf("expected rate limit exceeded error, got %v", err)
+	}
+}
+
 func newKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgetypes.Attestation, *registrykeeper.Keeper, *limitskeeper.Keeper, *pauserkeeper.Keeper) {
 	t.Helper()
 

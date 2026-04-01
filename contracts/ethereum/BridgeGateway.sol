@@ -123,6 +123,7 @@ contract BridgeGateway {
     ) external whenNotPaused returns (bytes32 releaseId) {
         if (!supportedAssets[asset].supported) revert UnsupportedAsset(asset);
         if (amount == 0) revert InvalidAmount();
+        if (recipient == address(0)) revert InvalidRecipient();
 
         uint256 gatewayBalanceBefore = IERC20BalanceOf(asset).balanceOf(address(this));
         uint256 recipientBalanceBefore = IERC20BalanceOf(asset).balanceOf(recipient);

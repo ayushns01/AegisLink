@@ -15,6 +15,17 @@ type ClaimRecord struct {
 	Status    ClaimStatus
 }
 
+type WithdrawalRecord struct {
+	BlockHeight  uint64
+	Identity     bridgetypes.ClaimIdentity
+	AssetID      string
+	AssetAddress string
+	Amount       *big.Int
+	Recipient    string
+	Deadline     uint64
+	Signature    []byte
+}
+
 func (k *Keeper) acceptDepositClaim(claimKey string, claim bridgetypes.DepositClaim, asset registrytypes.Asset) ClaimResult {
 	k.mintRepresentation(asset.Denom, claim.Amount)
 	k.processedClaims[claimKey] = ClaimRecord{
@@ -38,6 +49,27 @@ func (k *Keeper) mintRepresentation(denom string, amount *big.Int) {
 		k.supplyByDenom[denom] = big.NewInt(0)
 	}
 	k.supplyByDenom[denom].Add(k.supplyByDenom[denom], amount)
+}
+
+func (k *Keeper) burnRepresentation(denom string, amount *big.Int) {
+	current, ok := k.supplyByDenom[denom]
+	if !ok {
+		return
+	}
+	current.Sub(current, amount)
+}
+
+func cloneWithdrawalRecord(record WithdrawalRecord) WithdrawalRecord {
+	return WithdrawalRecord{
+		BlockHeight:  record.BlockHeight,
+		Identity:     record.Identity,
+		AssetID:      record.AssetID,
+		AssetAddress: record.AssetAddress,
+		Amount:       cloneAmount(record.Amount),
+		Recipient:    record.Recipient,
+		Deadline:     record.Deadline,
+		Signature:    append([]byte(nil), record.Signature...),
+	}
 }
 
 func cloneAmount(amount *big.Int) *big.Int {

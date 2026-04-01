@@ -38,6 +38,35 @@ func TestWithdrawalValidateAcceptsCanonicalReleaseShape(t *testing.T) {
 	}
 }
 
+func TestWithdrawalValidateRejectsZeroAddressRecipient(t *testing.T) {
+	t.Parallel()
+
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindWithdrawal,
+		SourceChainID:  "aegislink-1",
+		SourceContract: "bridge",
+		SourceTxHash:   "0xcosmos-tx",
+		SourceLogIndex: 2,
+		Nonce:          4,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+
+	withdrawal := Withdrawal{
+		BlockHeight:  14,
+		Identity:     identity,
+		AssetID:      "uusdc",
+		AssetAddress: "0xasset",
+		Amount:       big.NewInt(50),
+		Recipient:    "0x0000000000000000000000000000000000000000",
+		Deadline:     77,
+		Signature:    []byte("threshold-proof"),
+	}
+
+	if err := withdrawal.Validate(); err == nil {
+		t.Fatalf("expected zero-address recipient to be rejected")
+	}
+}
+
 func TestTemporaryErrorWrapsUnderlyingFailure(t *testing.T) {
 	t.Parallel()
 
