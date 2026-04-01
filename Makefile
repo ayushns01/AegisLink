@@ -1,16 +1,20 @@
 .PHONY: format test test-e2e devnet
 
+GO_TEST_ENV = GOCACHE=/tmp/aegislink-gocache GOMODCACHE=/tmp/aegislink-gomodcache
+
 format:
-	@echo "Format targets wired; source files are not implemented yet."
+	@gofmt -w chain/aegislink relayer tests/e2e
 
 test:
-	@test -f chain/aegislink/app/app.go || { echo "Missing chain implementation: chain/aegislink/app/app.go"; exit 1; }
-	@test -f relayer/cmd/bridge-relayer/main.go || { echo "Missing relayer implementation: relayer/cmd/bridge-relayer/main.go"; exit 1; }
-	@test -f contracts/ethereum/BridgeGateway.sol || { echo "Missing Ethereum implementation: contracts/ethereum/BridgeGateway.sol"; exit 1; }
-	@echo "Bootstrap wiring verified."
+	@$(GO_TEST_ENV) go test ./chain/aegislink/...
+	@cd contracts/ethereum && forge test --offline
+	@$(GO_TEST_ENV) go test ./relayer/...
 
 test-e2e:
-	@echo "E2E targets wired; tests are not implemented yet."; exit 1
+	@cd tests/e2e && $(GO_TEST_ENV) go test ./...
 
 devnet:
-	@echo "Devnet targets wired; services are not implemented yet."; exit 1
+	@echo "AegisLink shell:"
+	@$(GO_TEST_ENV) go run ./chain/aegislink/cmd/aegislinkd
+	@echo "Deterministic inbound proof:"
+	@$(MAKE) test-e2e

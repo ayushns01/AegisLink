@@ -1,1 +1,38 @@
-services: {}
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    command: ["anvil", "--host", "0.0.0.0", "--port", "8545"]
+    ports:
+      - "8545:8545"
+    profiles: ["devnet"]
+
+  aegislinkd:
+    image: golang:1.23
+    working_dir: /workspace
+    command: ["go", "run", "./chain/aegislink/cmd/aegislinkd"]
+    volumes:
+      - .:/workspace
+    profiles: ["devnet"]
+
+  bridge-relayer:
+    image: golang:1.23
+    working_dir: /workspace
+    command: ["go", "run", "./relayer/cmd/bridge-relayer"]
+    environment:
+      AEGISLINK_RELAYER_COSMOS_CHAIN_ID: aegislink-1
+      AEGISLINK_RELAYER_ATTESTATION_THRESHOLD: "2"
+      AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT: "2"
+      AEGISLINK_RELAYER_EVM_CONFIRMATIONS: "2"
+      AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS: "1"
+      AEGISLINK_RELAYER_EVM_STATE_PATH: /workspace/.local/e2e/evm-state.json
+      AEGISLINK_RELAYER_ATTESTATION_STATE_PATH: /workspace/.local/e2e/attestations.json
+      AEGISLINK_RELAYER_COSMOS_STATE_PATH: /workspace/.local/e2e/cosmos-state.json
+      AEGISLINK_RELAYER_COSMOS_OUTBOX_PATH: /workspace/.local/e2e/cosmos-outbox.json
+      AEGISLINK_RELAYER_EVM_OUTBOX_PATH: /workspace/.local/e2e/evm-outbox.json
+      AEGISLINK_RELAYER_REPLAY_STORE_PATH: /workspace/.local/e2e/replay-store.json
+    volumes:
+      - .:/workspace
+    depends_on:
+      - anvil
+      - aegislinkd
+    profiles: ["devnet"]
