@@ -4,15 +4,16 @@ AegisLink is an Ethereum-to-Cosmos interoperability layer. Phase 1 builds a cust
 
 ## Current Checkpoint
 
-As of April 1, 2026, the repository has already completed the foundation through relayer phases:
+As of April 2, 2026, the repository has already completed the foundation through the full local bridge-loop phases:
 
 - repo bootstrap and shared message model
 - chain safety modules for registry, limits, and pause control
 - bridge verification and accounting state machine on the Cosmos side
 - Ethereum gateway and verifier contracts
-- relayer pipeline with durable replay state and local file-backed runtime adapters
+- relayer pipeline with durable replay state, command-backed AegisLink integration, and RPC-backed Ethereum observation and release execution
+- end-to-end proof of deposit, mint, burn, and release across the local bridge loop
 
-The next live milestone is `Phase 4: Prove The Full Loop`. That means the main implementation work has shifted from building isolated components to wiring the chain, contracts, and relayer together in one local round-trip.
+The next roadmap milestone is `Phase 5: Route Assets To Osmosis`. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.
 
 ## How The System Fits Together
 
@@ -146,7 +147,7 @@ Milestone 7: Relayer
 - Build the service that watches Ethereum, gathers threshold attestations, and submits signed bridge messages.
 - Add backoff, retries, and durable checkpointing.
 - Make the relayer idempotent so restarts do not duplicate work.
-- In the current repository, the relayer already exists as a local file-backed runtime for end-to-end development. The next upgrade is to run it against the real local chain and devnet instead of isolated fixtures.
+- In the current repository, the relayer already runs against the persistent AegisLink runtime and live Anvil-backed Ethereum paths in end-to-end tests. File-backed adapters remain as lower-fidelity fallbacks for focused local fixtures.
 
 Checklist:
 
@@ -171,6 +172,10 @@ Checklist:
 - [ ] Add an end-to-end test harness.
 - [ ] Add a scripted local demo for the happy path.
 - [ ] Add a scripted local demo for duplicate and paused paths.
+
+Current status:
+
+- implemented for the full local bridge loop, including live Ethereum deposit observation and live Ethereum release execution in e2e tests
 
 ## Phase 5: Route Assets To Osmosis
 

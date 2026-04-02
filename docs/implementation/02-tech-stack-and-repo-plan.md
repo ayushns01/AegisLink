@@ -1,16 +1,16 @@
 # AegisLink Tech Stack And Repo Plan
 
-This document describes both the current technology choices already implemented in the repository and the planned upgrades that will come with the local round-trip and Osmosis phases. The goal is to keep phase 1 buildable by a small team, with a clean path to phase 2 and a stronger Ethereum verifier later.
+This document describes both the current technology choices already implemented in the repository and the planned upgrades that come next. The goal is to keep phase 1 buildable by a small team, with a clean path to phase 2 and a stronger Ethereum verifier later.
 
 ## Current Checkpoint
 
-As of April 1, 2026, the repo has already implemented:
+As of April 2, 2026, the repo has already implemented:
 
-- the AegisLink chain app shell and bridge-domain modules in Go
+- the AegisLink persistent runtime and bridge-domain modules in Go
 - the Ethereum gateway and verifier contracts in Solidity with Foundry tests
-- the Go relayer pipeline with watchers, attestation collection, replay persistence, and local file-backed runtime adapters
+- the Go relayer pipeline with watchers, attestation collection, replay persistence, command-backed AegisLink integration, and RPC-backed Ethereum source and release paths
 
-The main thing that is still pending in this stack is the full local integration harness that runs all three surfaces together.
+The main things still pending in this stack are a fuller Cosmos node runtime and the Osmosis/IBC extension.
 
 ## Recommended Stack
 
@@ -45,17 +45,17 @@ Why this stack:
 ### Relayer and services
 
 - Language: Go
-- Current runtime: standard-library JSON adapters for local event input, vote input, and durable submission outboxes
+- Current runtime: hybrid local runtime with RPC-backed Ethereum observation and release execution, command-backed AegisLink integration, and standard-library JSON fallbacks for fixture-driven paths
 - Current config: environment-variable loader in Go
-- Planned upgrade: `go-ethereum` for Ethereum RPC and logs
-- Planned upgrade: Cosmos client libraries for submitting bridge transactions directly into the chain
+- Planned upgrade: `go-ethereum` for richer Ethereum client ergonomics beyond the current stdlib JSON-RPC path
+- Planned upgrade: Cosmos client libraries or a fuller node interface for submitting bridge transactions directly into the chain
 - Planned upgrade: richer config loading once the runtime moves beyond local fixtures
 
 Why this stack:
 
 - Keeping the relayer in Go avoids a second systems language.
 - A single language reduces onboarding cost for an early-stage bridge project.
-- The current file-backed runtime keeps Task 6 testable without pretending the full node-to-node integration already exists.
+- The current hybrid runtime makes the bridge locally executable today while preserving fallback adapters for targeted tests.
 
 ### Local development and ops
 
@@ -72,11 +72,12 @@ The target local setup should boot three things:
 2. an AegisLink local node.
 3. The relayer connected to both.
 
-The current checkpoint is one step earlier than that target:
+The current checkpoint is already past the first local integration target:
 
-- the relayer can already run against local JSON-backed inputs and outboxes
-- the contracts and chain logic have their own passing test suites
-- the next milestone is to wire those parts into one deterministic local stack
+- the relayer can run against the persistent AegisLink runtime
+- the relayer can observe live Ethereum deposits and execute live Ethereum releases against Anvil
+- the contracts, runtime logic, relayer, and e2e loop all have passing test suites
+- the next milestones are fuller Cosmos runtime realism and Osmosis routing
 
 Recommended developer workflow:
 
@@ -203,5 +204,5 @@ The first milestone should prove one narrow happy path end to end before adding 
 
 Current progress against that order:
 
-- completed: steps 1 through 5
-- next: step 6, the localnet and end-to-end bridge flow
+- completed: steps 1 through 6
+- next: step 7, Osmosis routing, with fuller Cosmos runtime realism as a valuable parallel hardening track

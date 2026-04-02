@@ -89,22 +89,24 @@ Do not describe v1 as fully trustless or fully light-client verified.
 
 ## Current checkpoint
 
-As of April 1, 2026, AegisLink is no longer documentation-only. The repository now includes:
+As of April 2, 2026, AegisLink is a runtime-backed local bridge prototype, not just a design repo. The repository now includes:
 
-- a Cosmos chain app shell plus `bridge`, `registry`, `limits`, and `pauser` modules
+- a persistent AegisLink runtime with `bridge`, `registry`, `limits`, and `pauser` modules plus CLI query and tx surfaces
 - Ethereum gateway and verifier contracts with Foundry tests
-- a relayer pipeline with Ethereum watchers, Cosmos watchers, attestation collection, replay persistence, and file-backed local runtime adapters
+- a relayer pipeline with replay persistence, command-backed AegisLink integration, RPC-backed Ethereum deposit observation, and RPC-backed Ethereum release execution
+- end-to-end tests that prove the full local bridge loop from Ethereum deposit to Ethereum release
 
 The current repo shape is:
 
-- [chain/aegislink](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink): chain app shell, bridge state machine, and safety modules
+- [chain/aegislink](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink): persistent runtime, bridge state machine, and safety modules
 - [contracts/ethereum](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum): Ethereum event source and release verification contracts
-- [relayer](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer): observation, attestation, replay, and forward or reverse submission pipeline
+- [relayer](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer): observation, attestation, replay, and live forward or reverse bridge pipeline
 
 Fresh verification checkpoints that already pass in this repo:
 
 - `go test ./chain/aegislink/...`
 - `forge test --offline`
 - `go test ./relayer/...`
+- `cd tests/e2e && go test ./...`
 
-The next active milestone is `Task 7`: prove the full local round-trip with the Ethereum side, AegisLink chain side, and relayer working together in one local flow before moving on to Osmosis routing.
+The next active roadmap task is `Task 9`: controlled Osmosis routing after the local bridge core. A separate hardening track is still worth doing before public demos: moving AegisLink from a persistent runtime shell toward a fuller Cosmos node runtime.

@@ -3,6 +3,8 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
 
 type anvilRuntime struct {
@@ -37,6 +41,8 @@ type txReceipt struct {
 		LogIndex string `json:"logIndex"`
 	} `json:"logs"`
 }
+
+const anvilFirstAccountPrivateKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 func startAnvilRuntime(t *testing.T) *anvilRuntime {
 	t.Helper()
@@ -191,6 +197,30 @@ func castAbiEncode(t *testing.T, signature string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
+func castKeccak(t *testing.T, value string) string {
+	t.Helper()
+	cmd := exec.Command("cast", "keccak", value)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cast keccak failed: %v\n%s", err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func castWalletSignHash(t *testing.T, privateKey, digest string) []byte {
+	t.Helper()
+	cmd := exec.Command("cast", "wallet", "sign", "--private-key", privateKey, "--no-hash", digest)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cast wallet sign failed: %v\n%s", err, output)
+	}
+	signature, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(string(output)), "0x"))
+	if err != nil {
+		t.Fatalf("decode cast signature: %v", err)
+	}
+	return signature
+}
+
 func readArtifactBytecode(t *testing.T, path string) string {
 	t.Helper()
 
@@ -264,6 +294,40 @@ func rpcCallRaw(rpcURL, method string, params []any) ([]byte, error) {
 	return envelope.Result, nil
 }
 
+func tokenBalanceOf(t *testing.T, rpcURL, token, account string) *big.Int {
+	t.Helper()
+	raw := ethCall(t, rpcURL, token, castCalldata(t, "balanceOf(address)", account))
+	return parseHexBigInt(t, raw)
+}
+
+func verifierUsedProof(t *testing.T, rpcURL, verifier, messageID string) bool {
+	t.Helper()
+	raw := ethCall(t, rpcURL, verifier, castCalldata(t, "usedProofs(bytes32)", messageID))
+	trimmed := strings.TrimPrefix(raw, "0x")
+	return strings.TrimLeft(trimmed, "0") == "1"
+}
+
+func ethCall(t *testing.T, rpcURL, to, data string) string {
+	t.Helper()
+	return rpcCallResult[string](t, rpcURL, "eth_call", []any{map[string]any{
+		"to":   to,
+		"data": data,
+	}, "latest"})
+}
+
+func parseHexBigInt(t *testing.T, value string) *big.Int {
+	t.Helper()
+	trimmed := strings.TrimPrefix(value, "0x")
+	if trimmed == "" {
+		return big.NewInt(0)
+	}
+	parsed, ok := new(big.Int).SetString(trimmed, 16)
+	if !ok {
+		t.Fatalf("invalid hex big int %q", value)
+	}
+	return parsed
+}
+
 func mustParseHexUint64(t *testing.T, value string) uint64 {
 	t.Helper()
 
@@ -276,4 +340,40 @@ func mustParseHexUint64(t *testing.T, value string) uint64 {
 		t.Fatalf("invalid hex uint64 %q", value)
 	}
 	return parsed.Uint64()
+}
+
+func signWithdrawalReleaseAttestation(t *testing.T, gateway, asset, recipient string, amount *big.Int, messageID string, expiry uint64) []byte {
+	t.Helper()
+
+	payloadInput := castAbiEncode(
+		t,
+		"f(uint256,address,address,address,uint256,bytes32,uint64)",
+		"11155111",
+		gateway,
+		asset,
+		recipient,
+		amount.String(),
+		messageID,
+		fmt.Sprintf("%d", expiry),
+	)
+	payloadHash := castKeccak(t, payloadInput)
+	digestInput := castAbiEncode(t, "f(bytes32,bytes32,uint64)", messageID, payloadHash, fmt.Sprintf("%d", expiry))
+	digest := castKeccak(t, digestInput)
+	return castWalletSignHash(t, anvilFirstAccountPrivateKey, digest)
+}
+
+func predictWithdrawalMessageID(height, nonce uint64, assetID, recipient string, amount *big.Int) string {
+	txHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(
+		fmt.Sprintf("%d:%d:%s:%s:%s", height, nonce, assetID, strings.TrimSpace(recipient), amount.String()),
+	)))
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindWithdrawal,
+		SourceChainID:  "aegislink-1",
+		SourceContract: "aegislink.bridge",
+		SourceTxHash:   txHash,
+		SourceLogIndex: 0,
+		Nonce:          nonce,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+	return identity.MessageID
 }

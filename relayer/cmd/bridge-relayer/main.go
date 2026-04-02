@@ -27,6 +27,13 @@ func main() {
 		logSource = evmSource
 	}
 
+	var releaseTarget evm.ReleaseTarget
+	if cfg.EVMRPCURL != "" && cfg.EVMGatewayAddress != "" {
+		releaseTarget = evm.NewRPCReleaseTarget(cfg.EVMRPCURL, cfg.EVMGatewayAddress)
+	} else {
+		releaseTarget = evm.NewFileReleaseTarget(cfg.EVMOutboxPath)
+	}
+
 	cosmosSource := cosmos.NewFileWithdrawalSource(cfg.CosmosStatePath)
 	cosmosSink := cosmos.NewFileClaimSink(cfg.CosmosOutboxPath)
 	if cfg.AegisLinkCommand != "" {
@@ -51,7 +58,7 @@ func main() {
 		attestations.NewCollector(attestations.NewFileVoteSource(cfg.AttestationStatePath), cfg.AttestationThreshold),
 		cosmos.NewSubmitter(claimSink),
 		cosmos.NewWatcher(cosmos.NewClient(withdrawalSource), cfg.CosmosConfirmations),
-		evm.NewReleaser(evm.NewFileReleaseTarget(cfg.EVMOutboxPath)),
+		evm.NewReleaser(releaseTarget),
 	)
 
 	if err := coord.RunOnce(context.Background()); err != nil {

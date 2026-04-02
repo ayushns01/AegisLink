@@ -386,6 +386,10 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 }
 
 func writeRuntimeChainBootstrap(t *testing.T) string {
+	return writeRuntimeChainBootstrapWithAssetAddress(t, "0xasset")
+}
+
+func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress string) string {
 	t.Helper()
 
 	statePath := filepath.Join(t.TempDir(), "aegislink-bootstrap-state.json")
@@ -400,7 +404,7 @@ func writeRuntimeChainBootstrap(t *testing.T) string {
 	if err := app.RegisterAsset(registrytypes.Asset{
 		AssetID:        "eth.usdc",
 		SourceChainID:  "11155111",
-		SourceContract: "0xasset",
+		SourceContract: assetAddress,
 		Denom:          "uethusdc",
 		Decimals:       6,
 		DisplayName:    "USDC",

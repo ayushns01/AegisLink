@@ -248,6 +248,83 @@ func TestFullBridgeLoopBurnsSupplyAndProducesEthereumRelease(t *testing.T) {
 	}
 }
 
+func TestFullLiveBridgeLoopReleasesBackToEthereum(t *testing.T) {
+	t.Parallel()
+
+	anvil := startAnvilRuntime(t)
+	contracts := deployBridgeContractsToAnvil(t, anvil.rpcURL)
+	receipt := createAnvilDeposit(t, anvil.rpcURL, contracts, "25000000", "cosmos1recipient", "10000000000")
+	if len(receipt.Logs) != 1 {
+		t.Fatalf("expected one deposit log, got %d", len(receipt.Logs))
+	}
+
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindDeposit,
+		SourceChainID:  "11155111",
+		SourceContract: contracts.Gateway,
+		SourceTxHash:   receipt.TransactionHash,
+		SourceLogIndex: mustParseHexUint64(t, receipt.Logs[0].LogIndex),
+		Nonce:          1,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+	claim := bridgetypes.DepositClaim{
+		Identity:           identity,
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustAmount(t, "25000000"),
+		Recipient:          "cosmos1recipient",
+		Deadline:           10000000000,
+	}
+
+	fixtures := writeEmptyRelayerFixtures(t)
+	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
+		Votes: []persistedVote{
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-1", Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-2", Expiry: 10000000100},
+		},
+	})
+
+	statePath := writeRuntimeChainBootstrapWithAssetAddress(t, contracts.Token)
+	runRelayerOnceAgainstRuntimeAndRPC(t, fixtures, statePath, anvil.rpcURL, contracts.Gateway)
+
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load runtime state after deposit: %v", err)
+	}
+	if supply := app.BridgeKeeper.SupplyForDenom("uethusdc"); supply.String() != "25000000" {
+		t.Fatalf("expected bridged supply 25000000 after deposit, got %s", supply.String())
+	}
+
+	recipient := rpcAccounts(t, anvil.rpcURL)[2]
+	expectedMessageID := predictWithdrawalMessageID(60, 1, claim.AssetID, recipient, claim.Amount)
+	signature := signWithdrawalReleaseAttestation(t, contracts.Gateway, contracts.Token, recipient, claim.Amount, expectedMessageID, 10000000000)
+
+	app.SetCurrentHeight(60)
+	withdrawal, err := app.BridgeKeeper.ExecuteWithdrawal(claim.AssetID, claim.Amount, recipient, 10000000000, signature)
+	if err != nil {
+		t.Fatalf("execute withdrawal: %v", err)
+	}
+	if withdrawal.Identity.MessageID != expectedMessageID {
+		t.Fatalf("expected withdrawal message id %q, got %q", expectedMessageID, withdrawal.Identity.MessageID)
+	}
+	if supply := app.BridgeKeeper.SupplyForDenom("uethusdc"); supply.Sign() != 0 {
+		t.Fatalf("expected bridged supply to burn to zero, got %s", supply.String())
+	}
+	app.SetCurrentHeight(61)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save runtime state after withdrawal: %v", err)
+	}
+
+	runRelayerOnceAgainstRuntimeAndRPC(t, fixtures, statePath, anvil.rpcURL, contracts.Gateway)
+
+	if balance := tokenBalanceOf(t, anvil.rpcURL, contracts.Token, recipient); balance.String() != claim.Amount.String() {
+		t.Fatalf("expected released ethereum balance %s, got %s", claim.Amount.String(), balance.String())
+	}
+	if !verifierUsedProof(t, anvil.rpcURL, contracts.Verifier, withdrawal.Identity.MessageID) {
+		t.Fatalf("expected verifier proof for %s to be consumed", withdrawal.Identity.MessageID)
+	}
+}
+
 type inboundServerOptions struct {
 	disableAsset bool
 	paused       bool

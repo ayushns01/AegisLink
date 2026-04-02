@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Cosmos SDK, CometBFT, IBC-Go, Protobuf, buf, Solidity, Foundry, OpenZeppelin, Docker Compose, Anvil, GitHub Actions.
 
-**Current checkpoint:** As of April 1, 2026, Tasks 1 through 6 have already been implemented in the repository. The next active execution target is Task 7: prove the full local round-trip before Osmosis work begins.
+**Current checkpoint:** As of April 2, 2026, Tasks 1 through 8 have been implemented in the repository, including the persistent AegisLink runtime, live Ethereum RPC deposit observation, and live Ethereum release execution in the local end-to-end loop. The next active roadmap target is Task 9: controlled Osmosis routing, while fuller Cosmos node realism remains a worthwhile hardening track.
 
 ---
 

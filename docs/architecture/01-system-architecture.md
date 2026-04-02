@@ -17,7 +17,7 @@ The bridge zone is the accounting and policy boundary. It is not just a message 
 
 ### Ethereum side
 
-- `BridgeGateway` contracts emit canonical deposit and withdrawal events.
+- `BridgeGateway` contracts emit canonical deposit events and execute attested releases back on Ethereum.
 - `AssetRegistry` stores Ethereum-side metadata for supported assets.
 - `PauseController` can halt new deposits, withdrawals, or both.
 - `ThresholdAttestation` references are consumed by the bridge zone as proof artifacts.
@@ -32,8 +32,8 @@ The bridge zone is the accounting and policy boundary. It is not just a message 
 
 Current implementation note:
 
-- As of April 1, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, and file-backed local adapters for deposits, withdrawals, votes, and submission outboxes.
-- That local runtime is intentionally narrower than the future RPC-backed version. It exists to make the bridge executable in local development before the full localnet harness is wired up.
+- As of April 2, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, command-backed AegisLink runtime integration, and RPC-backed Ethereum observation and release execution.
+- File-backed adapters still exist as local fallbacks, but they are no longer the highest-fidelity execution path in the repository.
 
 ### Bridge zone on Cosmos-SDK
 
@@ -118,6 +118,13 @@ sequenceDiagram
 6. If the route is enabled, the bridge zone forwards the asset to Osmosis over IBC.
 7. The claim transitions to a terminal state and cannot be replayed.
 
+In the current local milestone, the reverse direction is also proven end to end:
+
+1. A withdrawal is executed on AegisLink and burns the bridged representation.
+2. The relayer observes the persisted withdrawal record from the AegisLink runtime.
+3. The relayer submits a real `release` transaction to Ethereum over JSON-RPC.
+4. The gateway verifies the attestation, releases the canonical asset, and marks the proof consumed.
+
 ## Asset Lifecycle
 
 AegisLink supports a constrained set of assets, each with an explicit lifecycle.
@@ -153,8 +160,8 @@ For a recruiter-grade repository, keep the boundaries obvious. In the current re
 - `chain/aegislink/x/registry/`: asset registry and canonical asset metadata.
 - `chain/aegislink/x/limits/`: per-asset throttles and limit policy.
 - `chain/aegislink/x/pauser/`: emergency stop controls.
-- `relayer/internal/evm/`: Ethereum-side event observation and release request handling.
-- `relayer/internal/cosmos/`: Cosmos-side withdrawal observation and claim submission handling.
+- `relayer/internal/evm/`: Ethereum-side event observation and live release execution, with file-backed fallbacks for local fixtures.
+- `relayer/internal/cosmos/`: Cosmos-side withdrawal observation and claim submission handling, including command-backed runtime integration.
 - `relayer/internal/attestations/`: vote collection and quorum assembly.
 - `relayer/internal/replay/`: durable replay and checkpoint state.
 - `relayer/internal/pipeline/`: forward and reverse bridge orchestration.
