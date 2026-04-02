@@ -40,3 +40,17 @@ func TestLoadFromEnvParsesAegisLinkCommandArgs(t *testing.T) {
 		t.Fatalf("unexpected command args: %v", cfg.AegisLinkCommandArgs)
 	}
 }
+
+func TestLoadFromEnvParsesEthereumRPCSourceConfig(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_EVM_RPC_URL", "http://127.0.0.1:8545")
+	t.Setenv("AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS", "0x1234567890abcdef1234567890abcdef12345678")
+
+	cfg := LoadFromEnv()
+
+	if cfg.EVMRPCURL != "http://127.0.0.1:8545" {
+		t.Fatalf("expected rpc url to parse, got %q", cfg.EVMRPCURL)
+	}
+	if cfg.EVMGatewayAddress != "0x1234567890abcdef1234567890abcdef12345678" {
+		t.Fatalf("expected gateway address to parse, got %q", cfg.EVMGatewayAddress)
+	}
+}

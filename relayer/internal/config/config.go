@@ -13,6 +13,8 @@ type Config struct {
 	SubmissionRetryLimit int
 	EVMConfirmations     uint64
 	CosmosConfirmations  uint64
+	EVMRPCURL            string
+	EVMGatewayAddress    string
 	ReplayStorePath      string
 	EVMStatePath         string
 	AttestationStatePath string
@@ -31,6 +33,8 @@ func LoadFromEnv() Config {
 		SubmissionRetryLimit: getInt("AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT", 3),
 		EVMConfirmations:     uint64(getInt("AEGISLINK_RELAYER_EVM_CONFIRMATIONS", 2)),
 		CosmosConfirmations:  uint64(getInt("AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS", 1)),
+		EVMRPCURL:            getString("AEGISLINK_RELAYER_EVM_RPC_URL", ""),
+		EVMGatewayAddress:    getString("AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS", ""),
 		ReplayStorePath:      getString("AEGISLINK_RELAYER_REPLAY_STORE_PATH", ""),
 		EVMStatePath:         getString("AEGISLINK_RELAYER_EVM_STATE_PATH", defaultRuntimePath("evm-state.json")),
 		AttestationStatePath: getString("AEGISLINK_RELAYER_ATTESTATION_STATE_PATH", defaultRuntimePath("attestations.json")),

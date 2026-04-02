@@ -15,6 +15,18 @@ import (
 func main() {
 	cfg := config.LoadFromEnv()
 
+	evmSource := evm.NewFileLogSource(cfg.EVMStatePath)
+	if cfg.EVMRPCURL != "" && cfg.EVMGatewayAddress != "" {
+		evmSource = nil
+	}
+
+	var logSource evm.LogSource
+	if cfg.EVMRPCURL != "" && cfg.EVMGatewayAddress != "" {
+		logSource = evm.NewRPCLogSource(cfg.EVMRPCURL, cfg.EVMGatewayAddress)
+	} else {
+		logSource = evmSource
+	}
+
 	cosmosSource := cosmos.NewFileWithdrawalSource(cfg.CosmosStatePath)
 	cosmosSink := cosmos.NewFileClaimSink(cfg.CosmosOutboxPath)
 	if cfg.AegisLinkCommand != "" {
@@ -35,7 +47,7 @@ func main() {
 	coord := pipeline.New(
 		cfg,
 		replay.NewStoreAt(cfg.ReplayStorePath),
-		evm.NewWatcher(evm.NewClient(evm.NewFileLogSource(cfg.EVMStatePath)), cfg.EVMConfirmations),
+		evm.NewWatcher(evm.NewClient(logSource), cfg.EVMConfirmations),
 		attestations.NewCollector(attestations.NewFileVoteSource(cfg.AttestationStatePath), cfg.AttestationThreshold),
 		cosmos.NewSubmitter(claimSink),
 		cosmos.NewWatcher(cosmos.NewClient(withdrawalSource), cfg.CosmosConfirmations),

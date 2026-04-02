@@ -473,6 +473,28 @@ func runRelayerOnceAgainstRuntime(t *testing.T, fixtures fixturePaths, statePath
 	_ = runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/bridge-relayer")
 }
 
+func runRelayerOnceAgainstRuntimeAndRPC(t *testing.T, fixtures fixturePaths, statePath, rpcURL, gatewayAddress string) {
+	t.Helper()
+
+	env := map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        "aegislink-1",
+		"AEGISLINK_RELAYER_ATTESTATION_THRESHOLD":  "2",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "2",
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "1",
+		"AEGISLINK_RELAYER_EVM_RPC_URL":            rpcURL,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":    gatewayAddress,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": fixtures.voteStatePath,
+		"AEGISLINK_RELAYER_EVM_OUTBOX_PATH":        fixtures.evmOutboxPath,
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      fixtures.replayStorePath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd",
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   statePath,
+	}
+
+	_ = runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/bridge-relayer")
+}
+
 func loadCosmosOutbox(t *testing.T, path string) []persistedClaimSubmission {
 	t.Helper()
 

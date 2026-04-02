@@ -8,6 +8,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	limitkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
@@ -129,6 +130,53 @@ func TestRelayerCanObserveWithdrawalsThroughAegisLinkRuntime(t *testing.T) {
 	}
 	if requests[0].Recipient != "0xrecipient" {
 		t.Fatalf("expected release recipient 0xrecipient, got %q", requests[0].Recipient)
+	}
+}
+
+func TestRelayerCanBridgeLiveAnvilDepositIntoAegisLinkRuntime(t *testing.T) {
+	t.Parallel()
+
+	anvil := startAnvilRuntime(t)
+	contracts := deployBridgeContractsToAnvil(t, anvil.rpcURL)
+	receipt := createAnvilDeposit(t, anvil.rpcURL, contracts, "25000000", "cosmos1recipient", "10000000000")
+	if len(receipt.Logs) != 1 {
+		t.Fatalf("expected one deposit log, got %d", len(receipt.Logs))
+	}
+
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindDeposit,
+		SourceChainID:  "11155111",
+		SourceContract: contracts.Gateway,
+		SourceTxHash:   receipt.TransactionHash,
+		SourceLogIndex: mustParseHexUint64(t, receipt.Logs[0].LogIndex),
+		Nonce:          1,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+	claim := bridgetypes.DepositClaim{
+		Identity:           identity,
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustAmount(t, "25000000"),
+		Recipient:          "cosmos1recipient",
+		Deadline:           10000000000,
+	}
+	fixtures := writeEmptyRelayerFixtures(t)
+	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
+		Votes: []persistedVote{
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-1", Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-2", Expiry: 10000000100},
+		},
+	})
+
+	statePath := writeRuntimeChainBootstrap(t)
+	runRelayerOnceAgainstRuntimeAndRPC(t, fixtures, statePath, anvil.rpcURL, contracts.Gateway)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load runtime state: %v", err)
+	}
+	if supply := loaded.BridgeKeeper.SupplyForDenom("uethusdc"); supply.String() != "25000000" {
+		t.Fatalf("expected live-runtime bridge to mint 25000000, got %s", supply.String())
 	}
 }
 
