@@ -23,3 +23,20 @@ func TestLoadFromEnvFallsBackOnNegativeNumericValues(t *testing.T) {
 		t.Fatalf("expected cosmos confirmations fallback 1, got %d", cfg.CosmosConfirmations)
 	}
 }
+
+func TestLoadFromEnvParsesAegisLinkCommandArgs(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_AEGISLINK_CMD", "go")
+	t.Setenv("AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS", "run ./chain/aegislink/cmd/aegislinkd")
+
+	cfg := LoadFromEnv()
+
+	if cfg.AegisLinkCommand != "go" {
+		t.Fatalf("expected command go, got %q", cfg.AegisLinkCommand)
+	}
+	if len(cfg.AegisLinkCommandArgs) != 2 {
+		t.Fatalf("expected 2 command args, got %d: %v", len(cfg.AegisLinkCommandArgs), cfg.AegisLinkCommandArgs)
+	}
+	if cfg.AegisLinkCommandArgs[0] != "run" || cfg.AegisLinkCommandArgs[1] != "./chain/aegislink/cmd/aegislinkd" {
+		t.Fatalf("unexpected command args: %v", cfg.AegisLinkCommandArgs)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	limitkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -88,6 +89,46 @@ func TestInboundRoundTripRejectsDisabledAsset(t *testing.T) {
 
 	if _, err := server.SubmitDepositClaim(claim, attestation); !errors.Is(err, bridgekeeper.ErrAssetDisabled) {
 		t.Fatalf("expected disabled asset error, got %v", err)
+	}
+}
+
+func TestRelayerCanSubmitDepositClaimThroughAegisLinkRuntime(t *testing.T) {
+	t.Parallel()
+
+	fixtures := writeInboundFixtures(t)
+	statePath := writeRuntimeChainBootstrap(t)
+
+	runRelayerOnceAgainstRuntime(t, fixtures, statePath)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load runtime state: %v", err)
+	}
+	if supply := loaded.BridgeKeeper.SupplyForDenom("uethusdc"); supply.String() != "100000000" {
+		t.Fatalf("expected runtime-backed submission to mint 100000000, got %s", supply.String())
+	}
+}
+
+func TestRelayerCanObserveWithdrawalsThroughAegisLinkRuntime(t *testing.T) {
+	t.Parallel()
+
+	fixtures := writeEmptyRelayerFixtures(t)
+	statePath, messageID := writeRuntimeStateFixture(t)
+
+	runRelayerOnceAgainstRuntime(t, fixtures, statePath)
+
+	requests := loadEVMOutbox(t, fixtures.evmOutboxPath)
+	if len(requests) != 1 {
+		t.Fatalf("expected one ethereum release request, got %d", len(requests))
+	}
+	if requests[0].MessageID != messageID {
+		t.Fatalf("expected release message id %q, got %q", messageID, requests[0].MessageID)
+	}
+	if requests[0].AssetAddress != "0xasset" {
+		t.Fatalf("expected release asset 0xasset, got %q", requests[0].AssetAddress)
+	}
+	if requests[0].Recipient != "0xrecipient" {
+		t.Fatalf("expected release recipient 0xrecipient, got %q", requests[0].Recipient)
 	}
 }
 

@@ -284,6 +284,32 @@ func writeInboundFixtures(t *testing.T) fixturePaths {
 	return fixtures
 }
 
+func writeEmptyRelayerFixtures(t *testing.T) fixturePaths {
+	t.Helper()
+
+	root := t.TempDir()
+	fixtures := fixturePaths{
+		root:             root,
+		evmStatePath:     filepath.Join(root, "evm-state.json"),
+		voteStatePath:    filepath.Join(root, "attestations.json"),
+		cosmosStatePath:  filepath.Join(root, "cosmos-state.json"),
+		cosmosOutboxPath: filepath.Join(root, "cosmos-outbox.json"),
+		evmOutboxPath:    filepath.Join(root, "evm-outbox.json"),
+		replayStorePath:  filepath.Join(root, "replay-store.json"),
+	}
+
+	writeJSON(t, fixtures.evmStatePath, persistedDepositState{
+		LatestBlock:   0,
+		DepositEvents: []persistedDepositEvent{},
+	})
+	writeJSON(t, fixtures.voteStatePath, persistedVoteState{Votes: []persistedVote{}})
+	writeJSON(t, fixtures.cosmosStatePath, map[string]any{
+		"latest_height": 0,
+		"withdrawals":   []any{},
+	})
+	return fixtures
+}
+
 func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	t.Helper()
 
@@ -352,10 +378,48 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatalf("execute runtime withdrawal: %v", err)
 	}
+	app.SetCurrentHeight(61)
 	if err := app.Save(); err != nil {
 		t.Fatalf("save runtime state: %v", err)
 	}
 	return statePath, withdrawal.Identity.MessageID
+}
+
+func writeRuntimeChainBootstrap(t *testing.T) string {
+	t.Helper()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-bootstrap-state.json")
+	app := aegisapp.NewWithConfig(aegisapp.Config{
+		AppName:           aegisapp.AppName,
+		Modules:           []string{"bridge", "registry", "limits", "pauser"},
+		StatePath:         statePath,
+		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		RequiredThreshold: 2,
+	})
+
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "11155111",
+		SourceContract: "0xasset",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "USDC",
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("register bootstrap asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 600,
+		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set bootstrap limit: %v", err)
+	}
+	app.SetCurrentHeight(50)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save bootstrap state: %v", err)
+	}
+	return statePath
 }
 
 func mustBigAmount(t *testing.T, value string) *big.Int {
@@ -383,6 +447,27 @@ func runRelayerOnce(t *testing.T, fixtures fixturePaths) {
 		"AEGISLINK_RELAYER_COSMOS_OUTBOX_PATH":     fixtures.cosmosOutboxPath,
 		"AEGISLINK_RELAYER_EVM_OUTBOX_PATH":        fixtures.evmOutboxPath,
 		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      fixtures.replayStorePath,
+	}
+
+	_ = runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/bridge-relayer")
+}
+
+func runRelayerOnceAgainstRuntime(t *testing.T, fixtures fixturePaths, statePath string) {
+	t.Helper()
+
+	env := map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        "aegislink-1",
+		"AEGISLINK_RELAYER_ATTESTATION_THRESHOLD":  "2",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "2",
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "2",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "1",
+		"AEGISLINK_RELAYER_EVM_STATE_PATH":         fixtures.evmStatePath,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": fixtures.voteStatePath,
+		"AEGISLINK_RELAYER_EVM_OUTBOX_PATH":        fixtures.evmOutboxPath,
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      fixtures.replayStorePath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd",
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   statePath,
 	}
 
 	_ = runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/bridge-relayer")

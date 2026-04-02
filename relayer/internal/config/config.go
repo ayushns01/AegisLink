@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -18,6 +19,9 @@ type Config struct {
 	CosmosStatePath      string
 	CosmosOutboxPath     string
 	EVMOutboxPath        string
+	AegisLinkCommand     string
+	AegisLinkCommandArgs []string
+	AegisLinkStatePath   string
 }
 
 func LoadFromEnv() Config {
@@ -33,6 +37,9 @@ func LoadFromEnv() Config {
 		CosmosStatePath:      getString("AEGISLINK_RELAYER_COSMOS_STATE_PATH", defaultRuntimePath("cosmos-state.json")),
 		CosmosOutboxPath:     getString("AEGISLINK_RELAYER_COSMOS_OUTBOX_PATH", defaultRuntimePath("cosmos-outbox.json")),
 		EVMOutboxPath:        getString("AEGISLINK_RELAYER_EVM_OUTBOX_PATH", defaultRuntimePath("evm-outbox.json")),
+		AegisLinkCommand:     getString("AEGISLINK_RELAYER_AEGISLINK_CMD", ""),
+		AegisLinkCommandArgs: getFields("AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS"),
+		AegisLinkStatePath:   getString("AEGISLINK_RELAYER_AEGISLINK_STATE_PATH", defaultRuntimePath("aegislink-state.json")),
 	}
 }
 
@@ -60,4 +67,12 @@ func getInt(key string, fallback int) int {
 
 func defaultRuntimePath(name string) string {
 	return filepath.Join(os.TempDir(), "aegislink-relayer", name)
+}
+
+func getFields(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+	return strings.Fields(value)
 }
