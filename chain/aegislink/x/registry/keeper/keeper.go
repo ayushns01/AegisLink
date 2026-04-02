@@ -54,6 +54,24 @@ func (k *Keeper) DisableAsset(assetID string) error {
 	return nil
 }
 
+func (k *Keeper) ExportAssets() []registrytypes.Asset {
+	assets := make([]registrytypes.Asset, 0, len(k.assets))
+	for _, asset := range k.assets {
+		assets = append(assets, canonicalAsset(asset))
+	}
+	return assets
+}
+
+func (k *Keeper) ImportAssets(assets []registrytypes.Asset) error {
+	k.assets = make(map[string]registrytypes.Asset, len(assets))
+	for _, asset := range assets {
+		if err := k.RegisterAsset(asset); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func assetKey(assetID string) string {
 	return strings.TrimSpace(assetID)
 }

@@ -54,6 +54,24 @@ func (k *Keeper) CheckTransfer(assetID string, amount *big.Int) error {
 	return nil
 }
 
+func (k *Keeper) ExportLimits() []limittypes.RateLimit {
+	limits := make([]limittypes.RateLimit, 0, len(k.limits))
+	for _, limit := range k.limits {
+		limits = append(limits, canonicalLimit(limit))
+	}
+	return limits
+}
+
+func (k *Keeper) ImportLimits(limits []limittypes.RateLimit) error {
+	k.limits = make(map[string]limittypes.RateLimit, len(limits))
+	for _, limit := range limits {
+		if err := k.SetLimit(limit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func limitKey(assetID string) string {
 	return strings.TrimSpace(assetID)
 }

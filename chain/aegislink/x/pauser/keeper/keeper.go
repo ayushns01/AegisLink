@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"errors"
+	"sort"
 	"strings"
 )
 
@@ -49,6 +50,25 @@ func (k *Keeper) IsPaused(flow string) bool {
 func (k *Keeper) AssertNotPaused(flow string) error {
 	if k.IsPaused(flow) {
 		return ErrFlowPaused
+	}
+	return nil
+}
+
+func (k *Keeper) ExportPausedFlows() []string {
+	flows := make([]string, 0, len(k.paused))
+	for flow := range k.paused {
+		flows = append(flows, flow)
+	}
+	sort.Strings(flows)
+	return flows
+}
+
+func (k *Keeper) ImportPausedFlows(flows []string) error {
+	k.paused = make(map[string]bool, len(flows))
+	for _, flow := range flows {
+		if err := k.Pause(flow); err != nil {
+			return err
+		}
 	}
 	return nil
 }

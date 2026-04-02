@@ -2,11 +2,11 @@ package app
 
 import "testing"
 
-func TestNewAppRegistersSafetyModules(t *testing.T) {
+func TestNewAppRegistersBridgeAndSafetyModules(t *testing.T) {
 	app := New()
 
 	got := app.ModuleNames()
-	want := []string{"registry", "limits", "pauser"}
+	want := []string{"bridge", "registry", "limits", "pauser"}
 
 	if len(got) != len(want) {
 		t.Fatalf("expected %d modules, got %d: %v", len(want), len(got), got)

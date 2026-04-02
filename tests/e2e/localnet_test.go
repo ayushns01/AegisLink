@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
+	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
 
 type fixturePaths struct {
@@ -129,8 +132,93 @@ func TestAegisLinkShellStartsWithSafetyModules(t *testing.T) {
 	t.Parallel()
 
 	output := runGoCommand(t, repoRoot(t), nil, "run", "./chain/aegislink/cmd/aegislinkd")
-	if !strings.Contains(output, "aegislink initialized with modules: registry, limits, pauser") {
+	if !strings.Contains(output, "aegislink initialized with modules: bridge, registry, limits, pauser") {
 		t.Fatalf("expected aegislinkd module list in output, got %q", output)
+	}
+}
+
+func TestAegisLinkQuerySummaryReadsPersistedRuntimeState(t *testing.T) {
+	t.Parallel()
+
+	statePath, _ := writeRuntimeStateFixture(t)
+	output := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"query",
+		"summary",
+		"--state-path",
+		statePath,
+	)
+
+	var summary struct {
+		Assets        int               `json:"assets"`
+		Limits        int               `json:"limits"`
+		PausedFlows   int               `json:"paused_flows"`
+		Withdrawals   int               `json:"withdrawals"`
+		SupplyByDenom map[string]string `json:"supply_by_denom"`
+	}
+	if err := json.Unmarshal([]byte(output), &summary); err != nil {
+		t.Fatalf("decode summary output: %v\n%s", err, output)
+	}
+	if summary.Assets != 1 {
+		t.Fatalf("expected one asset, got %d", summary.Assets)
+	}
+	if summary.Limits != 1 {
+		t.Fatalf("expected one limit, got %d", summary.Limits)
+	}
+	if summary.PausedFlows != 1 {
+		t.Fatalf("expected one paused flow, got %d", summary.PausedFlows)
+	}
+	if summary.Withdrawals != 1 {
+		t.Fatalf("expected one withdrawal, got %d", summary.Withdrawals)
+	}
+	if summary.SupplyByDenom["uethusdc"] != "0" {
+		t.Fatalf("expected zero remaining supply, got %q", summary.SupplyByDenom["uethusdc"])
+	}
+}
+
+func TestAegisLinkQueryWithdrawalsPrintsPersistedRecords(t *testing.T) {
+	t.Parallel()
+
+	statePath, messageID := writeRuntimeStateFixture(t)
+	output := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"query",
+		"withdrawals",
+		"--state-path",
+		statePath,
+		"--from-height",
+		"60",
+		"--to-height",
+		"60",
+	)
+
+	var withdrawals []struct {
+		MessageID string `json:"message_id"`
+		Recipient string `json:"recipient"`
+		Amount    string `json:"amount"`
+	}
+	if err := json.Unmarshal([]byte(output), &withdrawals); err != nil {
+		t.Fatalf("decode withdrawals output: %v\n%s", err, output)
+	}
+	if len(withdrawals) != 1 {
+		t.Fatalf("expected one withdrawal, got %d", len(withdrawals))
+	}
+	if withdrawals[0].MessageID != messageID {
+		t.Fatalf("expected withdrawal message id %q, got %q", messageID, withdrawals[0].MessageID)
+	}
+	if withdrawals[0].Recipient != "0xrecipient" {
+		t.Fatalf("expected recipient 0xrecipient, got %q", withdrawals[0].Recipient)
+	}
+	if withdrawals[0].Amount != "100000000" {
+		t.Fatalf("expected amount 100000000, got %q", withdrawals[0].Amount)
 	}
 }
 
@@ -194,6 +282,90 @@ func writeInboundFixtures(t *testing.T) fixturePaths {
 	})
 
 	return fixtures
+}
+
+func writeRuntimeStateFixture(t *testing.T) (string, string) {
+	t.Helper()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := aegisapp.NewWithConfig(aegisapp.Config{
+		AppName:           aegisapp.AppName,
+		Modules:           []string{"bridge", "registry", "limits", "pauser"},
+		StatePath:         statePath,
+		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		RequiredThreshold: 2,
+	})
+
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "11155111",
+		SourceContract: "0xasset",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "USDC",
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("register runtime asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 600,
+		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set runtime limit: %v", err)
+	}
+	if err := app.Pause("maintenance"); err != nil {
+		t.Fatalf("pause runtime flow: %v", err)
+	}
+
+	deposit := persistedDepositEvent{
+		BlockNumber:    10,
+		SourceChainID:  "11155111",
+		SourceContract: "0xgateway",
+		TxHash:         "0xdeposit-tx",
+		LogIndex:       7,
+		Nonce:          1,
+		DepositID:      "deposit-1",
+		MessageID:      "unused-event-message",
+		AssetAddress:   "0xasset",
+		AssetID:        "eth.usdc",
+		Amount:         "100000000",
+		Recipient:      "cosmos1recipient",
+		Expiry:         100,
+	}
+	claim := depositClaimFromEvent(t, deposit)
+	attestation := bridgetypes.Attestation{
+		MessageID:   claim.Identity.MessageID,
+		PayloadHash: claim.Digest(),
+		Signers:     []string{"relayer-1", "relayer-2"},
+		Threshold:   2,
+		Expiry:      120,
+	}
+
+	app.SetCurrentHeight(50)
+	if _, err := app.SubmitDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("submit runtime deposit: %v", err)
+	}
+
+	app.SetCurrentHeight(60)
+	withdrawal, err := app.ExecuteWithdrawal(claim.AssetID, claim.Amount, "0xrecipient", 120, []byte("threshold-proof"))
+	if err != nil {
+		t.Fatalf("execute runtime withdrawal: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save runtime state: %v", err)
+	}
+	return statePath, withdrawal.Identity.MessageID
+}
+
+func mustBigAmount(t *testing.T, value string) *big.Int {
+	t.Helper()
+
+	amount, ok := new(big.Int).SetString(value, 10)
+	if !ok {
+		t.Fatalf("invalid amount %q", value)
+	}
+	return amount
 }
 
 func runRelayerOnce(t *testing.T, fixtures fixturePaths) {
