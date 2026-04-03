@@ -6,7 +6,7 @@ func TestNewAppRegistersBridgeAndSafetyModules(t *testing.T) {
 	app := New()
 
 	got := app.ModuleNames()
-	want := []string{"bridge", "registry", "limits", "pauser"}
+	want := []string{"bridge", "registry", "limits", "pauser", "ibcrouter"}
 
 	if len(got) != len(want) {
 		t.Fatalf("expected %d modules, got %d: %v", len(want), len(got), got)

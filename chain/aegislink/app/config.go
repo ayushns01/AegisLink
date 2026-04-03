@@ -2,6 +2,7 @@ package app
 
 import (
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
+	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
 	pausermodule "github.com/ayushns01/aegislink/chain/aegislink/x/pauser"
 	registrymodule "github.com/ayushns01/aegislink/chain/aegislink/x/registry"
@@ -25,6 +26,7 @@ func DefaultConfig() Config {
 			registrymodule.ModuleName,
 			limitsmodule.ModuleName,
 			pausermodule.ModuleName,
+			ibcroutermodule.ModuleName,
 		},
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,

@@ -6,15 +6,17 @@ import (
 	"path/filepath"
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
 
 type runtimeState struct {
-	Assets      []registrytypes.Asset      `json:"assets"`
-	Limits      []limittypes.RateLimit     `json:"limits"`
-	PausedFlows []string                   `json:"paused_flows"`
-	Bridge      bridgekeeper.StateSnapshot `json:"bridge"`
+	Assets      []registrytypes.Asset         `json:"assets"`
+	Limits      []limittypes.RateLimit        `json:"limits"`
+	PausedFlows []string                      `json:"paused_flows"`
+	Bridge      bridgekeeper.StateSnapshot    `json:"bridge"`
+	IBCRouter   ibcrouterkeeper.StateSnapshot `json:"ibc_router"`
 }
 
 func loadRuntimeState(path string) (runtimeState, error) {

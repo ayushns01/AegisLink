@@ -1,0 +1,314 @@
+package keeper
+
+import (
+	"errors"
+	"fmt"
+	"math/big"
+	"strings"
+)
+
+var (
+	ErrRouteNotFound          = errors.New("ibc route not found")
+	ErrRouteDisabled          = errors.New("ibc route disabled")
+	ErrInvalidRoute           = errors.New("invalid ibc route")
+	ErrInvalidTransfer        = errors.New("invalid ibc transfer")
+	ErrTransferNotFound       = errors.New("ibc transfer not found")
+	ErrTransferNotPending     = errors.New("ibc transfer not pending")
+	ErrTransferNotRecoverable = errors.New("ibc transfer not recoverable")
+)
+
+type TransferStatus string
+
+const (
+	TransferStatusPending   TransferStatus = "pending"
+	TransferStatusCompleted TransferStatus = "completed"
+	TransferStatusAckFailed TransferStatus = "ack_failed"
+	TransferStatusTimedOut  TransferStatus = "timed_out"
+	TransferStatusRefunded  TransferStatus = "refunded"
+)
+
+type Route struct {
+	AssetID            string `json:"asset_id"`
+	DestinationChainID string `json:"destination_chain_id"`
+	ChannelID          string `json:"channel_id"`
+	DestinationDenom   string `json:"destination_denom"`
+	Enabled            bool   `json:"enabled"`
+}
+
+func (r Route) ValidateBasic() error {
+	if strings.TrimSpace(r.AssetID) == "" {
+		return fmt.Errorf("%w: missing asset id", ErrInvalidRoute)
+	}
+	if strings.TrimSpace(r.DestinationChainID) == "" {
+		return fmt.Errorf("%w: missing destination chain id", ErrInvalidRoute)
+	}
+	if strings.TrimSpace(r.ChannelID) == "" {
+		return fmt.Errorf("%w: missing channel id", ErrInvalidRoute)
+	}
+	if strings.TrimSpace(r.DestinationDenom) == "" {
+		return fmt.Errorf("%w: missing destination denom", ErrInvalidRoute)
+	}
+	return nil
+}
+
+type TransferRecord struct {
+	TransferID         string         `json:"transfer_id"`
+	AssetID            string         `json:"asset_id"`
+	Amount             *big.Int       `json:"amount"`
+	Receiver           string         `json:"receiver"`
+	DestinationChainID string         `json:"destination_chain_id"`
+	ChannelID          string         `json:"channel_id"`
+	DestinationDenom   string         `json:"destination_denom"`
+	TimeoutHeight      uint64         `json:"timeout_height"`
+	Memo               string         `json:"memo"`
+	Status             TransferStatus `json:"status"`
+	FailureReason      string         `json:"failure_reason"`
+}
+
+type StateSnapshot struct {
+	NextSequence uint64                   `json:"next_sequence"`
+	Routes       []Route                  `json:"routes"`
+	Transfers    []TransferRecordSnapshot `json:"transfers"`
+}
+
+type TransferRecordSnapshot struct {
+	TransferID         string         `json:"transfer_id"`
+	AssetID            string         `json:"asset_id"`
+	Amount             string         `json:"amount"`
+	Receiver           string         `json:"receiver"`
+	DestinationChainID string         `json:"destination_chain_id"`
+	ChannelID          string         `json:"channel_id"`
+	DestinationDenom   string         `json:"destination_denom"`
+	TimeoutHeight      uint64         `json:"timeout_height"`
+	Memo               string         `json:"memo"`
+	Status             TransferStatus `json:"status"`
+	FailureReason      string         `json:"failure_reason"`
+}
+
+type Keeper struct {
+	routes       map[string]Route
+	transfers    map[string]TransferRecord
+	nextSequence uint64
+}
+
+func NewKeeper() *Keeper {
+	return &Keeper{
+		routes:       make(map[string]Route),
+		transfers:    make(map[string]TransferRecord),
+		nextSequence: 1,
+	}
+}
+
+func (k *Keeper) SetRoute(route Route) error {
+	if err := route.ValidateBasic(); err != nil {
+		return err
+	}
+	stored := canonicalRoute(route)
+	k.routes[routeKey(stored.AssetID)] = stored
+	return nil
+}
+
+func (k *Keeper) GetRoute(assetID string) (Route, bool) {
+	route, ok := k.routes[routeKey(assetID)]
+	return route, ok
+}
+
+func (k *Keeper) InitiateTransfer(assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (TransferRecord, error) {
+	route, ok := k.GetRoute(assetID)
+	if !ok {
+		return TransferRecord{}, ErrRouteNotFound
+	}
+	if !route.Enabled {
+		return TransferRecord{}, ErrRouteDisabled
+	}
+	if amount == nil || amount.Sign() <= 0 {
+		return TransferRecord{}, fmt.Errorf("%w: amount must be positive", ErrInvalidTransfer)
+	}
+	if strings.TrimSpace(receiver) == "" {
+		return TransferRecord{}, fmt.Errorf("%w: missing receiver", ErrInvalidTransfer)
+	}
+	if timeoutHeight == 0 {
+		return TransferRecord{}, fmt.Errorf("%w: missing timeout height", ErrInvalidTransfer)
+	}
+
+	sequence := k.nextSequence
+	k.nextSequence++
+	record := TransferRecord{
+		TransferID:         fmt.Sprintf("ibc/%s/%d", route.AssetID, sequence),
+		AssetID:            route.AssetID,
+		Amount:             cloneAmount(amount),
+		Receiver:           strings.TrimSpace(receiver),
+		DestinationChainID: route.DestinationChainID,
+		ChannelID:          route.ChannelID,
+		DestinationDenom:   route.DestinationDenom,
+		TimeoutHeight:      timeoutHeight,
+		Memo:               strings.TrimSpace(memo),
+		Status:             TransferStatusPending,
+	}
+	k.transfers[record.TransferID] = record
+	return cloneTransferRecord(record), nil
+}
+
+func (k *Keeper) AcknowledgeSuccess(transferID string) (TransferRecord, error) {
+	record, err := k.pendingTransfer(transferID)
+	if err != nil {
+		return TransferRecord{}, err
+	}
+	record.Status = TransferStatusCompleted
+	record.FailureReason = ""
+	k.transfers[record.TransferID] = record
+	return cloneTransferRecord(record), nil
+}
+
+func (k *Keeper) AcknowledgeFailure(transferID, reason string) (TransferRecord, error) {
+	record, err := k.pendingTransfer(transferID)
+	if err != nil {
+		return TransferRecord{}, err
+	}
+	record.Status = TransferStatusAckFailed
+	record.FailureReason = strings.TrimSpace(reason)
+	k.transfers[record.TransferID] = record
+	return cloneTransferRecord(record), nil
+}
+
+func (k *Keeper) TimeoutTransfer(transferID string) (TransferRecord, error) {
+	record, err := k.pendingTransfer(transferID)
+	if err != nil {
+		return TransferRecord{}, err
+	}
+	record.Status = TransferStatusTimedOut
+	k.transfers[record.TransferID] = record
+	return cloneTransferRecord(record), nil
+}
+
+func (k *Keeper) MarkRefunded(transferID string) (TransferRecord, error) {
+	record, ok := k.transfers[strings.TrimSpace(transferID)]
+	if !ok {
+		return TransferRecord{}, ErrTransferNotFound
+	}
+	if record.Status != TransferStatusAckFailed && record.Status != TransferStatusTimedOut {
+		return TransferRecord{}, ErrTransferNotRecoverable
+	}
+	record.Status = TransferStatusRefunded
+	k.transfers[record.TransferID] = record
+	return cloneTransferRecord(record), nil
+}
+
+func (k *Keeper) ExportRoutes() []Route {
+	routes := make([]Route, 0, len(k.routes))
+	for _, route := range k.routes {
+		routes = append(routes, canonicalRoute(route))
+	}
+	return routes
+}
+
+func (k *Keeper) ExportTransfers() []TransferRecord {
+	transfers := make([]TransferRecord, 0, len(k.transfers))
+	for _, transfer := range k.transfers {
+		transfers = append(transfers, cloneTransferRecord(transfer))
+	}
+	return transfers
+}
+
+func (k *Keeper) ExportState() StateSnapshot {
+	state := StateSnapshot{
+		NextSequence: k.nextSequence,
+		Routes:       k.ExportRoutes(),
+		Transfers:    make([]TransferRecordSnapshot, 0, len(k.transfers)),
+	}
+	for _, transfer := range k.transfers {
+		state.Transfers = append(state.Transfers, TransferRecordSnapshot{
+			TransferID:         transfer.TransferID,
+			AssetID:            transfer.AssetID,
+			Amount:             transfer.Amount.String(),
+			Receiver:           transfer.Receiver,
+			DestinationChainID: transfer.DestinationChainID,
+			ChannelID:          transfer.ChannelID,
+			DestinationDenom:   transfer.DestinationDenom,
+			TimeoutHeight:      transfer.TimeoutHeight,
+			Memo:               transfer.Memo,
+			Status:             transfer.Status,
+			FailureReason:      transfer.FailureReason,
+		})
+	}
+	return state
+}
+
+func (k *Keeper) ImportState(state StateSnapshot) error {
+	k.routes = make(map[string]Route, len(state.Routes))
+	for _, route := range state.Routes {
+		if err := k.SetRoute(route); err != nil {
+			return err
+		}
+	}
+
+	k.transfers = make(map[string]TransferRecord, len(state.Transfers))
+	for _, transfer := range state.Transfers {
+		amount, ok := new(big.Int).SetString(transfer.Amount, 10)
+		if !ok {
+			return fmt.Errorf("invalid ibc transfer amount %q", transfer.Amount)
+		}
+		k.transfers[strings.TrimSpace(transfer.TransferID)] = TransferRecord{
+			TransferID:         strings.TrimSpace(transfer.TransferID),
+			AssetID:            strings.TrimSpace(transfer.AssetID),
+			Amount:             amount,
+			Receiver:           strings.TrimSpace(transfer.Receiver),
+			DestinationChainID: strings.TrimSpace(transfer.DestinationChainID),
+			ChannelID:          strings.TrimSpace(transfer.ChannelID),
+			DestinationDenom:   strings.TrimSpace(transfer.DestinationDenom),
+			TimeoutHeight:      transfer.TimeoutHeight,
+			Memo:               strings.TrimSpace(transfer.Memo),
+			Status:             transfer.Status,
+			FailureReason:      strings.TrimSpace(transfer.FailureReason),
+		}
+	}
+
+	k.nextSequence = state.NextSequence
+	if k.nextSequence == 0 {
+		k.nextSequence = 1
+	}
+	return nil
+}
+
+func (k *Keeper) pendingTransfer(transferID string) (TransferRecord, error) {
+	record, ok := k.transfers[strings.TrimSpace(transferID)]
+	if !ok {
+		return TransferRecord{}, ErrTransferNotFound
+	}
+	if record.Status != TransferStatusPending {
+		return TransferRecord{}, ErrTransferNotPending
+	}
+	return record, nil
+}
+
+func routeKey(assetID string) string {
+	return strings.TrimSpace(assetID)
+}
+
+func canonicalRoute(route Route) Route {
+	route.AssetID = strings.TrimSpace(route.AssetID)
+	route.DestinationChainID = strings.TrimSpace(route.DestinationChainID)
+	route.ChannelID = strings.TrimSpace(route.ChannelID)
+	route.DestinationDenom = strings.TrimSpace(route.DestinationDenom)
+	return route
+}
+
+func cloneAmount(value *big.Int) *big.Int {
+	if value == nil {
+		return big.NewInt(0)
+	}
+	return new(big.Int).Set(value)
+}
+
+func cloneTransferRecord(record TransferRecord) TransferRecord {
+	record.TransferID = strings.TrimSpace(record.TransferID)
+	record.AssetID = strings.TrimSpace(record.AssetID)
+	record.Amount = cloneAmount(record.Amount)
+	record.Receiver = strings.TrimSpace(record.Receiver)
+	record.DestinationChainID = strings.TrimSpace(record.DestinationChainID)
+	record.ChannelID = strings.TrimSpace(record.ChannelID)
+	record.DestinationDenom = strings.TrimSpace(record.DestinationDenom)
+	record.Memo = strings.TrimSpace(record.Memo)
+	record.FailureReason = strings.TrimSpace(record.FailureReason)
+	return record
+}

@@ -4,6 +4,8 @@ import (
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -16,12 +18,13 @@ import (
 )
 
 type App struct {
-	Config         Config
-	BridgeKeeper   *bridgekeeper.Keeper
-	RegistryKeeper *registrykeeper.Keeper
-	LimitsKeeper   *limitskeeper.Keeper
-	PauserKeeper   *pauserkeeper.Keeper
-	modules        []string
+	Config          Config
+	BridgeKeeper    *bridgekeeper.Keeper
+	IBCRouterKeeper *ibcrouterkeeper.Keeper
+	RegistryKeeper  *registrykeeper.Keeper
+	LimitsKeeper    *limitskeeper.Keeper
+	PauserKeeper    *pauserkeeper.Keeper
+	modules         []string
 }
 
 func New() *App {
@@ -34,24 +37,28 @@ func NewWithConfig(cfg Config) *App {
 	registryKeeper := registrykeeper.NewKeeper()
 	limitsKeeper := limitskeeper.NewKeeper()
 	pauserKeeper := pauserkeeper.NewKeeper()
+	ibcRouterKeeper := ibcrouterkeeper.NewKeeper()
 	bridgeKeeper := bridgekeeper.NewKeeper(registryKeeper, limitsKeeper, pauserKeeper, cfg.AllowedSigners, cfg.RequiredThreshold)
 
 	bridgeAppModule := bridgemodule.NewAppModule(bridgeKeeper)
 	registryAppModule := registrymodule.NewAppModule(registryKeeper)
 	limitsAppModule := limitsmodule.NewAppModule(limitsKeeper)
 	pauserAppModule := pausermodule.NewAppModule(pauserKeeper)
+	ibcRouterAppModule := ibcroutermodule.NewAppModule(ibcRouterKeeper)
 
 	return &App{
-		Config:         cfg,
-		BridgeKeeper:   bridgeKeeper,
-		RegistryKeeper: registryKeeper,
-		LimitsKeeper:   limitsKeeper,
-		PauserKeeper:   pauserKeeper,
+		Config:          cfg,
+		BridgeKeeper:    bridgeKeeper,
+		IBCRouterKeeper: ibcRouterKeeper,
+		RegistryKeeper:  registryKeeper,
+		LimitsKeeper:    limitsKeeper,
+		PauserKeeper:    pauserKeeper,
 		modules: []string{
 			bridgeAppModule.Name(),
 			registryAppModule.Name(),
 			limitsAppModule.Name(),
 			pauserAppModule.Name(),
+			ibcRouterAppModule.Name(),
 		},
 	}
 }
@@ -79,6 +86,9 @@ func LoadWithConfig(cfg Config) (*App, error) {
 		return nil, err
 	}
 	if err := app.BridgeKeeper.ImportState(state.Bridge); err != nil {
+		return nil, err
+	}
+	if err := app.IBCRouterKeeper.ImportState(state.IBCRouter); err != nil {
 		return nil, err
 	}
 
@@ -129,6 +139,7 @@ func (a *App) Save() error {
 		Limits:      a.LimitsKeeper.ExportLimits(),
 		PausedFlows: a.PauserKeeper.ExportPausedFlows(),
 		Bridge:      a.BridgeKeeper.ExportState(),
+		IBCRouter:   a.IBCRouterKeeper.ExportState(),
 	})
 }
 

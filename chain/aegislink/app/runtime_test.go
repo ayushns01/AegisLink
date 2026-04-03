@@ -8,6 +8,7 @@ import (
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
@@ -46,6 +47,15 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	if err := app.Pause("maintenance"); err != nil {
 		t.Fatalf("pause maintenance flow: %v", err)
 	}
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            asset.AssetID,
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/usdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set route: %v", err)
+	}
 
 	claim := validDepositClaim(t)
 	attestation := validAttestationForClaim(claim)
@@ -58,6 +68,16 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	withdrawal, err := app.ExecuteWithdrawal(claim.AssetID, claim.Amount, "0xrecipient", 120, []byte("threshold-proof"))
 	if err != nil {
 		t.Fatalf("execute withdrawal: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer(asset.AssetID, mustAmount(t, "50000000"), "osmo1recipient", 140, "swap")
+	if err != nil {
+		t.Fatalf("initiate ibc transfer: %v", err)
+	}
+	if _, err := app.IBCRouterKeeper.AcknowledgeFailure(transfer.TransferID, "ack failed"); err != nil {
+		t.Fatalf("ack failure: %v", err)
+	}
+	if _, err := app.IBCRouterKeeper.MarkRefunded(transfer.TransferID); err != nil {
+		t.Fatalf("mark refunded: %v", err)
 	}
 
 	if err := app.Save(); err != nil {
@@ -78,6 +98,13 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	if !loaded.PauserKeeper.IsPaused("maintenance") {
 		t.Fatalf("expected paused maintenance flow to persist")
 	}
+	route, ok := loaded.IBCRouterKeeper.GetRoute(asset.AssetID)
+	if !ok {
+		t.Fatalf("expected ibc route to persist")
+	}
+	if route.ChannelID != "channel-0" {
+		t.Fatalf("expected route channel channel-0, got %q", route.ChannelID)
+	}
 	if supply := loaded.BridgeKeeper.SupplyForDenom(asset.Denom); supply.Sign() != 0 {
 		t.Fatalf("expected burned supply to persist as zero, got %s", supply.String())
 	}
@@ -88,6 +115,13 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	}
 	if withdrawals[0].Identity.MessageID != withdrawal.Identity.MessageID {
 		t.Fatalf("expected persisted withdrawal %q, got %q", withdrawal.Identity.MessageID, withdrawals[0].Identity.MessageID)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one persisted ibc transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusRefunded {
+		t.Fatalf("expected refunded ibc transfer status, got %q", transfers[0].Status)
 	}
 
 	loaded.SetCurrentHeight(60)
