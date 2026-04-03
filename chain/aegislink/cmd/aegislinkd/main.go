@@ -53,6 +53,8 @@ func runQuery(args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "summary":
 		return querySummary(args[1:], stdout)
+	case "claim":
+		return queryClaim(args[1:], stdout)
 	case "withdrawals":
 		return queryWithdrawals(args[1:], stdout)
 	default:
@@ -68,6 +70,8 @@ func runTx(args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "submit-deposit-claim":
 		return txSubmitDepositClaim(args[1:], stdout)
+	case "execute-withdrawal":
+		return txExecuteWithdrawal(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown tx subcommand %q", args[0])
 	}
@@ -107,6 +111,48 @@ func querySummary(args []string, stdout io.Writer) error {
 		SupplyByDenom: bridgeState.SupplyByDenom,
 	}
 	return writeJSON(stdout, summary)
+}
+
+func queryClaim(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("claim", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	messageID := flags.String("message-id", "", "message id for the processed claim")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*messageID) == "" {
+		return fmt.Errorf("missing message id")
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+
+	for _, claim := range a.BridgeKeeper.ExportState().ProcessedClaims {
+		if claim.MessageID != *messageID {
+			continue
+		}
+		return writeJSON(stdout, struct {
+			ClaimKey  string `json:"claim_key"`
+			MessageID string `json:"message_id"`
+			Denom     string `json:"denom"`
+			AssetID   string `json:"asset_id"`
+			Amount    string `json:"amount"`
+			Status    string `json:"status"`
+		}{
+			ClaimKey:  claim.ClaimKey,
+			MessageID: claim.MessageID,
+			Denom:     claim.Denom,
+			AssetID:   claim.AssetID,
+			Amount:    claim.Amount,
+			Status:    string(claim.Status),
+		})
+	}
+
+	return fmt.Errorf("claim %q not found", *messageID)
 }
 
 func queryWithdrawals(args []string, stdout io.Writer) error {
@@ -208,6 +254,94 @@ func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 	return writeJSON(stdout, result)
 }
 
+func txExecuteWithdrawal(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("execute-withdrawal", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	assetID := flags.String("asset-id", "", "asset identifier to withdraw")
+	amountRaw := flags.String("amount", "", "withdrawal amount")
+	recipient := flags.String("recipient", "", "ethereum recipient address")
+	deadline := flags.Uint64("deadline", 0, "withdrawal expiry")
+	signatureBase64 := flags.String("signature-base64", "", "base64-encoded withdrawal attestation")
+	height := flags.Uint64("height", 0, "optional runtime block height override")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*assetID) == "" {
+		return fmt.Errorf("missing asset id")
+	}
+	if strings.TrimSpace(*amountRaw) == "" {
+		return fmt.Errorf("missing amount")
+	}
+	if strings.TrimSpace(*recipient) == "" {
+		return fmt.Errorf("missing recipient")
+	}
+	if *deadline == 0 {
+		return fmt.Errorf("missing deadline")
+	}
+	if strings.TrimSpace(*signatureBase64) == "" {
+		return fmt.Errorf("missing signature")
+	}
+
+	amount, err := parseBase10Amount(*amountRaw)
+	if err != nil {
+		return err
+	}
+	signature, err := base64.StdEncoding.DecodeString(*signatureBase64)
+	if err != nil {
+		return fmt.Errorf("decode signature: %w", err)
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	if *height > 0 {
+		a.SetCurrentHeight(*height)
+	}
+
+	withdrawal, err := a.ExecuteWithdrawal(*assetID, amount, *recipient, *deadline, signature)
+	if err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+
+	return writeJSON(stdout, struct {
+		Kind           string `json:"kind"`
+		SourceChainID  string `json:"source_chain_id"`
+		SourceContract string `json:"source_contract"`
+		SourceTxHash   string `json:"source_tx_hash"`
+		SourceLogIndex uint64 `json:"source_log_index"`
+		Nonce          uint64 `json:"nonce"`
+		MessageID      string `json:"message_id"`
+		AssetID        string `json:"asset_id"`
+		AssetAddress   string `json:"asset_address"`
+		Amount         string `json:"amount"`
+		Recipient      string `json:"recipient"`
+		Deadline       uint64 `json:"deadline"`
+		BlockHeight    uint64 `json:"block_height"`
+		Signature      string `json:"signature"`
+	}{
+		Kind:           string(withdrawal.Identity.Kind),
+		SourceChainID:  withdrawal.Identity.SourceChainID,
+		SourceContract: withdrawal.Identity.SourceContract,
+		SourceTxHash:   withdrawal.Identity.SourceTxHash,
+		SourceLogIndex: withdrawal.Identity.SourceLogIndex,
+		Nonce:          withdrawal.Identity.Nonce,
+		MessageID:      withdrawal.Identity.MessageID,
+		AssetID:        withdrawal.AssetID,
+		AssetAddress:   withdrawal.AssetAddress,
+		Amount:         withdrawal.Amount.String(),
+		Recipient:      withdrawal.Recipient,
+		Deadline:       withdrawal.Deadline,
+		BlockHeight:    withdrawal.BlockHeight,
+		Signature:      base64.StdEncoding.EncodeToString(withdrawal.Signature),
+	})
+}
+
 type submissionFilePayload struct {
 	Claim struct {
 		Kind               string `json:"kind"`
@@ -271,6 +405,14 @@ func loadSubmission(path string) (bridgetypes.DepositClaim, bridgetypes.Attestat
 		Expiry:      payload.Attestation.Expiry,
 	}
 	return claim, attestation, nil
+}
+
+func parseBase10Amount(raw string) (*big.Int, error) {
+	amount, ok := new(big.Int).SetString(strings.TrimSpace(raw), 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid amount %q", raw)
+	}
+	return amount, nil
 }
 
 func writeJSON(stdout io.Writer, value any) error {

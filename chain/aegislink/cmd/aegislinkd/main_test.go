@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"math/big"
 	"os"
@@ -79,6 +80,130 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	}
 	if result.Status != "accepted" {
 		t.Fatalf("expected accepted status, got %q", result.Status)
+	}
+}
+
+func TestRunQueryClaimPrintsPersistedAcceptedClaim(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeApp(t, statePath)
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "claim",
+		"--state-path", statePath,
+		"--message-id", claim.Identity.MessageID,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query claim: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		MessageID string `json:"message_id"`
+		AssetID   string `json:"asset_id"`
+		Denom     string `json:"denom"`
+		Amount    string `json:"amount"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.MessageID != claim.Identity.MessageID {
+		t.Fatalf("expected message id %q, got %q", claim.Identity.MessageID, result.MessageID)
+	}
+	if result.AssetID != claim.AssetID {
+		t.Fatalf("expected asset id %q, got %q", claim.AssetID, result.AssetID)
+	}
+	if result.Denom != "uethusdc" {
+		t.Fatalf("expected denom uethusdc, got %q", result.Denom)
+	}
+	if result.Amount != claim.Amount.String() {
+		t.Fatalf("expected amount %s, got %q", claim.Amount.String(), result.Amount)
+	}
+	if result.Status != "accepted" {
+		t.Fatalf("expected accepted status, got %q", result.Status)
+	}
+}
+
+func TestRunTxExecuteWithdrawalPersistsWithdrawalAndBurnsSupply(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeApp(t, statePath)
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "execute-withdrawal",
+		"--state-path", statePath,
+		"--asset-id", claim.AssetID,
+		"--amount", "25000000",
+		"--recipient", "0xrecipient",
+		"--deadline", "140",
+		"--signature-base64", base64.StdEncoding.EncodeToString([]byte("threshold-proof")),
+		"--height", "60",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx execute-withdrawal: %v\nstderr=%s", err, stderr.String())
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	if supply := loaded.BridgeKeeper.SupplyForDenom("uethusdc"); supply.String() != "75000000" {
+		t.Fatalf("expected remaining supply 75000000, got %s", supply.String())
+	}
+
+	withdrawals := loaded.Withdrawals(60, 60)
+	if len(withdrawals) != 1 {
+		t.Fatalf("expected one stored withdrawal, got %d", len(withdrawals))
+	}
+	if withdrawals[0].Recipient != "0xrecipient" {
+		t.Fatalf("expected recipient 0xrecipient, got %q", withdrawals[0].Recipient)
+	}
+	if string(withdrawals[0].Signature) != "threshold-proof" {
+		t.Fatalf("expected decoded signature threshold-proof, got %q", withdrawals[0].Signature)
+	}
+
+	var result struct {
+		MessageID   string `json:"message_id"`
+		AssetID     string `json:"asset_id"`
+		Amount      string `json:"amount"`
+		Recipient   string `json:"recipient"`
+		BlockHeight uint64 `json:"block_height"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.AssetID != claim.AssetID {
+		t.Fatalf("expected asset id %q, got %q", claim.AssetID, result.AssetID)
+	}
+	if result.Amount != "25000000" {
+		t.Fatalf("expected amount 25000000, got %q", result.Amount)
+	}
+	if result.Recipient != "0xrecipient" {
+		t.Fatalf("expected recipient 0xrecipient, got %q", result.Recipient)
+	}
+	if result.BlockHeight != 60 {
+		t.Fatalf("expected block height 60, got %d", result.BlockHeight)
+	}
+	if result.MessageID == "" {
+		t.Fatal("expected withdrawal message id")
 	}
 }
 
@@ -178,4 +303,36 @@ func mustAmount(t *testing.T, value string) *big.Int {
 		t.Fatalf("invalid amount %q", value)
 	}
 	return amount
+}
+
+func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
+	t.Helper()
+
+	app := aegisapp.NewWithConfig(aegisapp.Config{
+		AppName:           aegisapp.AppName,
+		Modules:           []string{"bridge", "registry", "limits", "pauser"},
+		StatePath:         statePath,
+		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		RequiredThreshold: 2,
+	})
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "11155111",
+		SourceContract: "0xasset",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "USDC",
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount(t, "1000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+	app.SetCurrentHeight(50)
+	return app
 }
