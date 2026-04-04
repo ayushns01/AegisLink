@@ -1,11 +1,17 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
@@ -316,6 +322,141 @@ func TestRouteRelayerCompletesPendingTransferAgainstLocalTarget(t *testing.T) {
 	if transfers[0].Status != ibcrouterkeeper.TransferStatusCompleted {
 		t.Fatalf("expected completed transfer, got %q", transfers[0].Status)
 	}
+}
+
+func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	_, err = app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis.json")
+	target := startMockOsmosisTarget(t, targetStatePath, "success")
+	defer target.cancel()
+
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	var state struct {
+		Receipts []struct {
+			Packet struct {
+				Sequence uint64 `json:"sequence"`
+				Data     struct {
+					Memo string `json:"memo"`
+				} `json:"data"`
+			} `json:"packet"`
+			DenomTrace struct {
+				IBCDenom string `json:"ibc_denom"`
+			} `json:"denom_trace"`
+		} `json:"receipts"`
+		Swaps []struct {
+			TransferID  string `json:"transfer_id"`
+			OutputDenom string `json:"output_denom"`
+		} `json:"swaps"`
+	}
+	readJSONFile(t, targetStatePath, &state)
+
+	if len(state.Receipts) != 1 {
+		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	}
+	if state.Receipts[0].Packet.Sequence != 1 {
+		t.Fatalf("expected packet sequence 1, got %d", state.Receipts[0].Packet.Sequence)
+	}
+	if state.Receipts[0].Packet.Data.Memo != "swap:uosmo" {
+		t.Fatalf("expected memo swap:uosmo, got %q", state.Receipts[0].Packet.Data.Memo)
+	}
+	if state.Receipts[0].DenomTrace.IBCDenom != "ibc/uatom-usdc" {
+		t.Fatalf("expected ibc denom ibc/uatom-usdc, got %q", state.Receipts[0].DenomTrace.IBCDenom)
+	}
+	if len(state.Swaps) != 1 {
+		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
+	}
+	if state.Swaps[0].OutputDenom != "uosmo" {
+		t.Fatalf("expected output denom uosmo, got %q", state.Swaps[0].OutputDenom)
+	}
+}
+
+func readJSONFile(t *testing.T, path string, out any) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+}
+
+type mockOsmosisRuntime struct {
+	url       string
+	statePath string
+	cancel    context.CancelFunc
+	cmd       *exec.Cmd
+}
+
+func startMockOsmosisTarget(t *testing.T, statePath, mode string) *mockOsmosisRuntime {
+	t.Helper()
+
+	port := reservePort(t)
+	addr := "127.0.0.1:" + mustFormatPort(port)
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, "go", "run", "./relayer/cmd/mock-osmosis-target")
+	cmd.Dir = repoRoot(t)
+	cmd.Env = append(os.Environ(),
+		"GOCACHE=/tmp/aegislink-e2e-go-cache/build",
+		"GOMODCACHE=/tmp/aegislink-e2e-go-cache/mod",
+		"AEGISLINK_MOCK_OSMOSIS_ADDR="+addr,
+		"AEGISLINK_MOCK_OSMOSIS_MODE="+mode,
+		"AEGISLINK_MOCK_OSMOSIS_STATE_PATH="+statePath,
+	)
+	if err := cmd.Start(); err != nil {
+		cancel()
+		t.Fatalf("start mock osmosis target: %v", err)
+	}
+
+	runtime := &mockOsmosisRuntime{
+		url:       "http://" + addr,
+		statePath: statePath,
+		cancel:    cancel,
+		cmd:       cmd,
+	}
+	t.Cleanup(func() {
+		cancel()
+		_ = cmd.Wait()
+	})
+
+	waitForHTTP(t, runtime.url+"/transfers")
+	return runtime
+}
+
+func waitForHTTP(t *testing.T, url string) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("http endpoint %s did not become ready", url)
+}
+
+func mustFormatPort(port int) string {
+	return strconv.Itoa(port)
 }
 
 func TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer(t *testing.T) {

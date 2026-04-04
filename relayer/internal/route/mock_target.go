@@ -23,8 +23,29 @@ type MockTarget struct {
 	delay     time.Duration
 	statePath string
 
-	mu       sync.Mutex
-	received []Transfer
+	mu    sync.Mutex
+	state MockTargetState
+}
+
+type MockTargetState struct {
+	Receipts []MockTargetReceipt `json:"receipts"`
+	Swaps    []MockTargetSwap    `json:"swaps"`
+}
+
+type MockTargetReceipt struct {
+	TransferID string       `json:"transfer_id"`
+	Packet     Packet       `json:"packet"`
+	DenomTrace DenomTrace   `json:"denom_trace"`
+	Action     *RouteAction `json:"action,omitempty"`
+}
+
+type MockTargetSwap struct {
+	TransferID  string `json:"transfer_id"`
+	InputDenom  string `json:"input_denom"`
+	OutputDenom string `json:"output_denom"`
+	InputAmount string `json:"input_amount"`
+	Recipient   string `json:"recipient"`
+	DexChainID  string `json:"dex_chain_id"`
 }
 
 func NewMockTargetHandler(mode string, statePath string, delay time.Duration) http.Handler {
@@ -44,17 +65,37 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		t.mu.Lock()
 		defer t.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{"transfers": t.received})
+		_ = json.NewEncoder(w).Encode(t.state)
 	case http.MethodPost:
-		var transfer Transfer
-		if err := json.NewDecoder(r.Body).Decode(&transfer); err != nil {
+		var envelope DeliveryEnvelope
+		if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		receipt := MockTargetReceipt{
+			TransferID: envelope.Transfer.TransferID,
+			Packet:     envelope.Packet,
+			DenomTrace: envelope.DenomTrace,
+			Action:     envelope.Action,
+		}
 
 		t.mu.Lock()
-		t.received = append(t.received, transfer)
-		_ = persistMockTargetState(t.statePath, t.received)
+		t.state.Receipts = append(t.state.Receipts, receipt)
+		if envelope.Action != nil && envelope.Action.Type == "swap" {
+			t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
+				TransferID:  envelope.Transfer.TransferID,
+				InputDenom:  envelope.DenomTrace.IBCDenom,
+				OutputDenom: envelope.Action.TargetDenom,
+				InputAmount: envelope.Packet.Data.Amount,
+				Recipient:   envelope.Packet.Data.Receiver,
+				DexChainID:  envelope.Transfer.DestinationChainID,
+			})
+		}
+		if err := persistMockTargetState(t.statePath, t.state); err != nil {
+			t.mu.Unlock()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		t.mu.Unlock()
 
 		if t.delay > 0 {
@@ -95,14 +136,14 @@ func normalizeMockTargetMode(mode string) MockTargetMode {
 	}
 }
 
-func persistMockTargetState(path string, transfers []Transfer) error {
+func persistMockTargetState(path string, state MockTargetState) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(map[string]any{"transfers": transfers}, "", "  ")
+	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}

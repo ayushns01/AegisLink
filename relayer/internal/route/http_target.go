@@ -36,7 +36,12 @@ func newHTTPTargetWithClient(baseURL string, client *http.Client) *HTTPTarget {
 }
 
 func (t *HTTPTarget) SubmitTransfer(ctx context.Context, transfer Transfer) (Ack, error) {
-	body, err := json.Marshal(transfer)
+	envelope, err := buildDeliveryEnvelope(transfer)
+	if err != nil {
+		return Ack{}, err
+	}
+
+	body, err := json.Marshal(envelope)
 	if err != nil {
 		return Ack{}, err
 	}
