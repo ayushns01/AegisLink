@@ -401,6 +401,59 @@ func TestRunQueryTransfersPrintsPersistedTransferLifecycle(t *testing.T) {
 	}
 }
 
+func TestRunTxCompleteIBCTransferPersistsCompletedTransfer(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "complete-ibc-transfer",
+		"--state-path", statePath,
+		"--transfer-id", transfer.TransferID,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx complete-ibc-transfer: %v\nstderr=%s", err, stderr.String())
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusCompleted {
+		t.Fatalf("expected completed transfer, got %q", transfers[0].Status)
+	}
+	if transfers[0].FailureReason != "" {
+		t.Fatalf("expected empty failure reason, got %q", transfers[0].FailureReason)
+	}
+
+	var result struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, result.TransferID)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("expected completed status, got %q", result.Status)
+	}
+}
+
 func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) {
 	t.Helper()
 

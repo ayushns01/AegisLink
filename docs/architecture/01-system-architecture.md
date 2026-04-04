@@ -32,7 +32,7 @@ The bridge zone is the accounting and policy boundary. It is not just a message 
 
 Current implementation note:
 
-- As of April 2, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, command-backed AegisLink runtime integration, and RPC-backed Ethereum observation and release execution.
+- As of April 4, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, command-backed AegisLink runtime integration, and RPC-backed Ethereum observation and release execution.
 - File-backed adapters still exist as local fallbacks, but they are no longer the highest-fidelity execution path in the repository.
 
 ### Bridge zone on Cosmos-SDK
@@ -41,13 +41,14 @@ Current implementation note:
 - `registry` module: stores supported assets, decimal metadata, canonical denominations, and governance status.
 - `limits` module: enforces per-asset and per-route throttles.
 - `pauser` module: exposes chain-wide and asset-scoped emergency controls.
-- `ibcrouter` module: forwards eligible assets to Osmosis over IBC after they exist on the bridge zone.
+- `ibcrouter` module: tracks eligible routed transfers after they exist on the bridge zone, including pending, completed, failed, timed-out, and refunded states on the current local runtime path.
 
 ### Osmosis route
 
 - The bridge zone is the source chain for phase 2 IBC transfers.
 - Assets move from bridge-zone denominations into Osmosis through a predefined IBC channel.
 - Osmosis receives them as standard IBC assets and can route them into swaps or liquidity pools.
+- In the current repository checkpoint, the route lifecycle is implemented and queryable through the AegisLink runtime CLI, while the full live IBC channel or local Osmosis stack is still a later extension.
 
 ## Message Interfaces
 
@@ -125,6 +126,13 @@ In the current local milestone, the reverse direction is also proven end to end:
 3. The relayer submits a real `release` transaction to Ethereum over JSON-RPC.
 4. The gateway verifies the attestation, releases the canonical asset, and marks the proof consumed.
 
+In the current routing milestone, the onward route is also proven in a controlled local form:
+
+1. A live Ethereum deposit can be observed over RPC and minted onto AegisLink.
+2. AegisLink can initiate an outbound Osmosis-style transfer through `ibcrouter`.
+3. The route can move into completed, acknowledgement-failed, timed-out, or refunded state through runtime tx surfaces.
+4. Route state remains queryable from the persisted runtime.
+
 ## Asset Lifecycle
 
 AegisLink supports a constrained set of assets, each with an explicit lifecycle.
@@ -167,6 +175,7 @@ For a recruiter-grade repository, keep the boundaries obvious. In the current re
 - `relayer/internal/pipeline/`: forward and reverse bridge orchestration.
 - `proto/`: shared message schemas and cross-component identifiers.
 - `docs/`: architecture, security, and implementation specs.
+- `tests/e2e/osmosis_route_test.go`: routed-flow proofs for initiation, completion, timeout, and refund behavior.
 
 Prefer a monorepo layout if the team is small, but keep service boundaries explicit so the relayer can be swapped independently of the chain modules.
 
@@ -176,7 +185,7 @@ Prefer a monorepo layout if the team is small, but keep service boundaries expli
 - The bridge zone must reject any claim that does not prove finality according to the configured policy.
 - Asset metadata must be versioned, not overwritten in place.
 - Pause and limit decisions must be checked before minting, burning, or IBC forwarding.
-- Any route to Osmosis must be gated by a chain-owned allowlist and an initialized IBC channel.
+- Any route to Osmosis must be gated by a chain-owned allowlist and an initialized IBC channel in the final system; the current local runtime already enforces the allowlist and explicit route state transitions.
 
 ## v1 to v2 Direction
 

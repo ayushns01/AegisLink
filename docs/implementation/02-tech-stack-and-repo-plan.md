@@ -4,13 +4,15 @@ This document describes both the current technology choices already implemented 
 
 ## Current Checkpoint
 
-As of April 2, 2026, the repo has already implemented:
+As of April 4, 2026, the repo has already implemented:
 
 - the AegisLink persistent runtime and bridge-domain modules in Go
 - the Ethereum gateway and verifier contracts in Solidity with Foundry tests
 - the Go relayer pipeline with watchers, attestation collection, replay persistence, command-backed AegisLink integration, and RPC-backed Ethereum source and release paths
+- the `ibcrouter` routing module with runtime query and tx surfaces for initiation, completion, failure, timeout, and refund handling
+- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed routed transfer record on AegisLink
 
-The main things still pending in this stack are a fuller Cosmos node runtime and the Osmosis/IBC extension.
+The main things still pending in this stack are a fuller Cosmos node runtime and a live local IBC or Osmosis environment beyond the current runtime-controlled route lifecycle.
 
 ## Recommended Stack
 
@@ -77,7 +79,8 @@ The current checkpoint is already past the first local integration target:
 - the relayer can run against the persistent AegisLink runtime
 - the relayer can observe live Ethereum deposits and execute live Ethereum releases against Anvil
 - the contracts, runtime logic, relayer, and e2e loop all have passing test suites
-- the next milestones are fuller Cosmos runtime realism and Osmosis routing
+- the route lifecycle to an Osmosis-style destination is now implemented on the AegisLink runtime side
+- the next milestones are fuller Cosmos runtime realism and a live local IBC or Osmosis routing environment
 
 Recommended developer workflow:
 
@@ -177,7 +180,7 @@ Use a layered test stack so each failure mode is caught at the cheapest level po
 ### End-to-end tests
 
 - A full localnet that moves an asset from Ethereum to the bridge zone and back again.
-- A second scenario that routes a supported asset from the bridge zone to Osmosis over IBC.
+- A second scenario that routes a supported asset from the bridge zone into the AegisLink-controlled Osmosis-style transfer lifecycle today, and later into a fuller IBC or Osmosis environment.
 - These should run in CI on a slower schedule or before release.
 
 ### Security tests
@@ -204,5 +207,5 @@ The first milestone should prove one narrow happy path end to end before adding 
 
 Current progress against that order:
 
-- completed: steps 1 through 6
-- next: step 7, Osmosis routing, with fuller Cosmos runtime realism as a valuable parallel hardening track
+- completed: steps 1 through 6 and the first routing slices of step 7
+- next: deepen step 7 into a fuller local IBC or Osmosis harness, with fuller Cosmos runtime realism as a valuable parallel hardening track

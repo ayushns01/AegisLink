@@ -2,9 +2,11 @@ package e2e
 
 import (
 	"encoding/json"
+	"math/big"
 	"testing"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
@@ -208,4 +210,214 @@ func TestOsmosisRouteRuntimeCanExposeTimedOutTransferThroughCLI(t *testing.T) {
 	if transfers[0].Status != "timed_out" {
 		t.Fatalf("expected timed_out status, got %q", transfers[0].Status)
 	}
+}
+
+func TestOsmosisRouteRuntimeCanCompleteTransferThroughCLI(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	output := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"tx",
+		"complete-ibc-transfer",
+		"--state-path",
+		statePath,
+		"--transfer-id",
+		transfer.TransferID,
+	)
+
+	var result struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("decode complete output: %v\n%s", err, output)
+	}
+	if result.TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, result.TransferID)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("expected completed status, got %q", result.Status)
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusCompleted {
+		t.Fatalf("expected completed transfer, got %q", transfers[0].Status)
+	}
+}
+
+func TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer(t *testing.T) {
+	t.Parallel()
+
+	anvil := startAnvilRuntime(t)
+	contracts := deployBridgeContractsToAnvil(t, anvil.rpcURL)
+	receipt := createAnvilDeposit(t, anvil.rpcURL, contracts, "25000000", "cosmos1recipient", "10000000000")
+	if len(receipt.Logs) != 1 {
+		t.Fatalf("expected one deposit log, got %d", len(receipt.Logs))
+	}
+
+	identity := depositClaimIdentityFromAnvilReceipt(t, contracts.Gateway, receipt)
+	claim := depositClaimForOsmosisRoute(identity, "25000000")
+	fixtures := writeEmptyRelayerFixtures(t)
+	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
+		Votes: []persistedVote{
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-1", Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-2", Expiry: 10000000100},
+		},
+	})
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRouteAndAssetAddress(t, contracts.Token)
+	runRelayerOnceAgainstRuntimeAndRPC(t, fixtures, statePath, anvil.rpcURL, contracts.Gateway)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load runtime state: %v", err)
+	}
+	if supply := loaded.BridgeKeeper.SupplyForDenom("uethusdc"); supply.String() != "25000000" {
+		t.Fatalf("expected minted supply 25000000, got %s", supply.String())
+	}
+
+	initiateOutput := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"tx",
+		"initiate-ibc-transfer",
+		"--state-path",
+		statePath,
+		"--asset-id",
+		"eth.usdc",
+		"--amount",
+		"25000000",
+		"--receiver",
+		"osmo1recipient",
+		"--timeout-height",
+		"140",
+		"--memo",
+		"swap:uosmo",
+	)
+	var initiated struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(initiateOutput), &initiated); err != nil {
+		t.Fatalf("decode initiate output: %v\n%s", err, initiateOutput)
+	}
+	if initiated.Status != "pending" {
+		t.Fatalf("expected pending transfer, got %q", initiated.Status)
+	}
+
+	completeOutput := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"tx",
+		"complete-ibc-transfer",
+		"--state-path",
+		statePath,
+		"--transfer-id",
+		initiated.TransferID,
+	)
+	var completed struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(completeOutput), &completed); err != nil {
+		t.Fatalf("decode complete output: %v\n%s", err, completeOutput)
+	}
+	if completed.TransferID != initiated.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", initiated.TransferID, completed.TransferID)
+	}
+	if completed.Status != "completed" {
+		t.Fatalf("expected completed transfer, got %q", completed.Status)
+	}
+
+	queryOutput := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"query",
+		"transfers",
+		"--state-path",
+		statePath,
+	)
+	var transfers []struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(queryOutput), &transfers); err != nil {
+		t.Fatalf("decode transfer output: %v\n%s", err, queryOutput)
+	}
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].TransferID != initiated.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", initiated.TransferID, transfers[0].TransferID)
+	}
+	if transfers[0].Status != "completed" {
+		t.Fatalf("expected completed transfer, got %q", transfers[0].Status)
+	}
+}
+
+func depositClaimIdentityFromAnvilReceipt(t *testing.T, gateway string, receipt txReceipt) bridgetypes.ClaimIdentity {
+	t.Helper()
+
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindDeposit,
+		SourceChainID:  "11155111",
+		SourceContract: gateway,
+		SourceTxHash:   receipt.TransactionHash,
+		SourceLogIndex: mustParseHexUint64(t, receipt.Logs[0].LogIndex),
+		Nonce:          1,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+	return identity
+}
+
+func depositClaimForOsmosisRoute(identity bridgetypes.ClaimIdentity, amount string) bridgetypes.DepositClaim {
+	return bridgetypes.DepositClaim{
+		Identity:           identity,
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustBigAmountValue(amount),
+		Recipient:          "cosmos1recipient",
+		Deadline:           10000000000,
+	}
+}
+
+func mustBigAmountValue(value string) *big.Int {
+	amount, ok := new(big.Int).SetString(value, 10)
+	if !ok {
+		panic("invalid amount " + value)
+	}
+	return amount
 }

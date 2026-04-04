@@ -153,6 +153,10 @@ func (a *App) TimeoutIBCTransfer(transferID string) (ibcrouterkeeper.TransferRec
 	return a.IBCRouterKeeper.TimeoutTransfer(transferID)
 }
 
+func (a *App) CompleteIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
+	return a.IBCRouterKeeper.AcknowledgeSuccess(transferID)
+}
+
 func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
 	return a.IBCRouterKeeper.MarkRefunded(transferID)
 }

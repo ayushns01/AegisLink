@@ -393,7 +393,13 @@ func writeRuntimeChainBootstrap(t *testing.T) string {
 func writeRuntimeChainBootstrapWithOsmosisRoute(t *testing.T) string {
 	t.Helper()
 
-	statePath := writeRuntimeChainBootstrap(t)
+	return writeRuntimeChainBootstrapWithOsmosisRouteAndAssetAddress(t, "0xasset")
+}
+
+func writeRuntimeChainBootstrapWithOsmosisRouteAndAssetAddress(t *testing.T, assetAddress string) string {
+	t.Helper()
+
+	statePath := writeRuntimeChainBootstrapWithAssetAddress(t, assetAddress)
 	app, err := aegisapp.Load(statePath)
 	if err != nil {
 		t.Fatalf("load bootstrap state: %v", err)
@@ -636,7 +642,10 @@ func runGoCommand(t *testing.T, dir string, extraEnv map[string]string, args ...
 	cmd.Dir = dir
 	cmd.Env = append([]string{}, os.Environ()...)
 
-	cacheRoot := t.TempDir()
+	cacheRoot := filepath.Join(os.TempDir(), "aegislink-e2e-go-cache")
+	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
+		t.Fatalf("create e2e go cache root: %v", err)
+	}
 	cmd.Env = append(cmd.Env,
 		"GOCACHE="+filepath.Join(cacheRoot, "gocache"),
 		"GOMODCACHE="+filepath.Join(cacheRoot, "gomodcache"),

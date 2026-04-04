@@ -84,6 +84,8 @@ func runTx(args []string, stdout io.Writer) error {
 		return txFailIBCTransfer(args[1:], stdout)
 	case "timeout-ibc-transfer":
 		return txTimeoutIBCTransfer(args[1:], stdout)
+	case "complete-ibc-transfer":
+		return txCompleteIBCTransfer(args[1:], stdout)
 	case "refund-ibc-transfer":
 		return txRefundIBCTransfer(args[1:], stdout)
 	default:
@@ -533,6 +535,33 @@ func txTimeoutIBCTransfer(args []string, stdout io.Writer) error {
 		return err
 	}
 	transfer, err := a.TimeoutIBCTransfer(*transferID)
+	if err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, transferJSONResponse(transfer))
+}
+
+func txCompleteIBCTransfer(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("complete-ibc-transfer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	transferID := flags.String("transfer-id", "", "transfer identifier")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*transferID) == "" {
+		return fmt.Errorf("missing transfer id")
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	transfer, err := a.CompleteIBCTransfer(*transferID)
 	if err != nil {
 		return err
 	}
