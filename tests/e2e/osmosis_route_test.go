@@ -363,9 +363,15 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 			} `json:"denom_trace"`
 		} `json:"receipts"`
 		Swaps []struct {
-			TransferID  string `json:"transfer_id"`
-			OutputDenom string `json:"output_denom"`
+			TransferID   string `json:"transfer_id"`
+			OutputDenom  string `json:"output_denom"`
+			OutputAmount string `json:"output_amount"`
 		} `json:"swaps"`
+		Balances []struct {
+			Address string `json:"address"`
+			Denom   string `json:"denom"`
+			Amount  string `json:"amount"`
+		} `json:"balances"`
 	}
 	readJSONFile(t, targetStatePath, &state)
 
@@ -386,6 +392,21 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	}
 	if state.Swaps[0].OutputDenom != "uosmo" {
 		t.Fatalf("expected output denom uosmo, got %q", state.Swaps[0].OutputDenom)
+	}
+	if state.Swaps[0].OutputAmount != "25000000" {
+		t.Fatalf("expected output amount 25000000, got %q", state.Swaps[0].OutputAmount)
+	}
+	if len(state.Balances) != 1 {
+		t.Fatalf("expected one balance record, got %d", len(state.Balances))
+	}
+	if state.Balances[0].Address != "osmo1recipient" {
+		t.Fatalf("expected balance address osmo1recipient, got %q", state.Balances[0].Address)
+	}
+	if state.Balances[0].Denom != "uosmo" {
+		t.Fatalf("expected balance denom uosmo, got %q", state.Balances[0].Denom)
+	}
+	if state.Balances[0].Amount != "25000000" {
+		t.Fatalf("expected balance amount 25000000, got %q", state.Balances[0].Amount)
 	}
 }
 

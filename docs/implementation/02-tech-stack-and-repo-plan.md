@@ -4,13 +4,14 @@ This document describes both the current technology choices already implemented 
 
 ## Current Checkpoint
 
-As of April 4, 2026, the repo has already implemented:
+As of April 5, 2026, the repo has already implemented:
 
 - the AegisLink persistent runtime and bridge-domain modules in Go
 - the Ethereum gateway and verifier contracts in Solidity with Foundry tests
 - the Go relayer pipeline with watchers, attestation collection, replay persistence, command-backed AegisLink integration, and RPC-backed Ethereum source and release paths
 - the `ibcrouter` routing module with runtime query and tx surfaces for initiation, completion, failure, timeout, and refund handling
 - a dedicated route-relayer plus mock target service for local routed-transfer handoff
+- packet-shaped route delivery, asynchronous acknowledgement handling, and destination-side receive state on the mock Osmosis target
 - route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed routed transfer record on AegisLink through that handoff
 
 The main things still pending in this stack are a fuller Cosmos node runtime and a live local IBC or Osmosis environment beyond the current local target harness.

@@ -89,15 +89,16 @@ Do not describe v1 as fully trustless or fully light-client verified.
 
 ## Current checkpoint
 
-As of April 4, 2026, AegisLink is a runtime-backed local bridge prototype with a live local Ethereum bridge loop and a route-relayer-driven Osmosis-style handoff, not just a design repo. The repository now includes:
+As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a live local Ethereum bridge loop and an Osmosis-style routed execution harness, not just a design repo. The repository now includes:
 
 - a persistent AegisLink runtime with `bridge`, `registry`, `limits`, `pauser`, and `ibcrouter` modules plus CLI query and tx surfaces
 - Ethereum gateway and verifier contracts with Foundry tests
 - a relayer pipeline with replay persistence, command-backed AegisLink integration, RPC-backed Ethereum deposit observation, and RPC-backed Ethereum release execution
 - end-to-end tests that prove the full local bridge loop from Ethereum deposit to Ethereum release
-- a dedicated `route-relayer` plus `mock-osmosis-target` service pair that drives routed transfers instead of completing them by hand in the main flow
+- a dedicated `route-relayer` plus `mock-osmosis-target` service pair that delivers packet-shaped routed transfers and resolves acknowledgements asynchronously
 - route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
 - a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
+- packet receipts, denom-trace-style metadata, recipient balances, and simple swap execution records on the local Osmosis-style target
 
 The current repo shape is:
 
@@ -112,4 +113,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The next active roadmap task is still inside `Task 9`: replace the current local HTTP route target with a fuller local IBC or Osmosis harness. A separate hardening track is still worth doing before public demos: moving AegisLink from a persistent runtime shell toward a fuller Cosmos node runtime.
+The next active roadmap task is still inside `Task 9`: replace the current local route target with a fuller local IBC or Osmosis harness. A separate hardening track is still worth doing before public demos: moving AegisLink from a persistent runtime shell toward a fuller Cosmos node runtime.

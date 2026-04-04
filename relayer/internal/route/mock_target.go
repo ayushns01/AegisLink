@@ -2,6 +2,8 @@ package route
 
 import (
 	"encoding/json"
+	"fmt"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,6 +33,7 @@ type MockTarget struct {
 type MockTargetState struct {
 	Receipts []MockTargetReceipt `json:"receipts"`
 	Swaps    []MockTargetSwap    `json:"swaps"`
+	Balances []MockTargetBalance `json:"balances"`
 }
 
 type MockTargetReceipt struct {
@@ -44,12 +47,19 @@ type MockTargetReceipt struct {
 }
 
 type MockTargetSwap struct {
-	TransferID  string `json:"transfer_id"`
-	InputDenom  string `json:"input_denom"`
-	OutputDenom string `json:"output_denom"`
-	InputAmount string `json:"input_amount"`
-	Recipient   string `json:"recipient"`
-	DexChainID  string `json:"dex_chain_id"`
+	TransferID   string `json:"transfer_id"`
+	InputDenom   string `json:"input_denom"`
+	OutputDenom  string `json:"output_denom"`
+	InputAmount  string `json:"input_amount"`
+	OutputAmount string `json:"output_amount"`
+	Recipient    string `json:"recipient"`
+	DexChainID   string `json:"dex_chain_id"`
+}
+
+type MockTargetBalance struct {
+	Address string `json:"address"`
+	Denom   string `json:"denom"`
+	Amount  string `json:"amount"`
 }
 
 func NewMockTargetHandler(mode string, statePath string, delay time.Duration) http.Handler {
@@ -90,15 +100,10 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 				Action:     envelope.Action,
 			}
 			t.state.Receipts = append(t.state.Receipts, receipt)
-			if envelope.Action != nil && envelope.Action.Type == "swap" {
-				t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
-					TransferID:  envelope.Transfer.TransferID,
-					InputDenom:  envelope.DenomTrace.IBCDenom,
-					OutputDenom: envelope.Action.TargetDenom,
-					InputAmount: envelope.Packet.Data.Amount,
-					Recipient:   envelope.Packet.Data.Receiver,
-					DexChainID:  envelope.Transfer.DestinationChainID,
-				})
+			if err := t.applyExecutionLocked(envelope); err != nil {
+				t.mu.Unlock()
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
 		}
 		if err := persistMockTargetState(t.statePath, t.state); err != nil {
@@ -210,6 +215,63 @@ func (t *MockTarget) findReceiptLocked(transferID string) (*MockTargetReceipt, b
 		}
 	}
 	return nil, false
+}
+
+func (t *MockTarget) applyExecutionLocked(envelope DeliveryEnvelope) error {
+	if envelope.Action != nil && envelope.Action.Type == "swap" {
+		outputAmount := strings.TrimSpace(envelope.Packet.Data.Amount)
+		t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
+			TransferID:   envelope.Transfer.TransferID,
+			InputDenom:   envelope.DenomTrace.IBCDenom,
+			OutputDenom:  envelope.Action.TargetDenom,
+			InputAmount:  strings.TrimSpace(envelope.Packet.Data.Amount),
+			OutputAmount: outputAmount,
+			Recipient:    envelope.Packet.Data.Receiver,
+			DexChainID:   envelope.Transfer.DestinationChainID,
+		})
+		return t.creditBalanceLocked(envelope.Packet.Data.Receiver, envelope.Action.TargetDenom, outputAmount)
+	}
+
+	return t.creditBalanceLocked(
+		envelope.Packet.Data.Receiver,
+		envelope.DenomTrace.IBCDenom,
+		strings.TrimSpace(envelope.Packet.Data.Amount),
+	)
+}
+
+func (t *MockTarget) creditBalanceLocked(address, denom, amount string) error {
+	amount = strings.TrimSpace(amount)
+	if amount == "" {
+		return nil
+	}
+	for i := range t.state.Balances {
+		if t.state.Balances[i].Address == strings.TrimSpace(address) && t.state.Balances[i].Denom == strings.TrimSpace(denom) {
+			next, err := addDecimalStrings(t.state.Balances[i].Amount, amount)
+			if err != nil {
+				return err
+			}
+			t.state.Balances[i].Amount = next
+			return nil
+		}
+	}
+	t.state.Balances = append(t.state.Balances, MockTargetBalance{
+		Address: strings.TrimSpace(address),
+		Denom:   strings.TrimSpace(denom),
+		Amount:  amount,
+	})
+	return nil
+}
+
+func addDecimalStrings(current, delta string) (string, error) {
+	currentInt, ok := new(big.Int).SetString(strings.TrimSpace(current), 10)
+	if !ok {
+		return "", fmt.Errorf("invalid balance amount %q", current)
+	}
+	deltaInt, ok := new(big.Int).SetString(strings.TrimSpace(delta), 10)
+	if !ok {
+		return "", fmt.Errorf("invalid credit amount %q", delta)
+	}
+	return new(big.Int).Add(currentInt, deltaInt).String(), nil
 }
 
 func ackStateForMode(mode MockTargetMode) string {

@@ -4,7 +4,7 @@ AegisLink is an Ethereum-to-Cosmos interoperability layer. Phase 1 builds a cust
 
 ## Current Checkpoint
 
-As of April 4, 2026, the repository has already completed the foundation through the route-relayer milestone:
+As of April 5, 2026, the repository has already completed the foundation through the latest route-execution milestone:
 
 - repo bootstrap and shared message model
 - chain safety modules for registry, limits, and pause control
@@ -15,9 +15,11 @@ As of April 4, 2026, the repository has already completed the foundation through
 - `ibcrouter` route management on the AegisLink side
 - runtime query and tx surfaces for route initiation, completion, failure, timeout, and refund
 - a dedicated `route-relayer` and `mock-osmosis-target` service pair for local routed-transfer handoff
+- packetized local route delivery with asynchronous acknowledgement handling
+- destination-side packet receipts, denom-trace-style metadata, recipient balances, and simple swap execution records on the mock Osmosis target
 - route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed Osmosis-style transfer record through that local target
 
-The next roadmap milestone stays inside `Phase 5: Route Assets To Osmosis`, but now the focus is deeper realism again: move from the current local HTTP route target into a fuller local IBC or Osmosis harness. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.
+The next roadmap milestone stays inside `Phase 5: Route Assets To Osmosis`, but now the focus is deeper realism again: move from the current local route target into a fuller local IBC or Osmosis harness. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.
 
 ## How The System Fits Together
 
