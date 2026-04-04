@@ -463,6 +463,63 @@ func TestRouteRelayerMarksTransferFailedWhenDestinationSwapMinOutIsNotMet(t *tes
 	}
 }
 
+func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	_, err = app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1altpool", 140, "swap:uion")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis-altpool.json")
+	target := startMockOsmosisTargetWithConfig(t, targetStatePath, "success", "", []string{
+		`AEGISLINK_MOCK_OSMOSIS_POOLS_JSON=[{"input_denom":"ibc/uatom-usdc","output_denom":"uion","reserve_in":"800000000","reserve_out":"400000000","fee_bps":0}]`,
+	})
+	defer target.cancel()
+
+	runRouteRelayerOnce(t, statePath, target.url)
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	var state struct {
+		Swaps []struct {
+			OutputDenom  string `json:"output_denom"`
+			OutputAmount string `json:"output_amount"`
+		} `json:"swaps"`
+		Balances []struct {
+			Denom  string `json:"denom"`
+			Amount string `json:"amount"`
+		} `json:"balances"`
+	}
+	readJSONFile(t, targetStatePath, &state)
+
+	if len(state.Swaps) != 1 {
+		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
+	}
+	if state.Swaps[0].OutputDenom != "uion" {
+		t.Fatalf("expected output denom uion, got %q", state.Swaps[0].OutputDenom)
+	}
+	if state.Swaps[0].OutputAmount != "12121212" {
+		t.Fatalf("expected output amount 12121212, got %q", state.Swaps[0].OutputAmount)
+	}
+	if len(state.Balances) != 1 {
+		t.Fatalf("expected one balance, got %d", len(state.Balances))
+	}
+	if state.Balances[0].Denom != "uion" {
+		t.Fatalf("expected uion balance, got %q", state.Balances[0].Denom)
+	}
+	if state.Balances[0].Amount != "12121212" {
+		t.Fatalf("expected amount 12121212, got %q", state.Balances[0].Amount)
+	}
+}
+
 func TestRouteRelayerCompletesTransferOnlyAfterManualAckResolution(t *testing.T) {
 	t.Parallel()
 
@@ -544,6 +601,10 @@ type mockOsmosisRuntime struct {
 }
 
 func startMockOsmosisTarget(t *testing.T, statePath, mode string) *mockOsmosisRuntime {
+	return startMockOsmosisTargetWithConfig(t, statePath, mode, "", nil)
+}
+
+func startMockOsmosisTargetWithConfig(t *testing.T, statePath, mode, delayMS string, extraEnv []string) *mockOsmosisRuntime {
 	t.Helper()
 
 	port := reservePort(t)
@@ -551,13 +612,18 @@ func startMockOsmosisTarget(t *testing.T, statePath, mode string) *mockOsmosisRu
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "go", "run", "./relayer/cmd/mock-osmosis-target")
 	cmd.Dir = repoRoot(t)
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"GOCACHE=/tmp/aegislink-e2e-go-cache/build",
 		"GOMODCACHE=/tmp/aegislink-e2e-go-cache/mod",
 		"AEGISLINK_MOCK_OSMOSIS_ADDR="+addr,
 		"AEGISLINK_MOCK_OSMOSIS_MODE="+mode,
 		"AEGISLINK_MOCK_OSMOSIS_STATE_PATH="+statePath,
 	)
+	if delayMS != "" {
+		env = append(env, "AEGISLINK_MOCK_OSMOSIS_DELAY_MS="+delayMS)
+	}
+	env = append(env, extraEnv...)
+	cmd.Env = env
 	if err := cmd.Start(); err != nil {
 		cancel()
 		t.Fatalf("start mock osmosis target: %v", err)

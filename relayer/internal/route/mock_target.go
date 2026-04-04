@@ -62,6 +62,7 @@ type MockTargetPool struct {
 	OutputDenom string `json:"output_denom"`
 	ReserveIn   string `json:"reserve_in"`
 	ReserveOut  string `json:"reserve_out"`
+	FeeBPS      uint32 `json:"fee_bps,omitempty"`
 }
 
 type MockTargetBalance struct {
@@ -70,15 +71,31 @@ type MockTargetBalance struct {
 	Amount  string `json:"amount"`
 }
 
+type MockTargetConfig struct {
+	Mode      string
+	Delay     time.Duration
+	StatePath string
+	Pools     []MockTargetPool
+}
+
 func NewMockTargetHandler(mode string, statePath string, delay time.Duration) http.Handler {
+	return NewMockTargetHandlerWithConfig(MockTargetConfig{
+		Mode:      mode,
+		Delay:     delay,
+		StatePath: statePath,
+	})
+}
+
+func NewMockTargetHandlerWithConfig(cfg MockTargetConfig) http.Handler {
 	target := &MockTarget{
-		mode:      normalizeMockTargetMode(mode),
-		delay:     delay,
-		statePath: strings.TrimSpace(statePath),
+		mode:      normalizeMockTargetMode(cfg.Mode),
+		delay:     cfg.Delay,
+		statePath: strings.TrimSpace(cfg.StatePath),
 		state: MockTargetState{
-			Pools: defaultMockTargetPools(),
+			Pools: cloneMockTargetPools(cfg.Pools),
 		},
 	}
+	target.ensurePoolsLocked()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/transfers", target.handleTransfers)
@@ -277,6 +294,15 @@ func defaultMockTargetPools() []MockTargetPool {
 	}
 }
 
+func cloneMockTargetPools(pools []MockTargetPool) []MockTargetPool {
+	if len(pools) == 0 {
+		return nil
+	}
+	cloned := make([]MockTargetPool, len(pools))
+	copy(cloned, pools)
+	return cloned
+}
+
 func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error) {
 	poolIndex := -1
 	for i := range t.state.Pools {
@@ -295,6 +321,15 @@ func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error
 	if err != nil {
 		return "", err
 	}
+	effectiveInput := new(big.Int).Set(inputAmount)
+	if pool.FeeBPS > 0 {
+		feeMultiplier := int64(10_000 - pool.FeeBPS)
+		effectiveInput = new(big.Int).Mul(effectiveInput, big.NewInt(feeMultiplier))
+		effectiveInput = effectiveInput.Div(effectiveInput, big.NewInt(10_000))
+		if effectiveInput.Sign() <= 0 {
+			return "", fmt.Errorf("effective input is zero after fee")
+		}
+	}
 	reserveIn, err := parsePositiveDecimal(pool.ReserveIn, "pool reserve in")
 	if err != nil {
 		return "", err
@@ -304,8 +339,8 @@ func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error
 		return "", err
 	}
 
-	numerator := new(big.Int).Mul(new(big.Int).Set(reserveOut), new(big.Int).Set(inputAmount))
-	denominator := new(big.Int).Add(new(big.Int).Set(reserveIn), new(big.Int).Set(inputAmount))
+	numerator := new(big.Int).Mul(new(big.Int).Set(reserveOut), new(big.Int).Set(effectiveInput))
+	denominator := new(big.Int).Add(new(big.Int).Set(reserveIn), new(big.Int).Set(effectiveInput))
 	if denominator.Sign() <= 0 {
 		return "", fmt.Errorf("invalid pool denominator")
 	}
@@ -323,7 +358,7 @@ func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error
 		}
 	}
 
-	t.state.Pools[poolIndex].ReserveIn = new(big.Int).Add(reserveIn, inputAmount).String()
+	t.state.Pools[poolIndex].ReserveIn = new(big.Int).Add(reserveIn, effectiveInput).String()
 	t.state.Pools[poolIndex].ReserveOut = new(big.Int).Sub(reserveOut, outputAmount).String()
 	return outputAmount.String(), nil
 }

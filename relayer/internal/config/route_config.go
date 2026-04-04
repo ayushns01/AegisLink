@@ -12,6 +12,7 @@ type RouteConfig struct {
 	MockTargetMode       string
 	MockTargetDelay      time.Duration
 	MockTargetStatePath  string
+	MockTargetPoolsJSON  string
 }
 
 func LoadRouteFromEnv() RouteConfig {
@@ -25,5 +26,6 @@ func LoadRouteFromEnv() RouteConfig {
 		MockTargetMode:       getString("AEGISLINK_MOCK_OSMOSIS_MODE", "success"),
 		MockTargetDelay:      time.Duration(getInt("AEGISLINK_MOCK_OSMOSIS_DELAY_MS", 0)) * time.Millisecond,
 		MockTargetStatePath:  getString("AEGISLINK_MOCK_OSMOSIS_STATE_PATH", ""),
+		MockTargetPoolsJSON:  getString("AEGISLINK_MOCK_OSMOSIS_POOLS_JSON", ""),
 	}
 }

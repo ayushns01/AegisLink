@@ -386,6 +386,173 @@ func TestMockTargetRejectsSwapWhenPoolHasNoOutputLiquidity(t *testing.T) {
 	}
 }
 
+func TestMockTargetUsesConfiguredFeeAwarePoolForSwap(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandlerWithConfig(MockTargetConfig{
+		Mode:      "manual",
+		StatePath: statePath,
+		Pools: []MockTargetPool{
+			{
+				InputDenom:  "ibc/uatom-usdc",
+				OutputDenom: "uosmo",
+				ReserveIn:   "500000000",
+				ReserveOut:  "1000000000",
+				FeeBPS:      100,
+			},
+		},
+	})
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/6",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1feeaware",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	var state struct {
+		Swaps []struct {
+			OutputAmount string `json:"output_amount"`
+		} `json:"swaps"`
+		Pools []struct {
+			ReserveIn  string `json:"reserve_in"`
+			ReserveOut string `json:"reserve_out"`
+			FeeBPS     uint32 `json:"fee_bps"`
+		} `json:"pools"`
+		Balances []struct {
+			Denom  string `json:"denom"`
+			Amount string `json:"amount"`
+		} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &state)
+
+	if len(state.Swaps) != 1 {
+		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
+	}
+	if state.Swaps[0].OutputAmount != "47165316" {
+		t.Fatalf("expected output amount 47165316, got %q", state.Swaps[0].OutputAmount)
+	}
+	if len(state.Pools) != 1 {
+		t.Fatalf("expected one pool, got %d", len(state.Pools))
+	}
+	if state.Pools[0].FeeBPS != 100 {
+		t.Fatalf("expected fee bps 100, got %d", state.Pools[0].FeeBPS)
+	}
+	if state.Pools[0].ReserveIn != "524750000" {
+		t.Fatalf("expected reserve in 524750000, got %q", state.Pools[0].ReserveIn)
+	}
+	if state.Pools[0].ReserveOut != "952834684" {
+		t.Fatalf("expected reserve out 952834684, got %q", state.Pools[0].ReserveOut)
+	}
+	if len(state.Balances) != 1 {
+		t.Fatalf("expected one balance, got %d", len(state.Balances))
+	}
+	if state.Balances[0].Denom != "uosmo" {
+		t.Fatalf("expected uosmo balance, got %q", state.Balances[0].Denom)
+	}
+	if state.Balances[0].Amount != "47165316" {
+		t.Fatalf("expected credited amount 47165316, got %q", state.Balances[0].Amount)
+	}
+}
+
+func TestMockTargetUsesConfiguredAlternatePoolForDifferentOutputDenom(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandlerWithConfig(MockTargetConfig{
+		Mode:      "manual",
+		StatePath: statePath,
+		Pools: []MockTargetPool{
+			{
+				InputDenom:  "ibc/uatom-usdc",
+				OutputDenom: "uion",
+				ReserveIn:   "800000000",
+				ReserveOut:  "400000000",
+				FeeBPS:      0,
+			},
+		},
+	})
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/7",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1altpool",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uion",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	var state struct {
+		Swaps []struct {
+			OutputDenom  string `json:"output_denom"`
+			OutputAmount string `json:"output_amount"`
+		} `json:"swaps"`
+		Balances []struct {
+			Address string `json:"address"`
+			Denom   string `json:"denom"`
+			Amount  string `json:"amount"`
+		} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &state)
+
+	if len(state.Swaps) != 1 {
+		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
+	}
+	if state.Swaps[0].OutputDenom != "uion" {
+		t.Fatalf("expected output denom uion, got %q", state.Swaps[0].OutputDenom)
+	}
+	if state.Swaps[0].OutputAmount != "12121212" {
+		t.Fatalf("expected output amount 12121212, got %q", state.Swaps[0].OutputAmount)
+	}
+	if len(state.Balances) != 1 {
+		t.Fatalf("expected one balance, got %d", len(state.Balances))
+	}
+	if state.Balances[0].Address != "osmo1altpool" {
+		t.Fatalf("expected altpool address, got %q", state.Balances[0].Address)
+	}
+	if state.Balances[0].Denom != "uion" {
+		t.Fatalf("expected uion balance, got %q", state.Balances[0].Denom)
+	}
+	if state.Balances[0].Amount != "12121212" {
+		t.Fatalf("expected credited amount 12121212, got %q", state.Balances[0].Amount)
+	}
+}
+
 func TestMockTargetCanResolveReadyAckAndMarkItConfirmed(t *testing.T) {
 	t.Parallel()
 

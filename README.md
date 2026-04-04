@@ -98,7 +98,7 @@ As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a
 - a dedicated `route-relayer` plus `mock-osmosis-target` service pair that delivers packet-shaped routed transfers and resolves acknowledgements asynchronously
 - route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
 - a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
-- packet receipts, denom-trace-style metadata, recipient balances, pool-backed swap execution records, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
+- packet receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
 
 The current repo shape is:
 

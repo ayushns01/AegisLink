@@ -16,7 +16,7 @@ As of April 5, 2026, the repository has already completed the foundation through
 - runtime query and tx surfaces for route initiation, completion, failure, timeout, and refund
 - a dedicated `route-relayer` and `mock-osmosis-target` service pair for local routed-transfer handoff
 - packetized local route delivery with asynchronous acknowledgement handling
-- destination-side packet receipts, denom-trace-style metadata, recipient balances, pool-backed swap execution records, and execution-driven failure handling on the mock Osmosis target
+- destination-side packet receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven failure handling on the mock Osmosis target
 - route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed Osmosis-style transfer record through that local target
 
 The next roadmap milestone stays inside `Phase 5: Route Assets To Osmosis`, but now the focus is deeper realism again: move from the current local route target into a fuller local IBC or Osmosis harness. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.

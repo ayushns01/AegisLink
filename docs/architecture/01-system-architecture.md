@@ -50,7 +50,7 @@ Current implementation note:
 - Assets move from bridge-zone denominations into Osmosis through a predefined IBC channel.
 - Osmosis receives them as standard IBC assets and can route them into swaps or liquidity pools.
 - In the current repository checkpoint, the route lifecycle is implemented and queryable through the AegisLink runtime CLI, and a separate local route-relayer can drive those transfers against a lightweight target service.
-- That target now persists packet receipts, denom-trace-style metadata, asynchronous acknowledgements, recipient balances, pool-backed swap execution records, and execution-driven acknowledgement failures derived from routed packets.
+- That target now persists packet receipts, denom-trace-style metadata, asynchronous acknowledgements, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven acknowledgement failures derived from routed packets.
 - The full live IBC channel or local Osmosis stack is still a later extension.
 
 ## Message Interfaces
@@ -179,7 +179,7 @@ For a recruiter-grade repository, keep the boundaries obvious. In the current re
 - `relayer/internal/pipeline/`: forward and reverse bridge orchestration.
 - `relayer/internal/route/`: pending-route polling, target delivery, and completion or failure handling for Osmosis-style transfers.
 - `relayer/cmd/route-relayer/`: local executable that drives route lifecycle transitions from pending to completed or recoverable states.
-- `relayer/cmd/mock-osmosis-target/`: lightweight local HTTP service used to simulate a downstream route target during e2e tests and devnet runs, including receive-side balances and swap records.
+- `relayer/cmd/mock-osmosis-target/`: lightweight local HTTP service used to simulate a downstream route target during e2e tests and devnet runs, including receive-side balances, configurable pools, and swap records.
 - `proto/`: shared message schemas and cross-component identifiers.
 - `docs/`: architecture, security, and implementation specs.
 - `tests/e2e/osmosis_route_test.go`: routed-flow proofs for local-target completion, timeout, and refund behavior.
