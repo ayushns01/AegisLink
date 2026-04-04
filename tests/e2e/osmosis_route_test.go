@@ -3,6 +3,8 @@ package e2e
 import (
 	"encoding/json"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
@@ -269,6 +271,53 @@ func TestOsmosisRouteRuntimeCanCompleteTransferThroughCLI(t *testing.T) {
 	}
 }
 
+func TestRouteRelayerCompletesPendingTransferAgainstLocalTarget(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST request, got %s", r.Method)
+		}
+		if r.URL.Path != "/transfers" {
+			t.Fatalf("expected /transfers path, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "completed",
+		})
+	}))
+	defer target.Close()
+
+	runRouteRelayerOnce(t, statePath, target.URL)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, transfers[0].TransferID)
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusCompleted {
+		t.Fatalf("expected completed transfer, got %q", transfers[0].Status)
+	}
+}
+
 func TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer(t *testing.T) {
 	t.Parallel()
 
@@ -332,32 +381,20 @@ func TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer(t *testing.T) {
 		t.Fatalf("expected pending transfer, got %q", initiated.Status)
 	}
 
-	completeOutput := runGoCommand(
-		t,
-		repoRoot(t),
-		nil,
-		"run",
-		"./chain/aegislink/cmd/aegislinkd",
-		"tx",
-		"complete-ibc-transfer",
-		"--state-path",
-		statePath,
-		"--transfer-id",
-		initiated.TransferID,
-	)
-	var completed struct {
-		TransferID string `json:"transfer_id"`
-		Status     string `json:"status"`
-	}
-	if err := json.Unmarshal([]byte(completeOutput), &completed); err != nil {
-		t.Fatalf("decode complete output: %v\n%s", err, completeOutput)
-	}
-	if completed.TransferID != initiated.TransferID {
-		t.Fatalf("expected transfer id %q, got %q", initiated.TransferID, completed.TransferID)
-	}
-	if completed.Status != "completed" {
-		t.Fatalf("expected completed transfer, got %q", completed.Status)
-	}
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST request, got %s", r.Method)
+		}
+		if r.URL.Path != "/transfers" {
+			t.Fatalf("expected /transfers path, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "completed",
+		})
+	}))
+	defer target.Close()
+
+	runRouteRelayerOnce(t, statePath, target.URL)
 
 	queryOutput := runGoCommand(
 		t,

@@ -10,9 +10,10 @@ As of April 4, 2026, the repo has already implemented:
 - the Ethereum gateway and verifier contracts in Solidity with Foundry tests
 - the Go relayer pipeline with watchers, attestation collection, replay persistence, command-backed AegisLink integration, and RPC-backed Ethereum source and release paths
 - the `ibcrouter` routing module with runtime query and tx surfaces for initiation, completion, failure, timeout, and refund handling
-- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed routed transfer record on AegisLink
+- a dedicated route-relayer plus mock target service for local routed-transfer handoff
+- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed routed transfer record on AegisLink through that handoff
 
-The main things still pending in this stack are a fuller Cosmos node runtime and a live local IBC or Osmosis environment beyond the current runtime-controlled route lifecycle.
+The main things still pending in this stack are a fuller Cosmos node runtime and a live local IBC or Osmosis environment beyond the current local target harness.
 
 ## Recommended Stack
 
@@ -49,6 +50,7 @@ Why this stack:
 - Language: Go
 - Current runtime: hybrid local runtime with RPC-backed Ethereum observation and release execution, command-backed AegisLink integration, and standard-library JSON fallbacks for fixture-driven paths
 - Current config: environment-variable loader in Go
+- Current route handoff: a dedicated Go route-relayer plus a lightweight HTTP target used to drive routed transfers during local dev and e2e tests
 - Planned upgrade: `go-ethereum` for richer Ethereum client ergonomics beyond the current stdlib JSON-RPC path
 - Planned upgrade: Cosmos client libraries or a fuller node interface for submitting bridge transactions directly into the chain
 - Planned upgrade: richer config loading once the runtime moves beyond local fixtures
@@ -58,6 +60,7 @@ Why this stack:
 - Keeping the relayer in Go avoids a second systems language.
 - A single language reduces onboarding cost for an early-stage bridge project.
 - The current hybrid runtime makes the bridge locally executable today while preserving fallback adapters for targeted tests.
+- The route-relayer keeps outbound routing as a separate service boundary, which is closer to how a fuller IBC or downstream integration will eventually look.
 
 ### Local development and ops
 
@@ -80,6 +83,7 @@ The current checkpoint is already past the first local integration target:
 - the relayer can observe live Ethereum deposits and execute live Ethereum releases against Anvil
 - the contracts, runtime logic, relayer, and e2e loop all have passing test suites
 - the route lifecycle to an Osmosis-style destination is now implemented on the AegisLink runtime side
+- a local route-relayer and mock target can drive routed-transfer completion and recovery
 - the next milestones are fuller Cosmos runtime realism and a live local IBC or Osmosis routing environment
 
 Recommended developer workflow:
@@ -118,12 +122,16 @@ Expected top-level structure:
 - `contracts/ethereum/test/BridgeGateway.t.sol`
 - `contracts/ethereum/script/Deploy.s.sol`
 - `relayer/cmd/bridge-relayer/main.go`
+- `relayer/cmd/route-relayer/main.go`
+- `relayer/cmd/mock-osmosis-target/main.go`
 - `relayer/internal/attestations/collector.go`
 - `relayer/internal/attestations/collector_test.go`
 - `relayer/internal/attestations/file_source.go`
 - `relayer/internal/attestations/file_source_test.go`
 - `relayer/internal/config/config.go`
 - `relayer/internal/config/config_test.go`
+- `relayer/internal/config/route_config.go`
+- `relayer/internal/config/route_config_test.go`
 - `relayer/internal/evm/client.go`
 - `relayer/internal/evm/client_test.go`
 - `relayer/internal/evm/watcher.go`
@@ -140,6 +148,13 @@ Expected top-level structure:
 - `relayer/internal/replay/store_test.go`
 - `relayer/internal/pipeline/pipeline.go`
 - `relayer/internal/pipeline/pipeline_test.go`
+- `relayer/internal/route/relay.go`
+- `relayer/internal/route/relay_test.go`
+- `relayer/internal/route/command_runtime.go`
+- `relayer/internal/route/command_runtime_test.go`
+- `relayer/internal/route/http_target.go`
+- `relayer/internal/route/http_target_test.go`
+- `relayer/internal/route/mock_target.go`
 - `tests/e2e/bridge_roundtrip_test.go`
 - `tests/e2e/localnet_test.go`
 - `README.md`
@@ -180,7 +195,7 @@ Use a layered test stack so each failure mode is caught at the cheapest level po
 ### End-to-end tests
 
 - A full localnet that moves an asset from Ethereum to the bridge zone and back again.
-- A second scenario that routes a supported asset from the bridge zone into the AegisLink-controlled Osmosis-style transfer lifecycle today, and later into a fuller IBC or Osmosis environment.
+- A second scenario that routes a supported asset from the bridge zone into the AegisLink-controlled Osmosis-style transfer lifecycle today, then through a route-relayer into a local target, and later into a fuller IBC or Osmosis environment.
 - These should run in CI on a slower schedule or before release.
 
 ### Security tests
@@ -207,5 +222,5 @@ The first milestone should prove one narrow happy path end to end before adding 
 
 Current progress against that order:
 
-- completed: steps 1 through 6 and the first routing slices of step 7
+- completed: steps 1 through 6 and the route-relayer-driven local slices of step 7
 - next: deepen step 7 into a fuller local IBC or Osmosis harness, with fuller Cosmos runtime realism as a valuable parallel hardening track

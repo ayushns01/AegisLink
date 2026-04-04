@@ -36,3 +36,33 @@ services:
       - anvil
       - aegislinkd
     profiles: ["devnet"]
+
+  mock-osmosis-target:
+    image: golang:1.23
+    working_dir: /workspace
+    command: ["go", "run", "./relayer/cmd/mock-osmosis-target"]
+    environment:
+      AEGISLINK_MOCK_OSMOSIS_ADDR: ":9191"
+      AEGISLINK_MOCK_OSMOSIS_MODE: "success"
+      AEGISLINK_MOCK_OSMOSIS_STATE_PATH: /workspace/.local/e2e/mock-osmosis.json
+    volumes:
+      - .:/workspace
+    ports:
+      - "9191:9191"
+    profiles: ["devnet"]
+
+  route-relayer:
+    image: golang:1.23
+    working_dir: /workspace
+    command: ["go", "run", "./relayer/cmd/route-relayer"]
+    environment:
+      AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD: go
+      AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD_ARGS: run ./chain/aegislink/cmd/aegislinkd
+      AEGISLINK_ROUTE_RELAYER_AEGISLINK_STATE_PATH: /workspace/.local/e2e/aegislink-state.json
+      AEGISLINK_ROUTE_RELAYER_TARGET_URL: http://mock-osmosis-target:9191
+      AEGISLINK_ROUTE_RELAYER_TARGET_TIMEOUT_MS: "1000"
+    volumes:
+      - .:/workspace
+    depends_on:
+      - mock-osmosis-target
+    profiles: ["devnet"]

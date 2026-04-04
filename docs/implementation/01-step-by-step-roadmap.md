@@ -4,7 +4,7 @@ AegisLink is an Ethereum-to-Cosmos interoperability layer. Phase 1 builds a cust
 
 ## Current Checkpoint
 
-As of April 4, 2026, the repository has already completed the foundation through the first routed-flow milestone:
+As of April 4, 2026, the repository has already completed the foundation through the route-relayer milestone:
 
 - repo bootstrap and shared message model
 - chain safety modules for registry, limits, and pause control
@@ -14,9 +14,10 @@ As of April 4, 2026, the repository has already completed the foundation through
 - end-to-end proof of deposit, mint, burn, and release across the local bridge loop
 - `ibcrouter` route management on the AegisLink side
 - runtime query and tx surfaces for route initiation, completion, failure, timeout, and refund
-- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed Osmosis-style transfer record
+- a dedicated `route-relayer` and `mock-osmosis-target` service pair for local routed-transfer handoff
+- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed Osmosis-style transfer record through that local target
 
-The next roadmap milestone stays inside `Phase 5: Route Assets To Osmosis`, but now the focus is deeper realism: move from runtime-controlled route state into a fuller local IBC or Osmosis harness. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.
+The next roadmap milestone stays inside `Phase 5: Route Assets To Osmosis`, but now the focus is deeper realism again: move from the current local HTTP route target into a fuller local IBC or Osmosis harness. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.
 
 ## How The System Fits Together
 
@@ -187,8 +188,9 @@ Only after the bridge zone is stable should assets be routed further through IBC
 Current status:
 
 - implemented: route allowlist, pending and completed route state, acknowledgement-failure state, timeout state, refund state, and CLI query or tx handling for those transitions
+- implemented: a dedicated route-relayer and mock target that drive route completion or recovery instead of the main flow completing routes by hand
 - implemented: local routed-flow proof from live Ethereum deposit to completed AegisLink-side Osmosis-style transfer record
-- still pending: a fuller local IBC channel or Osmosis node path instead of the current runtime-controlled route lifecycle
+- still pending: a fuller local IBC channel or Osmosis node path instead of the current local target harness
 
 Milestone 9: IBC plumbing
 

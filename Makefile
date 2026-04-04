@@ -1,4 +1,4 @@
-.PHONY: format test test-e2e devnet
+.PHONY: format test test-e2e test-route-e2e devnet compose-devnet
 
 GO_TEST_ENV = GOCACHE=/tmp/aegislink-gocache GOMODCACHE=/tmp/aegislink-gomodcache
 
@@ -13,8 +13,16 @@ test:
 test-e2e:
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./...
 
+test-route-e2e:
+	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestOsmosisRoute|TestRouteRelayer|TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer'
+
 devnet:
 	@echo "AegisLink shell:"
 	@$(GO_TEST_ENV) go run ./chain/aegislink/cmd/aegislinkd
 	@echo "Deterministic inbound proof:"
 	@$(MAKE) test-e2e
+	@echo "Route-focused proof:"
+	@$(MAKE) test-route-e2e
+
+compose-devnet:
+	@docker compose --profile devnet up

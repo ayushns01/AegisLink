@@ -529,6 +529,20 @@ func runRelayerOnceAgainstRuntimeAndRPC(t *testing.T, fixtures fixturePaths, sta
 	_ = runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/bridge-relayer")
 }
 
+func runRouteRelayerOnce(t *testing.T, statePath, targetURL string) {
+	t.Helper()
+
+	env := map[string]string{
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD":        "go",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD_ARGS":   "run ./chain/aegislink/cmd/aegislinkd",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_STATE_PATH": statePath,
+		"AEGISLINK_ROUTE_RELAYER_TARGET_URL":           targetURL,
+		"AEGISLINK_ROUTE_RELAYER_TARGET_TIMEOUT_MS":    "1000",
+	}
+
+	_ = runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/route-relayer")
+}
+
 func loadCosmosOutbox(t *testing.T, path string) []persistedClaimSubmission {
 	t.Helper()
 

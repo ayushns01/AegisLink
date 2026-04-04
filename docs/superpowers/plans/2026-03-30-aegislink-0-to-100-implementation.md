@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Cosmos SDK, CometBFT, IBC-Go, Protobuf, buf, Solidity, Foundry, OpenZeppelin, Docker Compose, Anvil, GitHub Actions.
 
-**Current checkpoint:** As of April 4, 2026, Tasks 1 through 8 and the first Task 9 routing slices have been implemented in the repository. That includes the persistent AegisLink runtime, live Ethereum RPC deposit observation, live Ethereum release execution in the local end-to-end loop, the `ibcrouter` module, route CLI surfaces, and routed-flow proofs through completed, failed, timed-out, and refunded transfer states. The next active roadmap target is still Task 9, but the remaining work is to deepen the route milestone into a fuller local IBC or Osmosis environment while fuller Cosmos node realism remains a worthwhile hardening track.
+**Current checkpoint:** As of April 4, 2026, Tasks 1 through 8 and the next Task 9 routing slices have been implemented in the repository. That includes the persistent AegisLink runtime, live Ethereum RPC deposit observation, live Ethereum release execution in the local end-to-end loop, the `ibcrouter` module, route CLI surfaces, a dedicated `route-relayer`, a lightweight `mock-osmosis-target`, and routed-flow proofs through completed, failed, timed-out, and refunded transfer states. The next active roadmap target is still Task 9, but the remaining work is to deepen the route milestone into a fuller local IBC or Osmosis environment while fuller Cosmos node realism remains a worthwhile hardening track.
 
 ---
 
@@ -633,7 +633,7 @@ Expected: AegisLink is now a real bridge loop, not a one-way path.
 
 **What success proves:** assets that are safe on AegisLink can move onward to Osmosis through a controlled and recoverable IBC route, and ack or timeout failures remain observable and recoverable.
 
-**Current status note:** the repository already has the first Task 9 slices implemented. `ibcrouter` exists, route queries and tx surfaces are wired into `aegislinkd`, failure or timeout recovery is queryable, and the e2e suite now proves a live Ethereum deposit can become a completed routed transfer record on AegisLink. The main remaining gap is a fuller local IBC or Osmosis environment instead of today’s runtime-controlled route lifecycle.
+**Current status note:** the repository already has the first deeper Task 9 slices implemented. `ibcrouter` exists, route queries and tx surfaces are wired into `aegislinkd`, failure or timeout recovery is queryable, a dedicated route-relayer can hand pending transfers to a local target, and the e2e suite now proves a live Ethereum deposit can become a completed routed transfer record on AegisLink through that local target. The main remaining gap is a fuller local IBC or Osmosis environment instead of today’s lightweight route-target harness.
 
 - [ ] **Step 1: Write failing routing tests**
 

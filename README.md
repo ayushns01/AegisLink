@@ -89,20 +89,21 @@ Do not describe v1 as fully trustless or fully light-client verified.
 
 ## Current checkpoint
 
-As of April 4, 2026, AegisLink is a runtime-backed local bridge prototype with the first real Osmosis-routing slice, not just a design repo. The repository now includes:
+As of April 4, 2026, AegisLink is a runtime-backed local bridge prototype with a live local Ethereum bridge loop and a route-relayer-driven Osmosis-style handoff, not just a design repo. The repository now includes:
 
 - a persistent AegisLink runtime with `bridge`, `registry`, `limits`, `pauser`, and `ibcrouter` modules plus CLI query and tx surfaces
 - Ethereum gateway and verifier contracts with Foundry tests
 - a relayer pipeline with replay persistence, command-backed AegisLink integration, RPC-backed Ethereum deposit observation, and RPC-backed Ethereum release execution
 - end-to-end tests that prove the full local bridge loop from Ethereum deposit to Ethereum release
+- a dedicated `route-relayer` plus `mock-osmosis-target` service pair that drives routed transfers instead of completing them by hand in the main flow
 - route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
-- a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, and ends in a completed transfer record on the AegisLink side
+- a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
 
 The current repo shape is:
 
 - [chain/aegislink](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink): persistent runtime, bridge state machine, safety modules, and route lifecycle handling
 - [contracts/ethereum](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum): Ethereum event source and release verification contracts
-- [relayer](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer): observation, attestation, replay, and live forward or reverse bridge pipeline
+- [relayer](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer): observation, attestation, replay, live forward or reverse bridge pipeline, and route-target handoff services
 
 Fresh verification checkpoints that already pass in this repo:
 
@@ -111,4 +112,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The next active roadmap task is still inside `Task 9`: deepen the route milestone from runtime-controlled routing into a fuller local IBC or Osmosis harness. A separate hardening track is still worth doing before public demos: moving AegisLink from a persistent runtime shell toward a fuller Cosmos node runtime.
+The next active roadmap task is still inside `Task 9`: replace the current local HTTP route target with a fuller local IBC or Osmosis harness. A separate hardening track is still worth doing before public demos: moving AegisLink from a persistent runtime shell toward a fuller Cosmos node runtime.
