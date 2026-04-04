@@ -16,6 +16,7 @@ const (
 	MockTargetModeSuccess MockTargetMode = "success"
 	MockTargetModeFail    MockTargetMode = "fail"
 	MockTargetModeTimeout MockTargetMode = "timeout"
+	MockTargetModeManual  MockTargetMode = "manual"
 )
 
 type MockTarget struct {
@@ -34,6 +35,9 @@ type MockTargetState struct {
 
 type MockTargetReceipt struct {
 	TransferID string       `json:"transfer_id"`
+	AckState   string       `json:"ack_state"`
+	AckReason  string       `json:"ack_reason,omitempty"`
+	AckRelayed bool         `json:"ack_relayed"`
 	Packet     Packet       `json:"packet"`
 	DenomTrace DenomTrace   `json:"denom_trace"`
 	Action     *RouteAction `json:"action,omitempty"`
@@ -57,6 +61,8 @@ func NewMockTargetHandler(mode string, statePath string, delay time.Duration) ht
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/transfers", target.handleTransfers)
+	mux.HandleFunc("/acks", target.handleAcks)
+	mux.HandleFunc("/acks/", target.handleAckControl)
 	return mux
 }
 
@@ -72,24 +78,28 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		receipt := MockTargetReceipt{
-			TransferID: envelope.Transfer.TransferID,
-			Packet:     envelope.Packet,
-			DenomTrace: envelope.DenomTrace,
-			Action:     envelope.Action,
-		}
 
 		t.mu.Lock()
-		t.state.Receipts = append(t.state.Receipts, receipt)
-		if envelope.Action != nil && envelope.Action.Type == "swap" {
-			t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
-				TransferID:  envelope.Transfer.TransferID,
-				InputDenom:  envelope.DenomTrace.IBCDenom,
-				OutputDenom: envelope.Action.TargetDenom,
-				InputAmount: envelope.Packet.Data.Amount,
-				Recipient:   envelope.Packet.Data.Receiver,
-				DexChainID:  envelope.Transfer.DestinationChainID,
-			})
+		if _, exists := t.findReceiptLocked(envelope.Transfer.TransferID); !exists {
+			receipt := MockTargetReceipt{
+				TransferID: envelope.Transfer.TransferID,
+				AckState:   ackStateForMode(t.mode),
+				AckReason:  ackReasonForMode(t.mode),
+				Packet:     envelope.Packet,
+				DenomTrace: envelope.DenomTrace,
+				Action:     envelope.Action,
+			}
+			t.state.Receipts = append(t.state.Receipts, receipt)
+			if envelope.Action != nil && envelope.Action.Type == "swap" {
+				t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
+					TransferID:  envelope.Transfer.TransferID,
+					InputDenom:  envelope.DenomTrace.IBCDenom,
+					OutputDenom: envelope.Action.TargetDenom,
+					InputAmount: envelope.Packet.Data.Amount,
+					Recipient:   envelope.Packet.Data.Receiver,
+					DexChainID:  envelope.Transfer.DestinationChainID,
+				})
+			}
 		}
 		if err := persistMockTargetState(t.statePath, t.state); err != nil {
 			t.mu.Unlock()
@@ -106,23 +116,78 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		switch t.mode {
-		case MockTargetModeFail:
-			_ = json.NewEncoder(w).Encode(Ack{
-				Status: AckStatusFailed,
-				Reason: "mock ack failed",
-			})
-		case MockTargetModeTimeout:
-			select {
-			case <-r.Context().Done():
-			case <-time.After(5 * time.Second):
-			}
-		default:
-			_ = json.NewEncoder(w).Encode(Ack{Status: AckStatusCompleted})
-		}
+		_ = json.NewEncoder(w).Encode(Ack{Status: AckStatusReceived})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (t *MockTarget) handleAcks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	acks := make([]AckRecord, 0, len(t.state.Receipts))
+	for _, receipt := range t.state.Receipts {
+		if !ackStateReady(receipt.AckState) || receipt.AckRelayed {
+			continue
+		}
+		acks = append(acks, AckRecord{
+			TransferID: receipt.TransferID,
+			Status:     AckStatus(receipt.AckState),
+			Reason:     receipt.AckReason,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(acks)
+}
+
+func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	action := strings.TrimPrefix(r.URL.Path, "/acks/")
+	transferID := strings.TrimSpace(r.URL.Query().Get("transfer_id"))
+	if transferID == "" {
+		http.Error(w, "missing transfer_id", http.StatusBadRequest)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	receipt, ok := t.findReceiptLocked(transferID)
+	if !ok {
+		http.Error(w, "receipt not found", http.StatusNotFound)
+		return
+	}
+
+	switch {
+	case action == "confirm":
+		receipt.AckRelayed = true
+	case action == "complete":
+		receipt.AckState = string(AckStatusCompleted)
+		receipt.AckReason = ""
+	case action == "fail":
+		receipt.AckState = string(AckStatusFailed)
+		receipt.AckReason = "mock ack failed"
+	case action == "timeout":
+		receipt.AckState = string(AckStatusTimedOut)
+		receipt.AckReason = "mock timeout"
+	default:
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := persistMockTargetState(t.statePath, t.state); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(receipt)
 }
 
 func normalizeMockTargetMode(mode string) MockTargetMode {
@@ -131,8 +196,52 @@ func normalizeMockTargetMode(mode string) MockTargetMode {
 		return MockTargetModeFail
 	case MockTargetModeTimeout:
 		return MockTargetModeTimeout
+	case MockTargetModeManual:
+		return MockTargetModeManual
 	default:
 		return MockTargetModeSuccess
+	}
+}
+
+func (t *MockTarget) findReceiptLocked(transferID string) (*MockTargetReceipt, bool) {
+	for i := range t.state.Receipts {
+		if t.state.Receipts[i].TransferID == strings.TrimSpace(transferID) {
+			return &t.state.Receipts[i], true
+		}
+	}
+	return nil, false
+}
+
+func ackStateForMode(mode MockTargetMode) string {
+	switch mode {
+	case MockTargetModeSuccess:
+		return string(AckStatusCompleted)
+	case MockTargetModeFail:
+		return string(AckStatusFailed)
+	case MockTargetModeTimeout:
+		return string(AckStatusTimedOut)
+	default:
+		return "pending"
+	}
+}
+
+func ackReasonForMode(mode MockTargetMode) string {
+	switch mode {
+	case MockTargetModeFail:
+		return "mock ack failed"
+	case MockTargetModeTimeout:
+		return "mock timeout"
+	default:
+		return ""
+	}
+}
+
+func ackStateReady(state string) bool {
+	switch strings.TrimSpace(state) {
+	case string(AckStatusCompleted), string(AckStatusFailed), string(AckStatusTimedOut):
+		return true
+	default:
+		return false
 	}
 }
 

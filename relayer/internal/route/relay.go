@@ -2,7 +2,6 @@ package route
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -62,13 +61,21 @@ const routePacketSender = "aegislink1ibcrouter"
 type AckStatus string
 
 const (
+	AckStatusReceived  AckStatus = "received"
 	AckStatusCompleted AckStatus = "completed"
 	AckStatusFailed    AckStatus = "ack_failed"
+	AckStatusTimedOut  AckStatus = "timed_out"
 )
 
 type Ack struct {
 	Status AckStatus `json:"status"`
 	Reason string    `json:"reason,omitempty"`
+}
+
+type AckRecord struct {
+	TransferID string    `json:"transfer_id"`
+	Status     AckStatus `json:"status"`
+	Reason     string    `json:"reason,omitempty"`
 }
 
 type PendingTransferSource interface {
@@ -83,6 +90,8 @@ type AckSink interface {
 
 type Target interface {
 	SubmitTransfer(context.Context, Transfer) (Ack, error)
+	ReadyAcks(context.Context) ([]AckRecord, error)
+	ConfirmAck(context.Context, string) error
 }
 
 type Relayer struct {
@@ -100,6 +109,20 @@ func NewRelayer(source PendingTransferSource, sink AckSink, target Target) *Rela
 }
 
 func (r *Relayer) RunOnce(ctx context.Context) error {
+	readyAcks, err := r.target.ReadyAcks(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, ack := range readyAcks {
+		if err := r.applyAck(ctx, ack.TransferID, Ack{Status: ack.Status, Reason: ack.Reason}); err != nil {
+			return err
+		}
+		if err := r.target.ConfirmAck(ctx, ack.TransferID); err != nil {
+			return err
+		}
+	}
+
 	transfers, err := r.source.PendingTransfers(ctx)
 	if err != nil {
 		return err
@@ -108,31 +131,30 @@ func (r *Relayer) RunOnce(ctx context.Context) error {
 	for _, transfer := range transfers {
 		ack, err := r.target.SubmitTransfer(ctx, transfer)
 		if err != nil {
-			var timeout TimeoutError
-			if errors.As(err, &timeout) {
-				if err := r.sink.TimeoutTransfer(ctx, transfer.TransferID); err != nil {
-					return err
-				}
-				continue
-			}
 			return err
 		}
-
-		switch ack.Status {
-		case AckStatusCompleted:
-			if err := r.sink.CompleteTransfer(ctx, transfer.TransferID); err != nil {
-				return err
-			}
-		case AckStatusFailed:
-			if err := r.sink.FailTransfer(ctx, transfer.TransferID, ack.Reason); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unexpected ack status %q", ack.Status)
+		if ack.Status == "" || ack.Status == AckStatusReceived {
+			continue
+		}
+		if err := r.applyAck(ctx, transfer.TransferID, ack); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func (r *Relayer) applyAck(ctx context.Context, transferID string, ack Ack) error {
+	switch ack.Status {
+	case AckStatusCompleted:
+		return r.sink.CompleteTransfer(ctx, transferID)
+	case AckStatusFailed:
+		return r.sink.FailTransfer(ctx, transferID, ack.Reason)
+	case AckStatusTimedOut:
+		return r.sink.TimeoutTransfer(ctx, transferID)
+	default:
+		return fmt.Errorf("unexpected ack status %q", ack.Status)
+	}
 }
 
 func buildDeliveryEnvelope(transfer Transfer) (DeliveryEnvelope, error) {

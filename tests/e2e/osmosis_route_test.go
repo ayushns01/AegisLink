@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -293,26 +293,30 @@ func TestRouteRelayerCompletesPendingTransferAgainstLocalTarget(t *testing.T) {
 		t.Fatalf("save state: %v", err)
 	}
 
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST request, got %s", r.Method)
-		}
-		if r.URL.Path != "/transfers" {
-			t.Fatalf("expected /transfers path, got %s", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "completed",
-		})
-	}))
-	defer target.Close()
+	target := startMockOsmosisTarget(t, filepath.Join(t.TempDir(), "mock-osmosis-success.json"), "success")
+	defer target.cancel()
 
-	runRouteRelayerOnce(t, statePath, target.URL)
+	runRouteRelayerOnce(t, statePath, target.url)
 
 	loaded, err := aegisapp.Load(statePath)
 	if err != nil {
-		t.Fatalf("reload state: %v", err)
+		t.Fatalf("reload state after first run: %v", err)
 	}
 	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
+		t.Fatalf("expected transfer to remain pending until ack pickup, got %q", transfers[0].Status)
+	}
+
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	loaded, err = aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers = loaded.IBCRouterKeeper.ExportTransfers()
 	if len(transfers) != 1 {
 		t.Fatalf("expected one transfer, got %d", len(transfers))
 	}
@@ -382,6 +386,67 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	}
 	if state.Swaps[0].OutputDenom != "uosmo" {
 		t.Fatalf("expected output denom uosmo, got %q", state.Swaps[0].OutputDenom)
+	}
+}
+
+func TestRouteRelayerCompletesTransferOnlyAfterManualAckResolution(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis-manual.json")
+	target := startMockOsmosisTarget(t, targetStatePath, "manual")
+	defer target.cancel()
+
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state after delivery: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 || transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
+		t.Fatalf("expected pending transfer after delivery, got %+v", transfers)
+	}
+
+	resolveMockOsmosisAck(t, target.url, transfer.TransferID, "complete")
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	loaded, err = aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state after ack resolution: %v", err)
+	}
+	transfers = loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusCompleted {
+		t.Fatalf("expected completed transfer after later ack, got %q", transfers[0].Status)
+	}
+
+	var state struct {
+		Receipts []struct {
+			TransferID string `json:"transfer_id"`
+			AckRelayed bool   `json:"ack_relayed"`
+		} `json:"receipts"`
+	}
+	readJSONFile(t, targetStatePath, &state)
+	if len(state.Receipts) != 1 {
+		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	}
+	if !state.Receipts[0].AckRelayed {
+		t.Fatal("expected ack to be marked relayed after second run")
 	}
 }
 
@@ -455,6 +520,23 @@ func waitForHTTP(t *testing.T, url string) {
 	t.Fatalf("http endpoint %s did not become ready", url)
 }
 
+func resolveMockOsmosisAck(t *testing.T, baseURL, transferID, action string) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/acks/"+action+"?transfer_id="+url.QueryEscape(transferID), nil)
+	if err != nil {
+		t.Fatalf("build ack resolve request: %v", err)
+	}
+	resp, err := (&http.Client{Timeout: time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("resolve mock ack: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from ack resolution, got %d", resp.StatusCode)
+	}
+}
+
 func mustFormatPort(port int) string {
 	return strconv.Itoa(port)
 }
@@ -522,20 +604,12 @@ func TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer(t *testing.T) {
 		t.Fatalf("expected pending transfer, got %q", initiated.Status)
 	}
 
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST request, got %s", r.Method)
-		}
-		if r.URL.Path != "/transfers" {
-			t.Fatalf("expected /transfers path, got %s", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "completed",
-		})
-	}))
-	defer target.Close()
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis-success.json")
+	target := startMockOsmosisTarget(t, targetStatePath, "success")
+	defer target.cancel()
 
-	runRouteRelayerOnce(t, statePath, target.URL)
+	runRouteRelayerOnce(t, statePath, target.url)
+	runRouteRelayerOnce(t, statePath, target.url)
 
 	queryOutput := runGoCommand(
 		t,

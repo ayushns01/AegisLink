@@ -14,7 +14,7 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	t.Parallel()
 
 	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
-	handler := NewMockTargetHandler("success", statePath, 0)
+	handler := NewMockTargetHandler("manual", statePath, 0)
 	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			recorder := httptest.NewRecorder()
@@ -36,13 +36,23 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit transfer: %v", err)
 	}
-	if ack.Status != AckStatusCompleted {
-		t.Fatalf("expected completed ack, got %q", ack.Status)
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks before resolution: %v", err)
+	}
+	if len(acks) != 0 {
+		t.Fatalf("expected no ready acks before resolution, got %d", len(acks))
 	}
 
 	var state struct {
 		Receipts []struct {
 			TransferID string `json:"transfer_id"`
+			AckState   string `json:"ack_state"`
+			AckRelayed bool   `json:"ack_relayed"`
 			Packet     struct {
 				Sequence uint64 `json:"sequence"`
 				Data     struct {
@@ -80,6 +90,12 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	if receipt.TransferID != "ibc/eth.usdc/1" {
 		t.Fatalf("expected transfer id ibc/eth.usdc/1, got %q", receipt.TransferID)
 	}
+	if receipt.AckState != "pending" {
+		t.Fatalf("expected pending ack state, got %q", receipt.AckState)
+	}
+	if receipt.AckRelayed {
+		t.Fatal("expected ack to be unrelayed")
+	}
 	if receipt.Packet.Sequence != 1 {
 		t.Fatalf("expected packet sequence 1, got %d", receipt.Packet.Sequence)
 	}
@@ -100,6 +116,74 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	}
 	if state.Swaps[0].OutputDenom != "uosmo" {
 		t.Fatalf("expected output denom uosmo, got %q", state.Swaps[0].OutputDenom)
+	}
+}
+
+func TestMockTargetCanResolveReadyAckAndMarkItConfirmed(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	if _, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/1",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1recipient",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo",
+	}); err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+
+	resolveRequest := httptest.NewRequest(http.MethodPost, "/acks/complete?transfer_id=ibc%2Feth.usdc%2F1", nil)
+	resolveRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(resolveRecorder, resolveRequest)
+	if resolveRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from resolve, got %d", resolveRecorder.Code)
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks after resolution: %v", err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("expected 1 ready ack, got %d", len(acks))
+	}
+	if acks[0].TransferID != "ibc/eth.usdc/1" || acks[0].Status != AckStatusCompleted {
+		t.Fatalf("unexpected ack: %+v", acks[0])
+	}
+
+	if err := target.ConfirmAck(context.Background(), "ibc/eth.usdc/1"); err != nil {
+		t.Fatalf("confirm ack: %v", err)
+	}
+
+	var state struct {
+		Receipts []struct {
+			TransferID string `json:"transfer_id"`
+			AckState   string `json:"ack_state"`
+			AckRelayed bool   `json:"ack_relayed"`
+		} `json:"receipts"`
+	}
+	readJSONFile(t, statePath, &state)
+	if len(state.Receipts) != 1 {
+		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	}
+	if !state.Receipts[0].AckRelayed {
+		t.Fatal("expected ack to be marked relayed after confirmation")
+	}
+	if state.Receipts[0].AckState != "completed" {
+		t.Fatalf("expected completed ack state, got %q", state.Receipts[0].AckState)
 	}
 }
 

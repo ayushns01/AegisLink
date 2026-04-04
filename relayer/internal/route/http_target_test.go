@@ -79,7 +79,7 @@ func TestHTTPTargetSubmitsTransferAndParsesAck(t *testing.T) {
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(newStaticReader(`{"status":"completed"}`)),
+				Body:       io.NopCloser(newStaticReader(`{"status":"received"}`)),
 				Header:     make(http.Header),
 			}, nil
 		}),
@@ -98,8 +98,60 @@ func TestHTTPTargetSubmitsTransferAndParsesAck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit transfer: %v", err)
 	}
-	if ack.Status != AckStatusCompleted {
-		t.Fatalf("expected completed ack, got %q", ack.Status)
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+}
+
+func TestHTTPTargetCanFetchAndConfirmReadyAcks(t *testing.T) {
+	t.Parallel()
+
+	var confirmedPath string
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.Method == http.MethodGet && req.URL.Path == "/acks":
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(newStaticReader(`[
+						{"transfer_id":"ibc/eth.usdc/1","status":"completed"},
+						{"transfer_id":"ibc/eth.usdc/2","status":"ack_failed","reason":"swap failed"}
+					]`)),
+					Header: make(http.Header),
+				}, nil
+			case req.Method == http.MethodPost && req.URL.Path == "/acks/confirm":
+				confirmedPath = req.URL.Path + "?" + req.URL.RawQuery
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(newStaticReader(`{}`)),
+					Header:     make(http.Header),
+				}, nil
+			default:
+				t.Fatalf("unexpected request %s %s", req.Method, req.URL.Path)
+				return nil, nil
+			}
+		}),
+	})
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+	if len(acks) != 2 {
+		t.Fatalf("expected 2 ready acks, got %d", len(acks))
+	}
+	if acks[0].TransferID != "ibc/eth.usdc/1" || acks[0].Status != AckStatusCompleted {
+		t.Fatalf("unexpected first ack: %+v", acks[0])
+	}
+	if acks[1].TransferID != "ibc/eth.usdc/2" || acks[1].Status != AckStatusFailed || acks[1].Reason != "swap failed" {
+		t.Fatalf("unexpected second ack: %+v", acks[1])
+	}
+
+	if err := target.ConfirmAck(context.Background(), "ibc/eth.usdc/1"); err != nil {
+		t.Fatalf("confirm ack: %v", err)
+	}
+	if confirmedPath != "/acks/confirm?transfer_id=ibc%2Feth.usdc%2F1" {
+		t.Fatalf("unexpected confirmed path %q", confirmedPath)
 	}
 }
 

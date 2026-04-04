@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -73,6 +74,62 @@ func (t *HTTPTarget) SubmitTransfer(ctx context.Context, transfer Transfer) (Ack
 		return Ack{}, errors.New("route target returned empty status")
 	}
 	return ack, nil
+}
+
+func (t *HTTPTarget) ReadyAcks(ctx context.Context) ([]AckRecord, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.baseURL+"/acks", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return nil, TimeoutError{Err: err}
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("route target status %d", resp.StatusCode)
+	}
+
+	var acks []AckRecord
+	if err := json.NewDecoder(resp.Body).Decode(&acks); err != nil {
+		return nil, err
+	}
+	return acks, nil
+}
+
+func (t *HTTPTarget) ConfirmAck(ctx context.Context, transferID string) error {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		t.baseURL+"/acks/confirm?transfer_id="+url.QueryEscape(strings.TrimSpace(transferID)),
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return TimeoutError{Err: err}
+		}
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		if len(body) == 0 {
+			return fmt.Errorf("route target status %d", resp.StatusCode)
+		}
+		return fmt.Errorf("route target status %d: %s", resp.StatusCode, body)
+	}
+	return nil
 }
 
 func isTimeout(err error) bool {
