@@ -11,6 +11,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
@@ -207,6 +208,199 @@ func TestRunTxExecuteWithdrawalPersistsWithdrawalAndBurnsSupply(t *testing.T) {
 	}
 }
 
+func TestRunQueryRoutesPrintsPersistedIBCRoutes(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "routes",
+		"--state-path", statePath,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query routes: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var routes []struct {
+		AssetID            string `json:"asset_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		ChannelID          string `json:"channel_id"`
+		DestinationDenom   string `json:"destination_denom"`
+		Enabled            bool   `json:"enabled"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &routes); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if len(routes) != 1 {
+		t.Fatalf("expected one route, got %d", len(routes))
+	}
+	if routes[0].DestinationChainID != "osmosis-1" {
+		t.Fatalf("expected osmosis-1, got %q", routes[0].DestinationChainID)
+	}
+	if routes[0].ChannelID != "channel-0" {
+		t.Fatalf("expected channel-0, got %q", routes[0].ChannelID)
+	}
+	if !routes[0].Enabled {
+		t.Fatal("expected route to be enabled")
+	}
+}
+
+func TestRunTxInitiateIBCTransferPersistsPendingTransfer(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "initiate-ibc-transfer",
+		"--state-path", statePath,
+		"--asset-id", "eth.usdc",
+		"--amount", "25000000",
+		"--receiver", "osmo1recipient",
+		"--timeout-height", "140",
+		"--memo", "swap:uosmo",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx initiate-ibc-transfer: %v\nstderr=%s", err, stderr.String())
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
+		t.Fatalf("expected pending transfer, got %q", transfers[0].Status)
+	}
+	if transfers[0].Memo != "swap:uosmo" {
+		t.Fatalf("expected memo swap:uosmo, got %q", transfers[0].Memo)
+	}
+
+	var result struct {
+		TransferID         string `json:"transfer_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		Status             string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.TransferID == "" {
+		t.Fatal("expected transfer id")
+	}
+	if result.DestinationChainID != "osmosis-1" {
+		t.Fatalf("expected osmosis-1, got %q", result.DestinationChainID)
+	}
+	if result.Status != "pending" {
+		t.Fatalf("expected pending status, got %q", result.Status)
+	}
+}
+
+func TestRunTxFailAndRefundIBCTransferPersistRecoverableState(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var failStdout bytes.Buffer
+	var failStderr bytes.Buffer
+	if err := run([]string{
+		"tx", "fail-ibc-transfer",
+		"--state-path", statePath,
+		"--transfer-id", transfer.TransferID,
+		"--reason", "ack failed",
+	}, &failStdout, &failStderr); err != nil {
+		t.Fatalf("run tx fail-ibc-transfer: %v\nstderr=%s", err, failStderr.String())
+	}
+
+	var refundStdout bytes.Buffer
+	var refundStderr bytes.Buffer
+	if err := run([]string{
+		"tx", "refund-ibc-transfer",
+		"--state-path", statePath,
+		"--transfer-id", transfer.TransferID,
+	}, &refundStdout, &refundStderr); err != nil {
+		t.Fatalf("run tx refund-ibc-transfer: %v\nstderr=%s", err, refundStderr.String())
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusRefunded {
+		t.Fatalf("expected refunded transfer, got %q", transfers[0].Status)
+	}
+	if transfers[0].FailureReason != "ack failed" {
+		t.Fatalf("expected failure reason ack failed, got %q", transfers[0].FailureReason)
+	}
+}
+
+func TestRunQueryTransfersPrintsPersistedTransferLifecycle(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if _, err := app.IBCRouterKeeper.TimeoutTransfer(transfer.TransferID); err != nil {
+		t.Fatalf("timeout transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "transfers",
+		"--state-path", statePath,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query transfers: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var transfers []struct {
+		TransferID    string `json:"transfer_id"`
+		Status        string `json:"status"`
+		FailureReason string `json:"failure_reason"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &transfers); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, transfers[0].TransferID)
+	}
+	if transfers[0].Status != "timed_out" {
+		t.Fatalf("expected timed_out status, got %q", transfers[0].Status)
+	}
+}
+
 func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) {
 	t.Helper()
 
@@ -334,5 +528,21 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 		t.Fatalf("set limit: %v", err)
 	}
 	app.SetCurrentHeight(50)
+	return app
+}
+
+func seededRuntimeAppWithIBCRoute(t *testing.T, statePath string) *aegisapp.App {
+	t.Helper()
+
+	app := seededRuntimeApp(t, statePath)
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            "eth.usdc",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set ibc route: %v", err)
+	}
 	return app
 }

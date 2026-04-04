@@ -15,6 +15,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
@@ -387,6 +388,29 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 
 func writeRuntimeChainBootstrap(t *testing.T) string {
 	return writeRuntimeChainBootstrapWithAssetAddress(t, "0xasset")
+}
+
+func writeRuntimeChainBootstrapWithOsmosisRoute(t *testing.T) string {
+	t.Helper()
+
+	statePath := writeRuntimeChainBootstrap(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load bootstrap state: %v", err)
+	}
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            "eth.usdc",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set osmosis route: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save bootstrap state with route: %v", err)
+	}
+	return statePath
 }
 
 func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress string) string {

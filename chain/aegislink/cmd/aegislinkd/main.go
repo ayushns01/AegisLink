@@ -10,10 +10,12 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
 func main() {
@@ -55,6 +57,10 @@ func runQuery(args []string, stdout io.Writer) error {
 		return querySummary(args[1:], stdout)
 	case "claim":
 		return queryClaim(args[1:], stdout)
+	case "routes":
+		return queryRoutes(args[1:], stdout)
+	case "transfers":
+		return queryTransfers(args[1:], stdout)
 	case "withdrawals":
 		return queryWithdrawals(args[1:], stdout)
 	default:
@@ -72,6 +78,14 @@ func runTx(args []string, stdout io.Writer) error {
 		return txSubmitDepositClaim(args[1:], stdout)
 	case "execute-withdrawal":
 		return txExecuteWithdrawal(args[1:], stdout)
+	case "initiate-ibc-transfer":
+		return txInitiateIBCTransfer(args[1:], stdout)
+	case "fail-ibc-transfer":
+		return txFailIBCTransfer(args[1:], stdout)
+	case "timeout-ibc-transfer":
+		return txTimeoutIBCTransfer(args[1:], stdout)
+	case "refund-ibc-transfer":
+		return txRefundIBCTransfer(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown tx subcommand %q", args[0])
 	}
@@ -223,6 +237,93 @@ func queryWithdrawals(args []string, stdout io.Writer) error {
 	return writeJSON(stdout, response)
 }
 
+func queryRoutes(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("routes", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	routes := a.Routes()
+	sort.Slice(routes, func(i, j int) bool {
+		if routes[i].AssetID != routes[j].AssetID {
+			return routes[i].AssetID < routes[j].AssetID
+		}
+		if routes[i].DestinationChainID != routes[j].DestinationChainID {
+			return routes[i].DestinationChainID < routes[j].DestinationChainID
+		}
+		return routes[i].ChannelID < routes[j].ChannelID
+	})
+	return writeJSON(stdout, routes)
+}
+
+func queryTransfers(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("transfers", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	transfers := a.Transfers()
+	sort.Slice(transfers, func(i, j int) bool {
+		return transfers[i].TransferID < transfers[j].TransferID
+	})
+
+	response := make([]struct {
+		TransferID         string `json:"transfer_id"`
+		AssetID            string `json:"asset_id"`
+		Amount             string `json:"amount"`
+		Receiver           string `json:"receiver"`
+		DestinationChainID string `json:"destination_chain_id"`
+		ChannelID          string `json:"channel_id"`
+		DestinationDenom   string `json:"destination_denom"`
+		TimeoutHeight      uint64 `json:"timeout_height"`
+		Memo               string `json:"memo"`
+		Status             string `json:"status"`
+		FailureReason      string `json:"failure_reason"`
+	}, 0, len(transfers))
+	for _, transfer := range transfers {
+		response = append(response, struct {
+			TransferID         string `json:"transfer_id"`
+			AssetID            string `json:"asset_id"`
+			Amount             string `json:"amount"`
+			Receiver           string `json:"receiver"`
+			DestinationChainID string `json:"destination_chain_id"`
+			ChannelID          string `json:"channel_id"`
+			DestinationDenom   string `json:"destination_denom"`
+			TimeoutHeight      uint64 `json:"timeout_height"`
+			Memo               string `json:"memo"`
+			Status             string `json:"status"`
+			FailureReason      string `json:"failure_reason"`
+		}{
+			TransferID:         transfer.TransferID,
+			AssetID:            transfer.AssetID,
+			Amount:             transfer.Amount.String(),
+			Receiver:           transfer.Receiver,
+			DestinationChainID: transfer.DestinationChainID,
+			ChannelID:          transfer.ChannelID,
+			DestinationDenom:   transfer.DestinationDenom,
+			TimeoutHeight:      transfer.TimeoutHeight,
+			Memo:               transfer.Memo,
+			Status:             string(transfer.Status),
+			FailureReason:      transfer.FailureReason,
+		})
+	}
+	return writeJSON(stdout, response)
+}
+
 func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("submit-deposit-claim", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -342,6 +443,132 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	})
 }
 
+func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("initiate-ibc-transfer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	assetID := flags.String("asset-id", "", "asset identifier to route")
+	amountRaw := flags.String("amount", "", "transfer amount")
+	receiver := flags.String("receiver", "", "destination receiver")
+	timeoutHeight := flags.Uint64("timeout-height", 0, "ibc timeout height")
+	memo := flags.String("memo", "", "optional ibc memo")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*assetID) == "" {
+		return fmt.Errorf("missing asset id")
+	}
+	if strings.TrimSpace(*amountRaw) == "" {
+		return fmt.Errorf("missing amount")
+	}
+	if strings.TrimSpace(*receiver) == "" {
+		return fmt.Errorf("missing receiver")
+	}
+	if *timeoutHeight == 0 {
+		return fmt.Errorf("missing timeout height")
+	}
+
+	amount, err := parseBase10Amount(*amountRaw)
+	if err != nil {
+		return err
+	}
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	transfer, err := a.InitiateIBCTransfer(*assetID, amount, *receiver, *timeoutHeight, *memo)
+	if err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, transferJSONResponse(transfer))
+}
+
+func txFailIBCTransfer(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("fail-ibc-transfer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	transferID := flags.String("transfer-id", "", "transfer identifier")
+	reason := flags.String("reason", "", "ack failure reason")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*transferID) == "" {
+		return fmt.Errorf("missing transfer id")
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	transfer, err := a.FailIBCTransfer(*transferID, *reason)
+	if err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, transferJSONResponse(transfer))
+}
+
+func txTimeoutIBCTransfer(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("timeout-ibc-transfer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	transferID := flags.String("transfer-id", "", "transfer identifier")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*transferID) == "" {
+		return fmt.Errorf("missing transfer id")
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	transfer, err := a.TimeoutIBCTransfer(*transferID)
+	if err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, transferJSONResponse(transfer))
+}
+
+func txRefundIBCTransfer(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("refund-ibc-transfer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	statePath := flags.String("state-path", "", "path to persisted app state")
+	transferID := flags.String("transfer-id", "", "transfer identifier")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*transferID) == "" {
+		return fmt.Errorf("missing transfer id")
+	}
+
+	a, err := app.Load(*statePath)
+	if err != nil {
+		return err
+	}
+	transfer, err := a.RefundIBCTransfer(*transferID)
+	if err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, transferJSONResponse(transfer))
+}
+
 type submissionFilePayload struct {
 	Claim struct {
 		Kind               string `json:"kind"`
@@ -413,6 +640,46 @@ func parseBase10Amount(raw string) (*big.Int, error) {
 		return nil, fmt.Errorf("invalid amount %q", raw)
 	}
 	return amount, nil
+}
+
+func transferJSONResponse(transfer ibcrouterkeeper.TransferRecord) struct {
+	TransferID         string `json:"transfer_id"`
+	AssetID            string `json:"asset_id"`
+	Amount             string `json:"amount"`
+	Receiver           string `json:"receiver"`
+	DestinationChainID string `json:"destination_chain_id"`
+	ChannelID          string `json:"channel_id"`
+	DestinationDenom   string `json:"destination_denom"`
+	TimeoutHeight      uint64 `json:"timeout_height"`
+	Memo               string `json:"memo"`
+	Status             string `json:"status"`
+	FailureReason      string `json:"failure_reason"`
+} {
+	return struct {
+		TransferID         string `json:"transfer_id"`
+		AssetID            string `json:"asset_id"`
+		Amount             string `json:"amount"`
+		Receiver           string `json:"receiver"`
+		DestinationChainID string `json:"destination_chain_id"`
+		ChannelID          string `json:"channel_id"`
+		DestinationDenom   string `json:"destination_denom"`
+		TimeoutHeight      uint64 `json:"timeout_height"`
+		Memo               string `json:"memo"`
+		Status             string `json:"status"`
+		FailureReason      string `json:"failure_reason"`
+	}{
+		TransferID:         transfer.TransferID,
+		AssetID:            transfer.AssetID,
+		Amount:             transfer.Amount.String(),
+		Receiver:           transfer.Receiver,
+		DestinationChainID: transfer.DestinationChainID,
+		ChannelID:          transfer.ChannelID,
+		DestinationDenom:   transfer.DestinationDenom,
+		TimeoutHeight:      transfer.TimeoutHeight,
+		Memo:               transfer.Memo,
+		Status:             string(transfer.Status),
+		FailureReason:      transfer.FailureReason,
+	}
 }
 
 func writeJSON(stdout io.Writer, value any) error {

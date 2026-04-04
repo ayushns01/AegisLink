@@ -133,6 +133,30 @@ func (a *App) Withdrawals(fromHeight, toHeight uint64) []bridgekeeper.Withdrawal
 	return a.BridgeKeeper.Withdrawals(fromHeight, toHeight)
 }
 
+func (a *App) Routes() []ibcrouterkeeper.Route {
+	return a.IBCRouterKeeper.ExportRoutes()
+}
+
+func (a *App) Transfers() []ibcrouterkeeper.TransferRecord {
+	return a.IBCRouterKeeper.ExportTransfers()
+}
+
+func (a *App) InitiateIBCTransfer(assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (ibcrouterkeeper.TransferRecord, error) {
+	return a.IBCRouterKeeper.InitiateTransfer(assetID, amount, receiver, timeoutHeight, memo)
+}
+
+func (a *App) FailIBCTransfer(transferID, reason string) (ibcrouterkeeper.TransferRecord, error) {
+	return a.IBCRouterKeeper.AcknowledgeFailure(transferID, reason)
+}
+
+func (a *App) TimeoutIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
+	return a.IBCRouterKeeper.TimeoutTransfer(transferID)
+}
+
+func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
+	return a.IBCRouterKeeper.MarkRefunded(transferID)
+}
+
 func (a *App) Save() error {
 	return persistRuntimeState(a.Config.StatePath, runtimeState{
 		Assets:      a.RegistryKeeper.ExportAssets(),
