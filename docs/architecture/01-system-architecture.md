@@ -50,7 +50,7 @@ Current implementation note:
 - Assets move from bridge-zone denominations into Osmosis through a predefined IBC channel.
 - Osmosis receives them as standard IBC assets and can route them into swaps or liquidity pools.
 - In the current repository checkpoint, the route lifecycle is implemented and queryable through the AegisLink runtime CLI, and a separate local route-relayer can drive those transfers against a lightweight target service.
-- That target now persists packet receipts, denom-trace-style metadata, asynchronous acknowledgements, recipient balances, and simple swap execution records derived from routed packets.
+- That target now persists packet receipts, denom-trace-style metadata, asynchronous acknowledgements, recipient balances, pool-backed swap execution records, and execution-driven acknowledgement failures derived from routed packets.
 - The full live IBC channel or local Osmosis stack is still a later extension.
 
 ## Message Interfaces

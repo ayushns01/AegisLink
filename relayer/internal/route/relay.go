@@ -54,6 +54,7 @@ type DenomTrace struct {
 type RouteAction struct {
 	Type        string `json:"type"`
 	TargetDenom string `json:"target_denom,omitempty"`
+	MinOut      string `json:"min_out,omitempty"`
 }
 
 const routePacketSender = "aegislink1ibcrouter"
@@ -216,10 +217,22 @@ func parseTransferSequence(transferID string) (uint64, error) {
 func parseRouteAction(memo string) *RouteAction {
 	memo = strings.TrimSpace(memo)
 	if strings.HasPrefix(memo, "swap:") {
-		targetDenom := strings.TrimSpace(strings.TrimPrefix(memo, "swap:"))
-		if targetDenom != "" {
-			return &RouteAction{Type: "swap", TargetDenom: targetDenom}
+		parts := strings.Split(memo, ":")
+		if len(parts) < 2 {
+			return nil
 		}
+		targetDenom := strings.TrimSpace(parts[1])
+		if targetDenom == "" {
+			return nil
+		}
+		action := &RouteAction{Type: "swap", TargetDenom: targetDenom}
+		for _, part := range parts[2:] {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "min_out=") {
+				action.MinOut = strings.TrimSpace(strings.TrimPrefix(part, "min_out="))
+			}
+		}
+		return action
 	}
 	return nil
 }

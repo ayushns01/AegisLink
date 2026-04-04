@@ -33,6 +33,7 @@ type MockTarget struct {
 type MockTargetState struct {
 	Receipts []MockTargetReceipt `json:"receipts"`
 	Swaps    []MockTargetSwap    `json:"swaps"`
+	Pools    []MockTargetPool    `json:"pools"`
 	Balances []MockTargetBalance `json:"balances"`
 }
 
@@ -56,6 +57,13 @@ type MockTargetSwap struct {
 	DexChainID   string `json:"dex_chain_id"`
 }
 
+type MockTargetPool struct {
+	InputDenom  string `json:"input_denom"`
+	OutputDenom string `json:"output_denom"`
+	ReserveIn   string `json:"reserve_in"`
+	ReserveOut  string `json:"reserve_out"`
+}
+
 type MockTargetBalance struct {
 	Address string `json:"address"`
 	Denom   string `json:"denom"`
@@ -67,6 +75,9 @@ func NewMockTargetHandler(mode string, statePath string, delay time.Duration) ht
 		mode:      normalizeMockTargetMode(mode),
 		delay:     delay,
 		statePath: strings.TrimSpace(statePath),
+		state: MockTargetState{
+			Pools: defaultMockTargetPools(),
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -99,12 +110,8 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 				DenomTrace: envelope.DenomTrace,
 				Action:     envelope.Action,
 			}
+			t.applyExecutionLocked(&receipt, envelope)
 			t.state.Receipts = append(t.state.Receipts, receipt)
-			if err := t.applyExecutionLocked(envelope); err != nil {
-				t.mu.Unlock()
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
 		}
 		if err := persistMockTargetState(t.statePath, t.state); err != nil {
 			t.mu.Unlock()
@@ -217,9 +224,16 @@ func (t *MockTarget) findReceiptLocked(transferID string) (*MockTargetReceipt, b
 	return nil, false
 }
 
-func (t *MockTarget) applyExecutionLocked(envelope DeliveryEnvelope) error {
+func (t *MockTarget) applyExecutionLocked(receipt *MockTargetReceipt, envelope DeliveryEnvelope) {
+	t.ensurePoolsLocked()
+
 	if envelope.Action != nil && envelope.Action.Type == "swap" {
-		outputAmount := strings.TrimSpace(envelope.Packet.Data.Amount)
+		outputAmount, err := t.executeSwapLocked(envelope)
+		if err != nil {
+			receipt.AckState = string(AckStatusFailed)
+			receipt.AckReason = err.Error()
+			return
+		}
 		t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
 			TransferID:   envelope.Transfer.TransferID,
 			InputDenom:   envelope.DenomTrace.IBCDenom,
@@ -229,14 +243,89 @@ func (t *MockTarget) applyExecutionLocked(envelope DeliveryEnvelope) error {
 			Recipient:    envelope.Packet.Data.Receiver,
 			DexChainID:   envelope.Transfer.DestinationChainID,
 		})
-		return t.creditBalanceLocked(envelope.Packet.Data.Receiver, envelope.Action.TargetDenom, outputAmount)
+		if err := t.creditBalanceLocked(envelope.Packet.Data.Receiver, envelope.Action.TargetDenom, outputAmount); err != nil {
+			receipt.AckState = string(AckStatusFailed)
+			receipt.AckReason = err.Error()
+		}
+		return
 	}
 
-	return t.creditBalanceLocked(
+	if err := t.creditBalanceLocked(
 		envelope.Packet.Data.Receiver,
 		envelope.DenomTrace.IBCDenom,
 		strings.TrimSpace(envelope.Packet.Data.Amount),
-	)
+	); err != nil {
+		receipt.AckState = string(AckStatusFailed)
+		receipt.AckReason = err.Error()
+	}
+}
+
+func (t *MockTarget) ensurePoolsLocked() {
+	if len(t.state.Pools) == 0 {
+		t.state.Pools = defaultMockTargetPools()
+	}
+}
+
+func defaultMockTargetPools() []MockTargetPool {
+	return []MockTargetPool{
+		{
+			InputDenom:  "ibc/uatom-usdc",
+			OutputDenom: "uosmo",
+			ReserveIn:   "500000000",
+			ReserveOut:  "1000000000",
+		},
+	}
+}
+
+func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error) {
+	poolIndex := -1
+	for i := range t.state.Pools {
+		pool := t.state.Pools[i]
+		if pool.InputDenom == strings.TrimSpace(envelope.DenomTrace.IBCDenom) && pool.OutputDenom == strings.TrimSpace(envelope.Action.TargetDenom) {
+			poolIndex = i
+			break
+		}
+	}
+	if poolIndex < 0 {
+		return "", fmt.Errorf("no pool for %s -> %s", envelope.DenomTrace.IBCDenom, envelope.Action.TargetDenom)
+	}
+
+	pool := t.state.Pools[poolIndex]
+	inputAmount, err := parsePositiveDecimal(strings.TrimSpace(envelope.Packet.Data.Amount), "swap amount")
+	if err != nil {
+		return "", err
+	}
+	reserveIn, err := parsePositiveDecimal(pool.ReserveIn, "pool reserve in")
+	if err != nil {
+		return "", err
+	}
+	reserveOut, err := parsePositiveDecimal(pool.ReserveOut, "pool reserve out")
+	if err != nil {
+		return "", err
+	}
+
+	numerator := new(big.Int).Mul(new(big.Int).Set(reserveOut), new(big.Int).Set(inputAmount))
+	denominator := new(big.Int).Add(new(big.Int).Set(reserveIn), new(big.Int).Set(inputAmount))
+	if denominator.Sign() <= 0 {
+		return "", fmt.Errorf("invalid pool denominator")
+	}
+	outputAmount := new(big.Int).Div(numerator, denominator)
+	if outputAmount.Sign() <= 0 || outputAmount.Cmp(reserveOut) >= 0 {
+		return "", fmt.Errorf("insufficient liquidity for %s -> %s", pool.InputDenom, pool.OutputDenom)
+	}
+	if minOut := strings.TrimSpace(envelope.Action.MinOut); minOut != "" {
+		minOutAmount, err := parsePositiveDecimal(minOut, "min_out")
+		if err != nil {
+			return "", err
+		}
+		if outputAmount.Cmp(minOutAmount) < 0 {
+			return "", fmt.Errorf("min_out not met: expected at least %s, got %s", minOutAmount.String(), outputAmount.String())
+		}
+	}
+
+	t.state.Pools[poolIndex].ReserveIn = new(big.Int).Add(reserveIn, inputAmount).String()
+	t.state.Pools[poolIndex].ReserveOut = new(big.Int).Sub(reserveOut, outputAmount).String()
+	return outputAmount.String(), nil
 }
 
 func (t *MockTarget) creditBalanceLocked(address, denom, amount string) error {
@@ -272,6 +361,17 @@ func addDecimalStrings(current, delta string) (string, error) {
 		return "", fmt.Errorf("invalid credit amount %q", delta)
 	}
 	return new(big.Int).Add(currentInt, deltaInt).String(), nil
+}
+
+func parsePositiveDecimal(value, label string) (*big.Int, error) {
+	parsed, ok := new(big.Int).SetString(strings.TrimSpace(value), 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid %s %q", label, value)
+	}
+	if parsed.Sign() <= 0 {
+		return nil, fmt.Errorf("invalid %s %q", label, value)
+	}
+	return parsed, nil
 }
 
 func ackStateForMode(mode MockTargetMode) string {

@@ -367,6 +367,12 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 			OutputDenom  string `json:"output_denom"`
 			OutputAmount string `json:"output_amount"`
 		} `json:"swaps"`
+		Pools []struct {
+			InputDenom  string `json:"input_denom"`
+			OutputDenom string `json:"output_denom"`
+			ReserveIn   string `json:"reserve_in"`
+			ReserveOut  string `json:"reserve_out"`
+		} `json:"pools"`
 		Balances []struct {
 			Address string `json:"address"`
 			Denom   string `json:"denom"`
@@ -393,8 +399,14 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	if state.Swaps[0].OutputDenom != "uosmo" {
 		t.Fatalf("expected output denom uosmo, got %q", state.Swaps[0].OutputDenom)
 	}
-	if state.Swaps[0].OutputAmount != "25000000" {
-		t.Fatalf("expected output amount 25000000, got %q", state.Swaps[0].OutputAmount)
+	if state.Swaps[0].OutputAmount != "47619047" {
+		t.Fatalf("expected output amount 47619047, got %q", state.Swaps[0].OutputAmount)
+	}
+	if len(state.Pools) != 1 {
+		t.Fatalf("expected one pool record, got %d", len(state.Pools))
+	}
+	if state.Pools[0].ReserveOut != "952380953" {
+		t.Fatalf("expected output reserve 952380953, got %q", state.Pools[0].ReserveOut)
 	}
 	if len(state.Balances) != 1 {
 		t.Fatalf("expected one balance record, got %d", len(state.Balances))
@@ -405,8 +417,49 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	if state.Balances[0].Denom != "uosmo" {
 		t.Fatalf("expected balance denom uosmo, got %q", state.Balances[0].Denom)
 	}
-	if state.Balances[0].Amount != "25000000" {
-		t.Fatalf("expected balance amount 25000000, got %q", state.Balances[0].Amount)
+	if state.Balances[0].Amount != "47619047" {
+		t.Fatalf("expected balance amount 47619047, got %q", state.Balances[0].Amount)
+	}
+}
+
+func TestRouteRelayerMarksTransferFailedWhenDestinationSwapMinOutIsNotMet(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1recipient", 140, "swap:uosmo:min_out=50000000")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	target := startMockOsmosisTarget(t, filepath.Join(t.TempDir(), "mock-osmosis-fail-min-out.json"), "success")
+	defer target.cancel()
+
+	runRouteRelayerOnce(t, statePath, target.url)
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, transfers[0].TransferID)
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusAckFailed {
+		t.Fatalf("expected ack_failed status, got %q", transfers[0].Status)
+	}
+	if transfers[0].FailureReason == "" {
+		t.Fatal("expected failure reason to be recorded")
 	}
 }
 

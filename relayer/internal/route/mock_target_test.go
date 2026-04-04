@@ -81,6 +81,12 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 			Recipient    string `json:"recipient"`
 			DexChainID   string `json:"dex_chain_id"`
 		} `json:"swaps"`
+		Pools []struct {
+			InputDenom  string `json:"input_denom"`
+			OutputDenom string `json:"output_denom"`
+			ReserveIn   string `json:"reserve_in"`
+			ReserveOut  string `json:"reserve_out"`
+		} `json:"pools"`
 		Balances []struct {
 			Address string `json:"address"`
 			Denom   string `json:"denom"`
@@ -123,8 +129,17 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	if state.Swaps[0].OutputDenom != "uosmo" {
 		t.Fatalf("expected output denom uosmo, got %q", state.Swaps[0].OutputDenom)
 	}
-	if state.Swaps[0].OutputAmount != "25000000" {
-		t.Fatalf("expected output amount 25000000, got %q", state.Swaps[0].OutputAmount)
+	if state.Swaps[0].OutputAmount != "47619047" {
+		t.Fatalf("expected output amount 47619047, got %q", state.Swaps[0].OutputAmount)
+	}
+	if len(state.Pools) != 1 {
+		t.Fatalf("expected one pool record, got %d", len(state.Pools))
+	}
+	if state.Pools[0].ReserveIn != "525000000" {
+		t.Fatalf("expected input reserve 525000000, got %q", state.Pools[0].ReserveIn)
+	}
+	if state.Pools[0].ReserveOut != "952380953" {
+		t.Fatalf("expected output reserve 952380953, got %q", state.Pools[0].ReserveOut)
 	}
 	if len(state.Balances) != 1 {
 		t.Fatalf("expected one balance record, got %d", len(state.Balances))
@@ -135,8 +150,8 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	if state.Balances[0].Denom != "uosmo" {
 		t.Fatalf("expected balance denom uosmo, got %q", state.Balances[0].Denom)
 	}
-	if state.Balances[0].Amount != "25000000" {
-		t.Fatalf("expected balance amount 25000000, got %q", state.Balances[0].Amount)
+	if state.Balances[0].Amount != "47619047" {
+		t.Fatalf("expected balance amount 47619047, got %q", state.Balances[0].Amount)
 	}
 }
 
@@ -202,6 +217,172 @@ func TestMockTargetCreditsRecipientBalanceForPlainIBCReceive(t *testing.T) {
 	}
 	if state.Balances[0].Amount != "17000000" {
 		t.Fatalf("expected balance amount 17000000, got %q", state.Balances[0].Amount)
+	}
+}
+
+func TestMockTargetRejectsSwapWhenMinOutIsNotMet(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("success", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/3",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1minout",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo:min_out=50000000",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("expected one ready ack, got %d", len(acks))
+	}
+	if acks[0].Status != AckStatusFailed {
+		t.Fatalf("expected failed ack, got %q", acks[0].Status)
+	}
+
+	var state struct {
+		Receipts []struct {
+			AckState  string `json:"ack_state"`
+			AckReason string `json:"ack_reason"`
+		} `json:"receipts"`
+		Swaps    []struct{} `json:"swaps"`
+		Balances []struct{} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &state)
+	if len(state.Receipts) != 1 {
+		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	}
+	if state.Receipts[0].AckState != "ack_failed" {
+		t.Fatalf("expected ack_failed state, got %q", state.Receipts[0].AckState)
+	}
+	if state.Receipts[0].AckReason == "" {
+		t.Fatal("expected failure reason to be recorded")
+	}
+	if len(state.Swaps) != 0 {
+		t.Fatalf("expected no swaps, got %d", len(state.Swaps))
+	}
+	if len(state.Balances) != 0 {
+		t.Fatalf("expected no balances, got %d", len(state.Balances))
+	}
+}
+
+func TestMockTargetRejectsSwapWhenTargetPoolIsMissing(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("success", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/4",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1missingpool",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uion",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("expected one ready ack, got %d", len(acks))
+	}
+	if acks[0].Status != AckStatusFailed {
+		t.Fatalf("expected failed ack, got %q", acks[0].Status)
+	}
+	if acks[0].Reason == "" {
+		t.Fatal("expected missing pool reason")
+	}
+}
+
+func TestMockTargetRejectsSwapWhenPoolHasNoOutputLiquidity(t *testing.T) {
+	t.Parallel()
+
+	target := &MockTarget{
+		state: MockTargetState{
+			Pools: []MockTargetPool{
+				{
+					InputDenom:  "ibc/uatom-usdc",
+					OutputDenom: "uosmo",
+					ReserveIn:   "500000000",
+					ReserveOut:  "0",
+				},
+			},
+		},
+	}
+
+	receipt := &MockTargetReceipt{
+		TransferID: "ibc/eth.usdc/5",
+		AckState:   "pending",
+	}
+	target.applyExecutionLocked(receipt, DeliveryEnvelope{
+		Transfer: Transfer{
+			TransferID:         "ibc/eth.usdc/5",
+			DestinationChainID: "osmosis-1",
+		},
+		Packet: Packet{
+			Data: PacketData{
+				Amount:   "25000000",
+				Receiver: "osmo1noliquidity",
+			},
+		},
+		DenomTrace: DenomTrace{IBCDenom: "ibc/uatom-usdc"},
+		Action: &RouteAction{
+			Type:        "swap",
+			TargetDenom: "uosmo",
+		},
+	})
+
+	if receipt.AckState != "ack_failed" {
+		t.Fatalf("expected ack_failed state, got %q", receipt.AckState)
+	}
+	if receipt.AckReason == "" {
+		t.Fatal("expected insufficient liquidity reason")
+	}
+	if len(target.state.Swaps) != 0 {
+		t.Fatalf("expected no swap records, got %d", len(target.state.Swaps))
+	}
+	if len(target.state.Balances) != 0 {
+		t.Fatalf("expected no balances, got %d", len(target.state.Balances))
 	}
 }
 
