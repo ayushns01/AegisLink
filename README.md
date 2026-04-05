@@ -142,8 +142,9 @@ As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a
 - route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
 - a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
 - a destination-side packet lifecycle that now moves through `received`, `executed`, `ack_ready`, and `ack_relayed`
-- packet receipts, separate execution receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
+- packet receipts, separate execution receipts, denom-trace-style metadata, richer route actions like `recipient` override and `path`, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
 - public mock-target query surfaces for `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`
+- a routed timeout flow that is visible on the destination side and recoverable on AegisLink through refund
 
 The current repo shape is:
 
@@ -158,4 +159,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The next active roadmap task is still inside `Task 9`: replace the current local route target with a fuller local IBC or Osmosis harness. A separate hardening track is still worth doing before public demos: moving AegisLink from a persistent runtime shell toward a fuller Cosmos node runtime.
+The current local route-harness phase is complete. The next active roadmap work is now after that milestone: stronger operator surfaces, structured logs, and continued runtime hardening toward a fuller Cosmos node experience.

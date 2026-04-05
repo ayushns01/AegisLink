@@ -50,6 +50,7 @@ type MockTargetPacket struct {
 	Packet             Packet       `json:"packet"`
 	DenomTrace         DenomTrace   `json:"denom_trace"`
 	Action             *RouteAction `json:"action,omitempty"`
+	ActionError        string       `json:"action_error,omitempty"`
 }
 
 type MockTargetExecution struct {
@@ -62,6 +63,7 @@ type MockTargetExecution struct {
 	OutputDenom    string `json:"output_denom,omitempty"`
 	OutputAmount   string `json:"output_amount,omitempty"`
 	DexChainID     string `json:"dex_chain_id,omitempty"`
+	RoutePath      string `json:"route_path,omitempty"`
 	Error          string `json:"error,omitempty"`
 }
 
@@ -73,6 +75,7 @@ type MockTargetSwap struct {
 	OutputAmount string `json:"output_amount"`
 	Recipient    string `json:"recipient"`
 	DexChainID   string `json:"dex_chain_id"`
+	RoutePath    string `json:"route_path,omitempty"`
 }
 
 type MockTargetPool struct {
@@ -169,6 +172,7 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 				Packet:             envelope.Packet,
 				DenomTrace:         envelope.DenomTrace,
 				Action:             envelope.Action,
+				ActionError:        strings.TrimSpace(envelope.ActionError),
 			})
 		}
 		t.syncLegacyReceiptsLocked()
@@ -332,7 +336,6 @@ func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {
 		t.ensurePacketExecutedLocked(packet)
 		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: "mock ack failed"})
 	case action == "timeout":
-		t.ensurePacketExecutedLocked(packet)
 		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusTimedOut, Reason: "mock timeout"})
 	default:
 		http.NotFound(w, r)
@@ -422,6 +425,11 @@ func (t *MockTarget) advanceReceivedPacketsLocked() bool {
 		if t.state.Packets[i].PacketState != "received" {
 			continue
 		}
+		if t.mode == MockTargetModeTimeout {
+			t.markPacketAckReadyLocked(&t.state.Packets[i], Ack{Status: AckStatusTimedOut, Reason: "mock timeout"})
+			changed = true
+			continue
+		}
 		t.executePacketLocked(&t.state.Packets[i])
 		changed = true
 	}
@@ -437,16 +445,36 @@ func (t *MockTarget) ensurePacketExecutedLocked(packet *MockTargetPacket) {
 func (t *MockTarget) executePacketLocked(packet *MockTargetPacket) {
 	t.ensurePoolsLocked()
 
+	recipient := packetExecutionRecipient(packet)
+	routePath := packetRoutePath(packet)
+
+	if strings.TrimSpace(packet.ActionError) != "" {
+		t.state.Executions = append(t.state.Executions, MockTargetExecution{
+			TransferID:     packet.TransferID,
+			PacketSequence: packet.Packet.Sequence,
+			Result:         "invalid_action",
+			Recipient:      recipient,
+			InputDenom:     packet.DenomTrace.IBCDenom,
+			InputAmount:    strings.TrimSpace(packet.Packet.Data.Amount),
+			DexChainID:     packet.DestinationChainID,
+			RoutePath:      routePath,
+			Error:          strings.TrimSpace(packet.ActionError),
+		})
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: strings.TrimSpace(packet.ActionError)})
+		return
+	}
+
 	if packet.Action != nil && packet.Action.Type == "swap" {
 		execution := MockTargetExecution{
 			TransferID:     packet.TransferID,
 			PacketSequence: packet.Packet.Sequence,
 			Result:         "swap_success",
-			Recipient:      packet.Packet.Data.Receiver,
+			Recipient:      recipient,
 			InputDenom:     packet.DenomTrace.IBCDenom,
 			InputAmount:    strings.TrimSpace(packet.Packet.Data.Amount),
 			OutputDenom:    packet.Action.TargetDenom,
 			DexChainID:     packet.DestinationChainID,
+			RoutePath:      routePath,
 		}
 		outputAmount, err := t.executeSwapLocked(packet)
 		if err != nil {
@@ -463,10 +491,11 @@ func (t *MockTarget) executePacketLocked(packet *MockTargetPacket) {
 			OutputDenom:  packet.Action.TargetDenom,
 			InputAmount:  strings.TrimSpace(packet.Packet.Data.Amount),
 			OutputAmount: outputAmount,
-			Recipient:    packet.Packet.Data.Receiver,
+			Recipient:    recipient,
 			DexChainID:   packet.DestinationChainID,
+			RoutePath:    routePath,
 		})
-		if err := t.creditBalanceLocked(packet.Packet.Data.Receiver, packet.Action.TargetDenom, outputAmount); err != nil {
+		if err := t.creditBalanceLocked(recipient, packet.Action.TargetDenom, outputAmount); err != nil {
 			execution.Result = "swap_failed"
 			execution.Error = err.Error()
 			t.state.Executions = append(t.state.Executions, execution)
@@ -482,15 +511,16 @@ func (t *MockTarget) executePacketLocked(packet *MockTargetPacket) {
 		TransferID:     packet.TransferID,
 		PacketSequence: packet.Packet.Sequence,
 		Result:         "credit",
-		Recipient:      packet.Packet.Data.Receiver,
+		Recipient:      recipient,
 		InputDenom:     packet.DenomTrace.IBCDenom,
 		InputAmount:    strings.TrimSpace(packet.Packet.Data.Amount),
 		OutputDenom:    packet.DenomTrace.IBCDenom,
 		OutputAmount:   strings.TrimSpace(packet.Packet.Data.Amount),
 		DexChainID:     packet.DestinationChainID,
+		RoutePath:      routePath,
 	}
 	if err := t.creditBalanceLocked(
-		packet.Packet.Data.Receiver,
+		recipient,
 		packet.DenomTrace.IBCDenom,
 		strings.TrimSpace(packet.Packet.Data.Amount),
 	); err != nil {
@@ -519,6 +549,22 @@ func (t *MockTarget) advancePacketAfterExecutionLocked(packet *MockTargetPacket)
 		packet.AckPayload = nil
 		packet.AckRelayed = false
 	}
+}
+
+func packetExecutionRecipient(packet *MockTargetPacket) string {
+	if packet.Action != nil {
+		if recipient := strings.TrimSpace(packet.Action.Recipient); recipient != "" {
+			return recipient
+		}
+	}
+	return strings.TrimSpace(packet.Packet.Data.Receiver)
+}
+
+func packetRoutePath(packet *MockTargetPacket) string {
+	if packet.Action == nil {
+		return ""
+	}
+	return strings.TrimSpace(packet.Action.Path)
 }
 
 func (t *MockTarget) markPacketAckReadyLocked(packet *MockTargetPacket, ack Ack) {

@@ -15,6 +15,8 @@
 
 That means the remaining work is no longer about inventing the bridge. It is about pushing the project from `strong prototype` to `strong systems project`.
 
+**Phase 1 status:** Completed on April 5, 2026. The local route harness now has explicit packet lifecycle state, destination execution receipts, richer route-action parsing, malformed-action execution failures, timeout-to-refund recovery proofs, and inspection surfaces for packets, executions, pools, balances, and swaps.
+
 ---
 
 ## Finish Lines
@@ -45,9 +47,9 @@ The correct order is:
 
 ### Task 1.1: Split delivery, receive, and acknowledgement more cleanly
 
-- [ ] Add an explicit local packet record type on the destination side.
-- [ ] Persist packet sequence, source port, destination port, channel, timeout, and acknowledgement payload separately from the transfer record.
-- [ ] Separate `received`, `executed`, `ack_ready`, and `ack_relayed` states instead of folding them together.
+- [x] Add an explicit local packet record type on the destination side.
+- [x] Persist packet sequence, source port, destination port, channel, timeout, and acknowledgement payload separately from the transfer record.
+- [x] Separate `received`, `executed`, `ack_ready`, and `ack_relayed` states instead of folding them together.
 
 **What is happening:** the route side stops feeling like one HTTP request and starts looking like a packet lifecycle.
 
@@ -55,12 +57,13 @@ The correct order is:
 
 ### Task 1.2: Make destination execution state first-class
 
-- [ ] Add explicit account balances, pool reserves, swap outputs, and execution errors to the local target state.
-- [ ] Persist destination execution receipts separately from packet receipts.
-- [ ] Add a notion of route action result:
+- [x] Add explicit account balances, pool reserves, swap outputs, and execution errors to the local target state.
+- [x] Persist destination execution receipts separately from packet receipts.
+- [x] Add a notion of route action result:
   - `credit`
   - `swap_success`
   - `swap_failed`
+  - `invalid_action`
 
 **What is happening:** delivery and economic execution become separate concerns.
 
@@ -68,11 +71,11 @@ The correct order is:
 
 ### Task 1.3: Support richer route actions
 
-- [ ] Extend memo parsing so route actions can carry structured intent like:
+- [x] Extend memo parsing so route actions can carry structured intent like:
   - `swap:uosmo`
   - `swap:uosmo:min_out=50000000`
-  - future-friendly fields like `recipient` override or `path`
-- [ ] Reject malformed action intents cleanly and map them to execution-driven `ack_failed`.
+  - `swap:uosmo:recipient=osmo1override:path=pool-7`
+- [x] Reject malformed action intents cleanly and map them to execution-driven `ack_failed`.
 
 **What is happening:** the routed side becomes a message execution layer, not just asset forwarding.
 
@@ -80,10 +83,10 @@ The correct order is:
 
 ### Task 1.4: Add richer destination query surfaces
 
-- [ ] Expose packet receipt queries.
-- [ ] Expose acknowledgement queues or histories.
-- [ ] Expose execution receipts and error reasons.
-- [ ] Keep `/status`, `/pools`, `/balances`, and `/swaps` aligned with the richer state.
+- [x] Expose packet receipt queries.
+- [x] Expose acknowledgement queues or histories.
+- [x] Expose execution receipts and error reasons.
+- [x] Keep `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps` aligned with the richer state.
 
 **What is happening:** the destination side becomes observable enough to debug in interviews and demos.
 
@@ -91,12 +94,12 @@ The correct order is:
 
 ### Task 1.5: Strengthen the route e2e story
 
-- [ ] Extend `tests/e2e/osmosis_route_test.go` to prove:
+- [x] Extend `tests/e2e/osmosis_route_test.go` to prove:
   - successful packet receive and later acknowledgement
   - failed destination execution leading to `ack_failed`
   - timeout path leading to recoverable state
   - final destination balances and pool reserve changes
-- [ ] Add at least one “bad memo” or “unsupported target denom” path.
+- [x] Add at least one “bad memo” or “unsupported target denom” path.
 
 **What is happening:** the route system is tested as a lifecycle, not as one request.
 

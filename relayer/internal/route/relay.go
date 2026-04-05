@@ -22,10 +22,11 @@ type Transfer struct {
 }
 
 type DeliveryEnvelope struct {
-	Transfer   Transfer     `json:"transfer"`
-	Packet     Packet       `json:"packet"`
-	DenomTrace DenomTrace   `json:"denom_trace"`
-	Action     *RouteAction `json:"action,omitempty"`
+	Transfer    Transfer     `json:"transfer"`
+	Packet      Packet       `json:"packet"`
+	DenomTrace  DenomTrace   `json:"denom_trace"`
+	Action      *RouteAction `json:"action,omitempty"`
+	ActionError string       `json:"action_error,omitempty"`
 }
 
 type Packet struct {
@@ -55,6 +56,8 @@ type RouteAction struct {
 	Type        string `json:"type"`
 	TargetDenom string `json:"target_denom,omitempty"`
 	MinOut      string `json:"min_out,omitempty"`
+	Recipient   string `json:"recipient,omitempty"`
+	Path        string `json:"path,omitempty"`
 }
 
 const routePacketSender = "aegislink1ibcrouter"
@@ -176,6 +179,8 @@ func buildDeliveryEnvelope(transfer Transfer) (DeliveryEnvelope, error) {
 		return DeliveryEnvelope{}, fmt.Errorf("missing receiver for transfer %s", transfer.TransferID)
 	}
 
+	action, actionErr := parseRouteAction(transfer.Memo)
+
 	envelope := DeliveryEnvelope{
 		Transfer: transfer,
 		Packet: Packet{
@@ -197,7 +202,8 @@ func buildDeliveryEnvelope(transfer Transfer) (DeliveryEnvelope, error) {
 			BaseDenom: assetID,
 			IBCDenom:  strings.TrimSpace(transfer.DestinationDenom),
 		},
-		Action: parseRouteAction(transfer.Memo),
+		Action:      action,
+		ActionError: actionErr,
 	}
 	return envelope, nil
 }
@@ -214,27 +220,63 @@ func parseTransferSequence(transferID string) (uint64, error) {
 	return sequence, nil
 }
 
-func parseRouteAction(memo string) *RouteAction {
+func parseRouteAction(memo string) (*RouteAction, string) {
 	memo = strings.TrimSpace(memo)
-	if strings.HasPrefix(memo, "swap:") {
-		parts := strings.Split(memo, ":")
-		if len(parts) < 2 {
-			return nil
+	if memo == "" {
+		return nil, ""
+	}
+
+	parts := strings.Split(memo, ":")
+	if len(parts) == 1 {
+		if strings.TrimSpace(parts[0]) == "swap" {
+			return nil, "missing target denom for swap action"
 		}
+		return nil, ""
+	}
+
+	actionType := strings.TrimSpace(parts[0])
+	switch actionType {
+	case "swap":
 		targetDenom := strings.TrimSpace(parts[1])
 		if targetDenom == "" {
-			return nil
+			return nil, "missing target denom for swap action"
 		}
 		action := &RouteAction{Type: "swap", TargetDenom: targetDenom}
+		seen := make(map[string]struct{})
 		for _, part := range parts[2:] {
 			part = strings.TrimSpace(part)
-			if strings.HasPrefix(part, "min_out=") {
-				action.MinOut = strings.TrimSpace(strings.TrimPrefix(part, "min_out="))
+			if part == "" {
+				return nil, "empty swap option"
+			}
+			key, value, ok := strings.Cut(part, "=")
+			if !ok {
+				return nil, fmt.Sprintf("invalid swap option %q", part)
+			}
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if key == "" || value == "" {
+				return nil, fmt.Sprintf("invalid swap option %q", part)
+			}
+			if _, exists := seen[key]; exists {
+				return nil, fmt.Sprintf("duplicate swap option %q", key)
+			}
+			seen[key] = struct{}{}
+
+			switch key {
+			case "min_out":
+				action.MinOut = value
+			case "recipient":
+				action.Recipient = value
+			case "path":
+				action.Path = value
+			default:
+				return nil, fmt.Sprintf("unsupported swap option %q", key)
 			}
 		}
-		return action
+		return action, ""
+	default:
+		return nil, fmt.Sprintf("unsupported route action %q", actionType)
 	}
-	return nil
 }
 
 type TimeoutError struct {

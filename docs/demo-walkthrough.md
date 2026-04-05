@@ -27,6 +27,7 @@ The demo runs two proof paths:
 - AegisLink is not just a contract wrapper. It owns bridge accounting, routing, and policy.
 - Outbound routing is not just a status flip. The destination target persists packet receipt, executes pool-backed swaps, and later produces an acknowledgement.
 - The destination side is queryable through `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`.
+- Route intent is richer than a single happy-path swap. The target can honor `min_out`, recipient override, and path metadata, and it can fail cleanly on unsupported actions.
 
 ## Route lifecycle to point at
 
@@ -46,6 +47,7 @@ Those states are what make the local harness feel closer to real interchain deli
 - `AegisLink mints and routes according to policy.`
 - `The mock Osmosis target persists the packet, executes the destination-side swap, and exposes both packet and execution state.`
 - `The route can also fail for execution reasons like missing pool or min_out, not only transport reasons.`
+- `The route timeout path is recoverable on AegisLink, so the demo covers both success and refund-safe failure.`
 
 ## Important honesty line
 

@@ -779,6 +779,234 @@ func TestMockTargetUsesConfiguredAlternatePoolForDifferentOutputDenom(t *testing
 	}
 }
 
+func TestMockTargetSupportsRecipientOverrideAndRoutePath(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/7",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1base",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo:recipient=osmo1override:path=pool-7",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+
+	var state struct {
+		Executions []struct {
+			Result    string `json:"result"`
+			Recipient string `json:"recipient"`
+			RoutePath string `json:"route_path"`
+		} `json:"executions"`
+		Swaps []struct {
+			Recipient string `json:"recipient"`
+			RoutePath string `json:"route_path"`
+		} `json:"swaps"`
+		Balances []struct {
+			Address string `json:"address"`
+		} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &state)
+
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "swap_success" {
+		t.Fatalf("expected swap_success execution, got %q", state.Executions[0].Result)
+	}
+	if state.Executions[0].Recipient != "osmo1override" {
+		t.Fatalf("expected override recipient on execution, got %q", state.Executions[0].Recipient)
+	}
+	if state.Executions[0].RoutePath != "pool-7" {
+		t.Fatalf("expected route path pool-7 on execution, got %q", state.Executions[0].RoutePath)
+	}
+	if len(state.Swaps) != 1 {
+		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
+	}
+	if state.Swaps[0].Recipient != "osmo1override" {
+		t.Fatalf("expected override recipient on swap, got %q", state.Swaps[0].Recipient)
+	}
+	if state.Swaps[0].RoutePath != "pool-7" {
+		t.Fatalf("expected route path pool-7 on swap, got %q", state.Swaps[0].RoutePath)
+	}
+	if len(state.Balances) != 1 {
+		t.Fatalf("expected one balance, got %d", len(state.Balances))
+	}
+	if state.Balances[0].Address != "osmo1override" {
+		t.Fatalf("expected balance credited to override recipient, got %q", state.Balances[0].Address)
+	}
+}
+
+func TestMockTargetRejectsMalformedRouteActionAsExecutionFailure(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("success", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/8",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1badmemo",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "stake:uosmo",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("expected one ready ack, got %d", len(acks))
+	}
+	if acks[0].Status != AckStatusFailed {
+		t.Fatalf("expected failed ack, got %q", acks[0].Status)
+	}
+	if acks[0].Reason == "" {
+		t.Fatal("expected invalid action reason")
+	}
+
+	var state struct {
+		Packets []struct {
+			AckState    string `json:"ack_state"`
+			ActionError string `json:"action_error"`
+		} `json:"packets"`
+		Executions []struct {
+			Result string `json:"result"`
+			Error  string `json:"error"`
+		} `json:"executions"`
+		Swaps    []struct{} `json:"swaps"`
+		Balances []struct{} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &state)
+
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
+	}
+	if state.Packets[0].AckState != "ack_failed" {
+		t.Fatalf("expected ack_failed packet state, got %q", state.Packets[0].AckState)
+	}
+	if state.Packets[0].ActionError == "" {
+		t.Fatal("expected action error to be persisted")
+	}
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution receipt, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "invalid_action" {
+		t.Fatalf("expected invalid_action execution result, got %q", state.Executions[0].Result)
+	}
+	if state.Executions[0].Error == "" {
+		t.Fatal("expected execution error to be recorded")
+	}
+	if len(state.Swaps) != 0 || len(state.Balances) != 0 {
+		t.Fatalf("expected no swaps or balances after invalid action, got swaps=%d balances=%d", len(state.Swaps), len(state.Balances))
+	}
+}
+
+func TestMockTargetTimeoutModeSkipsDestinationExecution(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("timeout", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	ack, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/9",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1timeout",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo",
+	})
+	if err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if ack.Status != AckStatusReceived {
+		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("expected one ready ack, got %d", len(acks))
+	}
+	if acks[0].Status != AckStatusTimedOut {
+		t.Fatalf("expected timed out ack, got %q", acks[0].Status)
+	}
+
+	var state struct {
+		Packets []struct {
+			PacketState string `json:"packet_state"`
+			AckState    string `json:"ack_state"`
+		} `json:"packets"`
+		Executions []struct{} `json:"executions"`
+		Swaps      []struct{} `json:"swaps"`
+		Balances   []struct{} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &state)
+
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
+	}
+	if state.Packets[0].PacketState != "ack_ready" {
+		t.Fatalf("expected ack_ready packet state for timeout, got %q", state.Packets[0].PacketState)
+	}
+	if state.Packets[0].AckState != "timed_out" {
+		t.Fatalf("expected timed_out ack state, got %q", state.Packets[0].AckState)
+	}
+	if len(state.Executions) != 0 || len(state.Swaps) != 0 || len(state.Balances) != 0 {
+		t.Fatalf("expected no destination execution for timeout, got executions=%d swaps=%d balances=%d", len(state.Executions), len(state.Swaps), len(state.Balances))
+	}
+}
+
 func TestMockTargetCanResolveReadyAckAndMarkItConfirmed(t *testing.T) {
 	t.Parallel()
 

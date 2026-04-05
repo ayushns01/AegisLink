@@ -2,6 +2,7 @@ package route
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -118,6 +119,77 @@ func TestRelayerRunOnceLeavesTransferPendingAfterDeliveryReceipt(t *testing.T) {
 	}
 	if len(target.confirmed) != 0 {
 		t.Fatalf("expected no confirmed acks, got %v", target.confirmed)
+	}
+}
+
+func TestParseRouteActionSupportsRecipientPathAndMinOut(t *testing.T) {
+	t.Parallel()
+
+	action, actionErr := parseRouteAction("swap:uosmo:min_out=50000000:recipient=osmo1override:path=pool-7")
+	if actionErr != "" {
+		t.Fatalf("expected no action error, got %q", actionErr)
+	}
+	if action == nil {
+		t.Fatal("expected parsed action")
+	}
+	if action.Type != "swap" {
+		t.Fatalf("expected swap action type, got %q", action.Type)
+	}
+	if action.TargetDenom != "uosmo" {
+		t.Fatalf("expected target denom uosmo, got %q", action.TargetDenom)
+	}
+	if action.MinOut != "50000000" {
+		t.Fatalf("expected min_out 50000000, got %q", action.MinOut)
+	}
+	if action.Recipient != "osmo1override" {
+		t.Fatalf("expected recipient override osmo1override, got %q", action.Recipient)
+	}
+	if action.Path != "pool-7" {
+		t.Fatalf("expected route path pool-7, got %q", action.Path)
+	}
+}
+
+func TestParseRouteActionReportsMalformedOrUnsupportedAction(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		memo       string
+		wantErrSub string
+	}{
+		{
+			name:       "missing target denom",
+			memo:       "swap:",
+			wantErrSub: "missing target denom",
+		},
+		{
+			name:       "unsupported option",
+			memo:       "swap:uosmo:slippage=10",
+			wantErrSub: "unsupported swap option",
+		},
+		{
+			name:       "unsupported action",
+			memo:       "stake:uosmo",
+			wantErrSub: "unsupported route action",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			action, actionErr := parseRouteAction(tc.memo)
+			if action != nil {
+				t.Fatalf("expected nil action for %q, got %+v", tc.memo, action)
+			}
+			if actionErr == "" {
+				t.Fatalf("expected action error for %q", tc.memo)
+			}
+			if want := tc.wantErrSub; want != "" && !strings.Contains(actionErr, want) {
+				t.Fatalf("expected action error containing %q, got %q", want, actionErr)
+			}
+		})
 	}
 }
 

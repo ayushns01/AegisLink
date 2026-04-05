@@ -590,6 +590,204 @@ func TestRouteRelayerMarksTransferFailedWhenDestinationSwapMinOutIsNotMet(t *tes
 	}
 }
 
+func TestRouteRelayerMarksTransferFailedWhenRouteActionIsUnsupported(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1badmemo", 140, "stake:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis-invalid-action.json")
+	target := startMockOsmosisTarget(t, targetStatePath, "success")
+	defer target.cancel()
+
+	runRouteRelayerOnce(t, statePath, target.url)
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, transfers[0].TransferID)
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusAckFailed {
+		t.Fatalf("expected ack_failed status, got %q", transfers[0].Status)
+	}
+	if transfers[0].FailureReason == "" {
+		t.Fatal("expected failure reason to be recorded")
+	}
+
+	var state struct {
+		Packets []struct {
+			PacketState string `json:"packet_state"`
+			AckState    string `json:"ack_state"`
+			ActionError string `json:"action_error"`
+		} `json:"packets"`
+		Executions []struct {
+			Result string `json:"result"`
+			Error  string `json:"error"`
+		} `json:"executions"`
+		Swaps    []struct{} `json:"swaps"`
+		Balances []struct{} `json:"balances"`
+	}
+	readJSONFile(t, targetStatePath, &state)
+
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
+	}
+	if state.Packets[0].PacketState != "ack_relayed" {
+		t.Fatalf("expected ack_relayed packet state after invalid action failure, got %q", state.Packets[0].PacketState)
+	}
+	if state.Packets[0].AckState != "ack_failed" {
+		t.Fatalf("expected ack_failed packet ack state, got %q", state.Packets[0].AckState)
+	}
+	if state.Packets[0].ActionError == "" {
+		t.Fatal("expected persisted action error")
+	}
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "invalid_action" || state.Executions[0].Error == "" {
+		t.Fatalf("unexpected execution payload: %+v", state.Executions[0])
+	}
+	if len(state.Swaps) != 0 || len(state.Balances) != 0 {
+		t.Fatalf("expected no destination state changes after invalid action, got swaps=%d balances=%d", len(state.Swaps), len(state.Balances))
+	}
+}
+
+func TestRouteRelayerTimesOutTransferAndAllowsRefundRecovery(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrapWithOsmosisRoute(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1timeout", 140, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis-timeout.json")
+	target := startMockOsmosisTarget(t, targetStatePath, "timeout")
+	defer target.cancel()
+
+	runRouteRelayerOnce(t, statePath, target.url)
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload timed out state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, transfers[0].TransferID)
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusTimedOut {
+		t.Fatalf("expected timed_out status, got %q", transfers[0].Status)
+	}
+
+	var state struct {
+		Packets []struct {
+			TransferID  string `json:"transfer_id"`
+			PacketState string `json:"packet_state"`
+			AckState    string `json:"ack_state"`
+			AckReason   string `json:"ack_reason"`
+			AckRelayed  bool   `json:"ack_relayed"`
+		} `json:"packets"`
+		Executions []struct{} `json:"executions"`
+		Swaps      []struct{} `json:"swaps"`
+		Balances   []struct{} `json:"balances"`
+	}
+	readJSONFile(t, targetStatePath, &state)
+
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
+	}
+	if state.Packets[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q in target state, got %q", transfer.TransferID, state.Packets[0].TransferID)
+	}
+	if state.Packets[0].PacketState != "ack_relayed" {
+		t.Fatalf("expected ack_relayed packet state after timeout relay, got %q", state.Packets[0].PacketState)
+	}
+	if state.Packets[0].AckState != "timed_out" {
+		t.Fatalf("expected timed_out ack state, got %q", state.Packets[0].AckState)
+	}
+	if state.Packets[0].AckReason == "" || !state.Packets[0].AckRelayed {
+		t.Fatalf("expected relayed timeout ack, got %+v", state.Packets[0])
+	}
+	if len(state.Executions) != 0 || len(state.Swaps) != 0 || len(state.Balances) != 0 {
+		t.Fatalf("expected no destination execution for timeout, got executions=%d swaps=%d balances=%d", len(state.Executions), len(state.Swaps), len(state.Balances))
+	}
+
+	packetsOutput := readMockTargetEndpoint(t, target.url+"/packets")
+	var packets []struct {
+		PacketState string `json:"packet_state"`
+		AckState    string `json:"ack_state"`
+	}
+	if err := json.Unmarshal(packetsOutput, &packets); err != nil {
+		t.Fatalf("decode packets endpoint: %v", err)
+	}
+	if len(packets) != 1 || packets[0].PacketState != "ack_relayed" || packets[0].AckState != "timed_out" {
+		t.Fatalf("unexpected packets endpoint payload: %+v", packets)
+	}
+
+	executionsOutput := readMockTargetEndpoint(t, target.url+"/executions")
+	var executions []struct{}
+	if err := json.Unmarshal(executionsOutput, &executions); err != nil {
+		t.Fatalf("decode executions endpoint: %v", err)
+	}
+	if len(executions) != 0 {
+		t.Fatalf("expected no executions from endpoint for timeout, got %d", len(executions))
+	}
+
+	_ = runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"tx",
+		"refund-ibc-transfer",
+		"--state-path",
+		statePath,
+		"--transfer-id",
+		transfer.TransferID,
+	)
+
+	loaded, err = aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload refunded state: %v", err)
+	}
+	transfers = loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer after refund, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusRefunded {
+		t.Fatalf("expected refunded status after recovery, got %q", transfers[0].Status)
+	}
+}
+
 func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	t.Parallel()
 
@@ -598,7 +796,7 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	_, err = app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1altpool", 140, "swap:uion")
+	_, err = app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1altpool", 140, "swap:uion:recipient=osmo1altoverride:path=pool-42")
 	if err != nil {
 		t.Fatalf("initiate transfer: %v", err)
 	}
@@ -616,19 +814,47 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	runRouteRelayerOnce(t, statePath, target.url)
 
 	var state struct {
+		Executions []struct {
+			Result       string `json:"result"`
+			Recipient    string `json:"recipient"`
+			RoutePath    string `json:"route_path"`
+			OutputDenom  string `json:"output_denom"`
+			OutputAmount string `json:"output_amount"`
+		} `json:"executions"`
 		Swaps []struct {
+			Recipient    string `json:"recipient"`
+			RoutePath    string `json:"route_path"`
 			OutputDenom  string `json:"output_denom"`
 			OutputAmount string `json:"output_amount"`
 		} `json:"swaps"`
 		Balances []struct {
-			Denom  string `json:"denom"`
-			Amount string `json:"amount"`
+			Address string `json:"address"`
+			Denom   string `json:"denom"`
+			Amount  string `json:"amount"`
 		} `json:"balances"`
 	}
 	readJSONFile(t, targetStatePath, &state)
 
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution record, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "swap_success" {
+		t.Fatalf("expected swap_success execution, got %q", state.Executions[0].Result)
+	}
+	if state.Executions[0].Recipient != "osmo1altoverride" {
+		t.Fatalf("expected override recipient on execution, got %q", state.Executions[0].Recipient)
+	}
+	if state.Executions[0].RoutePath != "pool-42" {
+		t.Fatalf("expected route path pool-42 on execution, got %q", state.Executions[0].RoutePath)
+	}
 	if len(state.Swaps) != 1 {
 		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
+	}
+	if state.Swaps[0].Recipient != "osmo1altoverride" {
+		t.Fatalf("expected override recipient on swap, got %q", state.Swaps[0].Recipient)
+	}
+	if state.Swaps[0].RoutePath != "pool-42" {
+		t.Fatalf("expected route path pool-42 on swap, got %q", state.Swaps[0].RoutePath)
 	}
 	if state.Swaps[0].OutputDenom != "uion" {
 		t.Fatalf("expected output denom uion, got %q", state.Swaps[0].OutputDenom)
@@ -638,6 +864,9 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	}
 	if len(state.Balances) != 1 {
 		t.Fatalf("expected one balance, got %d", len(state.Balances))
+	}
+	if state.Balances[0].Address != "osmo1altoverride" {
+		t.Fatalf("expected override balance address, got %q", state.Balances[0].Address)
 	}
 	if state.Balances[0].Denom != "uion" {
 		t.Fatalf("expected uion balance, got %q", state.Balances[0].Denom)
@@ -678,6 +907,8 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	executionsOutput := readMockTargetEndpoint(t, target.url+"/executions")
 	var executions []struct {
 		Result       string `json:"result"`
+		Recipient    string `json:"recipient"`
+		RoutePath    string `json:"route_path"`
 		OutputDenom  string `json:"output_denom"`
 		OutputAmount string `json:"output_amount"`
 	}
@@ -687,7 +918,7 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	if len(executions) != 1 {
 		t.Fatalf("expected one execution from endpoint, got %d", len(executions))
 	}
-	if executions[0].Result != "swap_success" || executions[0].OutputDenom != "uion" || executions[0].OutputAmount != "12121212" {
+	if executions[0].Result != "swap_success" || executions[0].Recipient != "osmo1altoverride" || executions[0].RoutePath != "pool-42" || executions[0].OutputDenom != "uion" || executions[0].OutputAmount != "12121212" {
 		t.Fatalf("unexpected executions endpoint payload: %+v", executions[0])
 	}
 
