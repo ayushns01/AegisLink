@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -518,6 +519,50 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	if state.Balances[0].Amount != "12121212" {
 		t.Fatalf("expected amount 12121212, got %q", state.Balances[0].Amount)
 	}
+
+	swapsOutput := readMockTargetEndpoint(t, target.url+"/swaps")
+	var swaps []struct {
+		OutputDenom  string `json:"output_denom"`
+		OutputAmount string `json:"output_amount"`
+	}
+	if err := json.Unmarshal(swapsOutput, &swaps); err != nil {
+		t.Fatalf("decode swaps endpoint: %v", err)
+	}
+	if len(swaps) != 1 {
+		t.Fatalf("expected one swap from endpoint, got %d", len(swaps))
+	}
+	if swaps[0].OutputDenom != "uion" || swaps[0].OutputAmount != "12121212" {
+		t.Fatalf("unexpected swaps endpoint payload: %+v", swaps[0])
+	}
+
+	balancesOutput := readMockTargetEndpoint(t, target.url+"/balances")
+	var balances []struct {
+		Denom  string `json:"denom"`
+		Amount string `json:"amount"`
+	}
+	if err := json.Unmarshal(balancesOutput, &balances); err != nil {
+		t.Fatalf("decode balances endpoint: %v", err)
+	}
+	if len(balances) != 1 {
+		t.Fatalf("expected one balance from endpoint, got %d", len(balances))
+	}
+	if balances[0].Denom != "uion" || balances[0].Amount != "12121212" {
+		t.Fatalf("unexpected balances endpoint payload: %+v", balances[0])
+	}
+
+	poolsOutput := readMockTargetEndpoint(t, target.url+"/pools")
+	var pools []struct {
+		OutputDenom string `json:"output_denom"`
+	}
+	if err := json.Unmarshal(poolsOutput, &pools); err != nil {
+		t.Fatalf("decode pools endpoint: %v", err)
+	}
+	if len(pools) != 1 {
+		t.Fatalf("expected one pool from endpoint, got %d", len(pools))
+	}
+	if pools[0].OutputDenom != "uion" {
+		t.Fatalf("expected uion pool from endpoint, got %+v", pools[0])
+	}
 }
 
 func TestRouteRelayerCompletesTransferOnlyAfterManualAckResolution(t *testing.T) {
@@ -675,6 +720,24 @@ func resolveMockOsmosisAck(t *testing.T, baseURL, transferID, action string) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 from ack resolution, got %d", resp.StatusCode)
 	}
+}
+
+func readMockTargetEndpoint(t *testing.T, endpoint string) []byte {
+	t.Helper()
+
+	resp, err := (&http.Client{Timeout: time.Second}).Get(endpoint)
+	if err != nil {
+		t.Fatalf("get %s: %v", endpoint, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from %s, got %d", endpoint, resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s: %v", endpoint, err)
+	}
+	return data
 }
 
 func mustFormatPort(port int) string {

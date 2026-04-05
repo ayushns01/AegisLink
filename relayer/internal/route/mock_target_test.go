@@ -155,6 +155,38 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	}
 }
 
+func TestMockTargetExposesPoolsBalancesAndSwapsEndpoints(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	if _, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/8",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1query",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo",
+	}); err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+
+	assertEndpointJSONCount(t, target.client, target.baseURL+"/pools", 1)
+	assertEndpointJSONCount(t, target.client, target.baseURL+"/balances", 1)
+	assertEndpointJSONCount(t, target.client, target.baseURL+"/swaps", 1)
+}
+
 func TestMockTargetCreditsRecipientBalanceForPlainIBCReceive(t *testing.T) {
 	t.Parallel()
 
@@ -630,5 +662,26 @@ func readJSONFile(t *testing.T, path string, out any) {
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		t.Fatalf("decode %s: %v", path, err)
+	}
+}
+
+func assertEndpointJSONCount(t *testing.T, client *http.Client, endpoint string, expected int) {
+	t.Helper()
+
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		t.Fatalf("get %s: %v", endpoint, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from %s, got %d", endpoint, resp.StatusCode)
+	}
+
+	var items []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatalf("decode %s: %v", endpoint, err)
+	}
+	if len(items) != expected {
+		t.Fatalf("expected %d items from %s, got %d", expected, endpoint, len(items))
 	}
 }

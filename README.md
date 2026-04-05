@@ -74,6 +74,7 @@ Use these for operational and launch thinking:
 
 - [Security model summary](docs/security-model.md)
 - [Observability plan](docs/observability.md)
+- [Demo walkthrough](docs/demo-walkthrough.md)
 - [Pause and recovery runbook](docs/runbooks/pause-and-recovery.md)
 - [Upgrade and rollback runbook](docs/runbooks/upgrade-and-rollback.md)
 
@@ -87,6 +88,24 @@ Use phrasing like:
 
 Do not describe v1 as fully trustless or fully light-client verified.
 
+## Five-minute demo
+
+If you want the fastest way to show the project working locally, run:
+
+```bash
+make demo
+```
+
+That demo exercises:
+
+- a live local Ethereum deposit
+- relayer submission into AegisLink
+- outbound routing into the Osmosis-style target
+- destination-side swap execution
+- public target queries for pools, balances, and swaps
+
+For the full walkthrough, use [Demo walkthrough](docs/demo-walkthrough.md).
+
 ## Current checkpoint
 
 As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a live local Ethereum bridge loop and an Osmosis-style routed execution harness, not just a design repo. The repository now includes:
@@ -99,6 +118,7 @@ As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a
 - route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
 - a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
 - packet receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
+- public mock-target query surfaces for `/pools`, `/balances`, and `/swaps`
 
 The current repo shape is:
 

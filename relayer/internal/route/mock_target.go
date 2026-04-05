@@ -101,6 +101,9 @@ func NewMockTargetHandlerWithConfig(cfg MockTargetConfig) http.Handler {
 	mux.HandleFunc("/transfers", target.handleTransfers)
 	mux.HandleFunc("/acks", target.handleAcks)
 	mux.HandleFunc("/acks/", target.handleAckControl)
+	mux.HandleFunc("/pools", target.handlePools)
+	mux.HandleFunc("/balances", target.handleBalances)
+	mux.HandleFunc("/swaps", target.handleSwaps)
 	return mux
 }
 
@@ -172,6 +175,42 @@ func (t *MockTarget) handleAcks(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	_ = json.NewEncoder(w).Encode(acks)
+}
+
+func (t *MockTarget) handlePools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.state.Pools)
+}
+
+func (t *MockTarget) handleBalances(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.state.Balances)
+}
+
+func (t *MockTarget) handleSwaps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.state.Swaps)
 }
 
 func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {
