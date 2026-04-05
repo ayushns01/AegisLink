@@ -16,6 +16,149 @@ import (
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
 
+func TestRunInitCreatesRuntimeHomeArtifacts(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"init",
+		"--home", homeDir,
+		"--chain-id", "aegislink-devnet-1",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run init: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		Status      string `json:"status"`
+		ChainID     string `json:"chain_id"`
+		HomeDir     string `json:"home_dir"`
+		ConfigPath  string `json:"config_path"`
+		GenesisPath string `json:"genesis_path"`
+		StatePath   string `json:"state_path"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode init output: %v\n%s", err, stdout.String())
+	}
+	if result.Status != "initialized" {
+		t.Fatalf("expected initialized status, got %q", result.Status)
+	}
+	if result.ChainID != "aegislink-devnet-1" {
+		t.Fatalf("expected chain id aegislink-devnet-1, got %q", result.ChainID)
+	}
+	if result.HomeDir != homeDir {
+		t.Fatalf("expected home dir %q, got %q", homeDir, result.HomeDir)
+	}
+	for _, path := range []string{result.ConfigPath, result.GenesisPath, result.StatePath} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected artifact %s: %v", path, err)
+		}
+	}
+}
+
+func TestRunStartLoadsInitializedRuntimeFromHome(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir: homeDir,
+		ChainID: "aegislink-devnet-1",
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"start",
+		"--home", homeDir,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run start: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		Status  string `json:"status"`
+		ChainID string `json:"chain_id"`
+		HomeDir string `json:"home_dir"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode start output: %v\n%s", err, stdout.String())
+	}
+	if result.Status != "started" {
+		t.Fatalf("expected started status, got %q", result.Status)
+	}
+	if result.ChainID != "aegislink-devnet-1" {
+		t.Fatalf("expected chain id aegislink-devnet-1, got %q", result.ChainID)
+	}
+	if result.HomeDir != homeDir {
+		t.Fatalf("expected home dir %q, got %q", homeDir, result.HomeDir)
+	}
+}
+
+func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+	cfg, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir: homeDir,
+		ChainID: "aegislink-devnet-1",
+	}, false)
+	if err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+	app := seededRuntimeAppWithIBCRoute(t, cfg.StatePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save seeded state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "status",
+		"--home", homeDir,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query status: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var status struct {
+		AppName          string `json:"app_name"`
+		ChainID          string `json:"chain_id"`
+		Initialized      bool   `json:"initialized"`
+		Assets           int    `json:"assets"`
+		Routes           int    `json:"routes"`
+		Transfers        int    `json:"transfers"`
+		PendingTransfers int    `json:"pending_transfers"`
+		HomeDir          string `json:"home_dir"`
+		StatePath        string `json:"state_path"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status output: %v\n%s", err, stdout.String())
+	}
+	if status.AppName != aegisapp.AppName {
+		t.Fatalf("expected app name %q, got %q", aegisapp.AppName, status.AppName)
+	}
+	if status.ChainID != "aegislink-devnet-1" {
+		t.Fatalf("expected chain id aegislink-devnet-1, got %q", status.ChainID)
+	}
+	if !status.Initialized {
+		t.Fatal("expected initialized status")
+	}
+	if status.Assets != 1 || status.Routes != 1 {
+		t.Fatalf("unexpected status counts: %+v", status)
+	}
+	if status.Transfers != 0 || status.PendingTransfers != 0 {
+		t.Fatalf("expected zero transfers in seeded runtime, got %+v", status)
+	}
+	if status.HomeDir != homeDir {
+		t.Fatalf("expected home dir %q, got %q", homeDir, status.HomeDir)
+	}
+	if status.StatePath != cfg.StatePath {
+		t.Fatalf("expected state path %q, got %q", cfg.StatePath, status.StatePath)
+	}
+}
+
 func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	t.Parallel()
 

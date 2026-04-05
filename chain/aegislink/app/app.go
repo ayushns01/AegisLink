@@ -15,6 +15,8 @@ import (
 	registrykeeper "github.com/ayushns01/aegislink/chain/aegislink/x/registry/keeper"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 	"math/big"
+	"os"
+	"strings"
 )
 
 type App struct {
@@ -25,6 +27,35 @@ type App struct {
 	LimitsKeeper    *limitskeeper.Keeper
 	PauserKeeper    *pauserkeeper.Keeper
 	modules         []string
+}
+
+type Status struct {
+	AppName            string            `json:"app_name"`
+	ChainID            string            `json:"chain_id"`
+	RuntimeMode        string            `json:"runtime_mode"`
+	HomeDir            string            `json:"home_dir"`
+	ConfigPath         string            `json:"config_path"`
+	GenesisPath        string            `json:"genesis_path"`
+	StatePath          string            `json:"state_path"`
+	Initialized        bool              `json:"initialized"`
+	ModuleNames        []string          `json:"module_names"`
+	Modules            int               `json:"modules"`
+	AllowedSigners     []string          `json:"allowed_signers"`
+	RequiredThreshold  uint32            `json:"required_threshold"`
+	CurrentHeight      uint64            `json:"current_height"`
+	Assets             int               `json:"assets"`
+	Limits             int               `json:"limits"`
+	PausedFlows        int               `json:"paused_flows"`
+	ProcessedClaims    int               `json:"processed_claims"`
+	Withdrawals        int               `json:"withdrawals"`
+	Routes             int               `json:"routes"`
+	Transfers          int               `json:"transfers"`
+	PendingTransfers   int               `json:"pending_transfers"`
+	CompletedTransfers int               `json:"completed_transfers"`
+	FailedTransfers    int               `json:"failed_transfers"`
+	TimedOutTransfers  int               `json:"timed_out_transfers"`
+	RefundedTransfers  int               `json:"refunded_transfers"`
+	SupplyByDenom      map[string]string `json:"supply_by_denom"`
 }
 
 func New() *App {
@@ -70,7 +101,11 @@ func Load(statePath string) (*App, error) {
 }
 
 func LoadWithConfig(cfg Config) (*App, error) {
-	app := NewWithConfig(cfg)
+	resolved, err := ResolveConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	app := NewWithConfig(resolved)
 	state, err := loadRuntimeState(app.Config.StatePath)
 	if err != nil {
 		return nil, err
@@ -171,10 +206,74 @@ func (a *App) Save() error {
 	})
 }
 
+func (a *App) Status() Status {
+	bridgeState := a.BridgeKeeper.ExportState()
+	transfers := a.IBCRouterKeeper.ExportTransfers()
+
+	status := Status{
+		AppName:           a.Config.AppName,
+		ChainID:           a.Config.ChainID,
+		RuntimeMode:       a.Config.RuntimeMode,
+		HomeDir:           a.Config.HomeDir,
+		ConfigPath:        a.Config.ConfigPath,
+		GenesisPath:       a.Config.GenesisPath,
+		StatePath:         a.Config.StatePath,
+		Initialized:       runtimeInitialized(a.Config),
+		ModuleNames:       a.ModuleNames(),
+		Modules:           len(a.modules),
+		AllowedSigners:    append([]string(nil), a.Config.AllowedSigners...),
+		RequiredThreshold: a.Config.RequiredThreshold,
+		CurrentHeight:     bridgeState.CurrentHeight,
+		Assets:            len(a.RegistryKeeper.ExportAssets()),
+		Limits:            len(a.LimitsKeeper.ExportLimits()),
+		PausedFlows:       len(a.PauserKeeper.ExportPausedFlows()),
+		ProcessedClaims:   len(bridgeState.ProcessedClaims),
+		Withdrawals:       len(bridgeState.Withdrawals),
+		Routes:            len(a.IBCRouterKeeper.ExportRoutes()),
+		Transfers:         len(transfers),
+		SupplyByDenom:     bridgeState.SupplyByDenom,
+	}
+
+	for _, transfer := range transfers {
+		switch transfer.Status {
+		case ibcrouterkeeper.TransferStatusPending:
+			status.PendingTransfers++
+		case ibcrouterkeeper.TransferStatusCompleted:
+			status.CompletedTransfers++
+		case ibcrouterkeeper.TransferStatusAckFailed:
+			status.FailedTransfers++
+		case ibcrouterkeeper.TransferStatusTimedOut:
+			status.TimedOutTransfers++
+		case ibcrouterkeeper.TransferStatusRefunded:
+			status.RefundedTransfers++
+		}
+	}
+
+	return status
+}
+
 func normalizeConfig(cfg Config) Config {
 	defaults := DefaultConfig()
 	if cfg.AppName == "" {
 		cfg.AppName = defaults.AppName
+	}
+	if cfg.ChainID == "" {
+		cfg.ChainID = defaults.ChainID
+	}
+	if cfg.RuntimeMode == "" {
+		cfg.RuntimeMode = defaults.RuntimeMode
+	}
+	if cfg.HomeDir == "" {
+		cfg.HomeDir = defaults.HomeDir
+	}
+	if cfg.ConfigPath == "" {
+		cfg.ConfigPath = runtimeConfigPath(cfg.HomeDir)
+	}
+	if cfg.GenesisPath == "" {
+		cfg.GenesisPath = runtimeGenesisPath(cfg.HomeDir)
+	}
+	if cfg.StatePath == "" {
+		cfg.StatePath = runtimeStatePath(cfg.HomeDir)
 	}
 	if len(cfg.Modules) == 0 {
 		cfg.Modules = append([]string(nil), defaults.Modules...)
@@ -186,4 +285,16 @@ func normalizeConfig(cfg Config) Config {
 		cfg.RequiredThreshold = defaults.RequiredThreshold
 	}
 	return cfg
+}
+
+func runtimeInitialized(cfg Config) bool {
+	for _, path := range []string{cfg.ConfigPath, cfg.GenesisPath, cfg.StatePath} {
+		if strings.TrimSpace(path) == "" {
+			return false
+		}
+		if _, err := os.Stat(path); err != nil {
+			return false
+		}
+	}
+	return true
 }

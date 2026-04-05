@@ -112,11 +112,28 @@ That demo exercises:
 
 For the full walkthrough, use [Demo walkthrough](docs/demo-walkthrough.md).
 
+## Runtime commands
+
+`aegislinkd` now has a more node-like local runtime surface:
+
+```bash
+go run ./chain/aegislink/cmd/aegislinkd init --home /tmp/aegislink-home --chain-id aegislink-devnet-1
+go run ./chain/aegislink/cmd/aegislinkd start --home /tmp/aegislink-home
+go run ./chain/aegislink/cmd/aegislinkd query status --home /tmp/aegislink-home
+```
+
+That flow creates and uses:
+
+- a runtime config file
+- a runtime genesis file
+- a persisted runtime state file
+
 ## Current checkpoint
 
 As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a live local Ethereum bridge loop and an Osmosis-style routed execution harness, not just a design repo. The repository now includes:
 
 - a persistent AegisLink runtime with `bridge`, `registry`, `limits`, `pauser`, and `ibcrouter` modules plus CLI query and tx surfaces
+- a more node-like `aegislinkd` runtime with `init`, `start`, runtime config resolution, and `query status`
 - Ethereum gateway and verifier contracts with Foundry tests
 - a relayer pipeline with replay persistence, command-backed AegisLink integration, RPC-backed Ethereum deposit observation, and RPC-backed Ethereum release execution
 - end-to-end tests that prove the full local bridge loop from Ethereum deposit to Ethereum release

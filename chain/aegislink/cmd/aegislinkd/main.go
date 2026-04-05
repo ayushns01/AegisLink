@@ -38,6 +38,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	switch args[0] {
+	case "init":
+		return runInit(args[1:], stdout)
+	case "start":
+		return runStart(args[1:], stdout)
 	case "query":
 		return runQuery(args[1:], stdout)
 	case "tx":
@@ -53,6 +57,8 @@ func runQuery(args []string, stdout io.Writer) error {
 	}
 
 	switch args[0] {
+	case "status":
+		return queryStatus(args[1:], stdout)
 	case "summary":
 		return querySummary(args[1:], stdout)
 	case "claim":
@@ -66,6 +72,64 @@ func runQuery(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown query subcommand %q", args[0])
 	}
+}
+
+func runInit(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	home := flags.String("home", "", "runtime home directory")
+	chainID := flags.String("chain-id", "", "runtime chain id")
+	force := flags.Bool("force", false, "overwrite existing runtime artifacts")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := app.InitHome(app.Config{
+		HomeDir: *home,
+		ChainID: *chainID,
+	}, *force)
+	if err != nil {
+		return err
+	}
+
+	return writeJSON(stdout, map[string]any{
+		"status":       "initialized",
+		"app_name":     cfg.AppName,
+		"chain_id":     cfg.ChainID,
+		"runtime_mode": cfg.RuntimeMode,
+		"home_dir":     cfg.HomeDir,
+		"config_path":  cfg.ConfigPath,
+		"genesis_path": cfg.GenesisPath,
+		"state_path":   cfg.StatePath,
+	})
+}
+
+func runStart(args []string, stdout io.Writer) error {
+	cfg, err := resolveRuntimeConfigFromArgs("start", args)
+	if err != nil {
+		return err
+	}
+	if _, err := app.LoadGenesis(cfg.GenesisPath); err != nil {
+		return err
+	}
+	a, err := app.LoadWithConfig(cfg)
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, statusEnvelope("started", a.Status()))
+}
+
+func queryStatus(args []string, stdout io.Writer) error {
+	cfg, err := resolveRuntimeConfigFromArgs("status", args)
+	if err != nil {
+		return err
+	}
+	a, err := app.LoadWithConfig(cfg)
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, a.Status())
 }
 
 func runTx(args []string, stdout io.Writer) error {
@@ -715,4 +779,56 @@ func writeJSON(stdout io.Writer, value any) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func resolveRuntimeConfigFromArgs(name string, args []string) (app.Config, error) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	home := flags.String("home", "", "runtime home directory")
+	configPath := flags.String("config-path", "", "runtime config path")
+	statePath := flags.String("state-path", "", "runtime state path")
+	genesisPath := flags.String("genesis-path", "", "runtime genesis path")
+	if err := flags.Parse(args); err != nil {
+		return app.Config{}, err
+	}
+
+	return app.ResolveConfig(app.Config{
+		HomeDir:     *home,
+		ConfigPath:  *configPath,
+		StatePath:   *statePath,
+		GenesisPath: *genesisPath,
+	})
+}
+
+func statusEnvelope(kind string, status app.Status) map[string]any {
+	return map[string]any{
+		"status":              kind,
+		"app_name":            status.AppName,
+		"chain_id":            status.ChainID,
+		"runtime_mode":        status.RuntimeMode,
+		"home_dir":            status.HomeDir,
+		"config_path":         status.ConfigPath,
+		"genesis_path":        status.GenesisPath,
+		"state_path":          status.StatePath,
+		"initialized":         status.Initialized,
+		"modules":             status.Modules,
+		"module_names":        status.ModuleNames,
+		"allowed_signers":     status.AllowedSigners,
+		"required_threshold":  status.RequiredThreshold,
+		"current_height":      status.CurrentHeight,
+		"assets":              status.Assets,
+		"limits":              status.Limits,
+		"paused_flows":        status.PausedFlows,
+		"processed_claims":    status.ProcessedClaims,
+		"withdrawals":         status.Withdrawals,
+		"routes":              status.Routes,
+		"transfers":           status.Transfers,
+		"pending_transfers":   status.PendingTransfers,
+		"completed_transfers": status.CompletedTransfers,
+		"failed_transfers":    status.FailedTransfers,
+		"timed_out_transfers": status.TimedOutTransfers,
+		"refunded_transfers":  status.RefundedTransfers,
+		"supply_by_denom":     status.SupplyByDenom,
+	}
 }

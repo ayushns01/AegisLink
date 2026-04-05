@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"math/big"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -127,6 +128,49 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	loaded.SetCurrentHeight(60)
 	if _, err := loaded.SubmitDepositClaim(claim, attestation); !errors.Is(err, bridgekeeper.ErrDuplicateClaim) {
 		t.Fatalf("expected duplicate claim rejection after reload, got %v", err)
+	}
+}
+
+func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+	cfg, err := InitHome(Config{
+		HomeDir: homeDir,
+		ChainID: "aegislink-devnet-1",
+		AppName: AppName,
+		Modules: []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+	}, false)
+	if err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	if _, err := os.Stat(cfg.ConfigPath); err != nil {
+		t.Fatalf("expected config file: %v", err)
+	}
+	if _, err := os.Stat(cfg.GenesisPath); err != nil {
+		t.Fatalf("expected genesis file: %v", err)
+	}
+	if _, err := os.Stat(cfg.StatePath); err != nil {
+		t.Fatalf("expected state file: %v", err)
+	}
+
+	loaded, err := LoadWithConfig(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("load with config: %v", err)
+	}
+	status := loaded.Status()
+	if status.ChainID != "aegislink-devnet-1" {
+		t.Fatalf("expected chain id aegislink-devnet-1, got %q", status.ChainID)
+	}
+	if status.HomeDir != homeDir {
+		t.Fatalf("expected home %q, got %q", homeDir, status.HomeDir)
+	}
+	if !status.Initialized {
+		t.Fatal("expected initialized runtime")
+	}
+	if status.Modules != 5 {
+		t.Fatalf("expected 5 modules, got %d", status.Modules)
 	}
 }
 
