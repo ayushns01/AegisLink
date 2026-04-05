@@ -18,10 +18,12 @@ test-route-e2e:
 
 demo:
 	@echo "Running the live local AegisLink demo flow..."
+	@echo "Proof path: Ethereum deposit -> AegisLink settlement -> routed packet -> destination execution -> async acknowledgement"
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer|TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
 
 inspect-demo:
 	@echo "Inspecting the live local demo surfaces..."
+	@echo "Inspection surfaces: /status /packets /executions /pools /balances /swaps"
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
 
 devnet:

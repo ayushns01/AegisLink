@@ -111,12 +111,14 @@ The correct order is:
 
 **Goal:** Make the repository easy to understand and easy to show.
 
+**Phase 2 status:** Completed on April 5, 2026. The repo now has a tighter top-level story, a clearer demo walkthrough, explicit current-flow diagrams, and an honest positioning document that explains what is real today versus what remains a local harness.
+
 ### Task 2.1: Tighten the README around one clear story
 
-- [ ] Put the project in one sentence at the top.
-- [ ] Add a short “what is real vs what is local harness” section.
-- [ ] Add a short “why this project is not a toy” section.
-- [ ] Keep the current checkpoint short and high-signal.
+- [x] Put the project in one sentence at the top.
+- [x] Add a short “what is real vs what is local harness” section.
+- [x] Add a short “why this project is not a toy” section.
+- [x] Keep the current checkpoint short and high-signal.
 
 **What is happening:** the repo stops reading like a build log and starts reading like a protocol repo.
 
@@ -124,10 +126,10 @@ The correct order is:
 
 ### Task 2.2: Make the demo flow frictionless
 
-- [ ] Keep `make demo` green and deterministic.
-- [ ] Keep `make inspect-demo` green and deterministic.
-- [ ] Add a short demo transcript in `docs/demo-walkthrough.md`.
-- [ ] Include a “what to point at during the demo” section:
+- [x] Keep `make demo` green and deterministic.
+- [x] Keep `make inspect-demo` green and deterministic.
+- [x] Add a short demo transcript in `docs/demo-walkthrough.md`.
+- [x] Include a “what to point at during the demo” section:
   - Ethereum deposit
   - AegisLink status
   - route state
@@ -139,9 +141,9 @@ The correct order is:
 
 ### Task 2.3: Add architecture visuals
 
-- [ ] Add one end-to-end bridge flow diagram.
-- [ ] Add one destination route lifecycle diagram.
-- [ ] Keep diagrams consistent with the current implementation, not the long-term roadmap.
+- [x] Add one end-to-end bridge flow diagram.
+- [x] Add one destination route lifecycle diagram.
+- [x] Keep diagrams consistent with the current implementation, not the long-term roadmap.
 
 **What is happening:** you reduce explanation time during interviews.
 
@@ -149,12 +151,12 @@ The correct order is:
 
 ### Task 2.4: Add a final project positioning doc
 
-- [ ] Create a short doc that explains:
+- [x] Create a short doc that explains:
   - security model
   - what is simulated
   - what is real
   - future roadmap
-- [ ] Keep it honest and crisp.
+- [x] Keep it honest and crisp.
 
 **What is happening:** you control the narrative before a reviewer forms the wrong assumption.
 

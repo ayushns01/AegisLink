@@ -4,6 +4,8 @@
 
 AegisLink is an Ethereum-to-Cosmos interoperability layer designed as a protocol, not as a single-purpose app. In v1, it uses a verifiable-relayer model: Ethereum events are observed by an off-chain relayer set, converted into threshold attestations, and then verified by a Cosmos-SDK chain that acts as the bridge zone. In phase 2, the bridge zone routes assets onward to Osmosis over IBC for swaps and liquidity.
 
+For the current implementation boundary, read [Project positioning](../project-positioning.md). For the quick visual version, use [Current flow diagrams](03-current-flow-diagrams.md).
+
 The bridge zone is the accounting and policy boundary. It is not just a message sink. It owns asset registration, replay protection, mint/burn or lock/unlock accounting, rate limits, and pause controls. It is the place where cross-chain claims become state changes.
 
 ## Goals

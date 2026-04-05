@@ -1,8 +1,12 @@
 # AegisLink
 
-AegisLink is an Ethereum-to-Cosmos interoperability project. It is designed as a protocol: Ethereum emits canonical bridge events, a custom Cosmos-SDK bridge zone verifies threshold-attested claims, and phase 2 routes supported assets to Osmosis over IBC for real swaps and liquidity.
+AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves deposit verification, bridge accounting, routed delivery, and destination-side execution end to end.
 
-The point of this repository is to show:
+It is designed like a protocol, not like a token-transfer demo: Ethereum emits canonical bridge events, AegisLink owns bridge policy and accounting, and routed assets can execute destination-side actions through an Osmosis-style harness.
+
+## In one minute
+
+This repository is meant to show:
 
 - explicit trust assumptions
 - clean accounting boundaries
@@ -10,45 +14,44 @@ The point of this repository is to show:
 - clear module and service separation
 - a practical v1 architecture with a light-client roadmap
 
-## Why this project is strong
+## What is real today
+
+- Ethereum deposit observation and release execution run through the live local Anvil path.
+- AegisLink owns bridge, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, and `query status`.
+- The bridge-relayer and route-relayer are real services with replay persistence and route lifecycle handling.
+- Routed transfers go through packet-shaped delivery, destination-side execution, later acknowledgement, and explicit completion, failure, timeout, or refund handling.
+- The destination target tracks packets, execution receipts, balances, pools, swaps, and acknowledgement state through public inspection endpoints.
+
+## What is a local harness today
+
+- AegisLink is a persistent Cosmos-inspired runtime, not yet a full networked CometBFT or ABCI chain.
+- The Osmosis side is an `osmosis-lite` receiver, not a live IBC-connected Osmosis node.
+- The verifier model is still a v1 verifiable-relayer plus threshold-attestation path, not a light client.
+
+## Why this project is not a toy
 
 - It uses a dedicated Cosmos bridge zone instead of wiring Ethereum directly into a single destination app.
 - It separates observation, verification, policy enforcement, settlement, and routing.
-- It is honest about the v1 trust model: verifiable relayer plus threshold attestations, not a fully trustless light client.
-- It shows a real downstream use case through Osmosis instead of stopping at "asset arrived."
-- It scales architecturally: once Ethereum to AegisLink is solved well, the Cosmos side can expand through IBC.
+- It proves the full local bridge loop in both directions instead of stopping at inbound minting.
+- It treats destination execution as first-class state, including async acknowledgements, swap failures, and refund-safe timeout handling.
+- It is honest about the trust model and runtime limits instead of pretending the local harness is a production chain.
 
 ## Architecture snapshot
 
 ```mermaid
 flowchart LR
-    U[User] --> E[Ethereum Gateway]
-    E --> R[Relayer and Attestation Layer]
-    R --> B[AegisLink Cosmos Chain]
-    B --> I[IBC Routing]
-    I --> O[Osmosis]
+    U["User"] --> E["Ethereum Gateway"]
+    E --> BR["Bridge Relayer"]
+    BR --> A["AegisLink Runtime"]
+    A --> RR["Route Relayer"]
+    RR --> O["Osmosis-lite Target"]
+    O --> RR
+    RR --> A
+    A --> BR
+    BR --> E
 ```
 
-## Phases
-
-### Phase 1
-
-Build Ethereum `<->` AegisLink:
-
-- Ethereum gateway contracts
-- AegisLink Cosmos-SDK chain
-- threshold-attested claim verification
-- registry, replay protection, pause controls, and rate limits
-- local end-to-end tests
-
-### Phase 2
-
-Route supported assets from AegisLink to Osmosis:
-
-- IBC channel setup
-- asset routing policy
-- swap and liquidity demo path
-- operational runbooks and observability
+Use [Current flow diagrams](docs/architecture/03-current-flow-diagrams.md) for the fuller end-to-end view and the route lifecycle diagram.
 
 ## Documentation map
 
@@ -60,10 +63,12 @@ Start here if you want the basics:
 Read these for the protocol design:
 
 - [System architecture](docs/architecture/01-system-architecture.md)
+- [Current flow diagrams](docs/architecture/03-current-flow-diagrams.md)
 - [Security and trust model](docs/architecture/02-security-and-trust-model.md)
+- [Project positioning](docs/project-positioning.md)
 - [Architecture spec](docs/superpowers/specs/2026-03-28-eth-cosmos-aegislink-design.md)
 
-Use these to build the project step by step:
+Use these to build or review the project step by step:
 
 - [Step-by-step roadmap](docs/implementation/01-step-by-step-roadmap.md)
 - [Tech stack and repo plan](docs/implementation/02-tech-stack-and-repo-plan.md)
@@ -112,6 +117,7 @@ That demo exercises:
 - public target queries for packets, executions, pools, balances, and swaps
 
 For the full walkthrough, use [Demo walkthrough](docs/demo-walkthrough.md).
+For the honest reviewer framing, use [Project positioning](docs/project-positioning.md).
 
 ## Runtime commands
 
@@ -131,20 +137,12 @@ That flow creates and uses:
 
 ## Current checkpoint
 
-As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a live local Ethereum bridge loop and an Osmosis-style routed execution harness, not just a design repo. The repository now includes:
+As of April 5, 2026:
 
-- a persistent AegisLink runtime with `bridge`, `registry`, `limits`, `pauser`, and `ibcrouter` modules plus CLI query and tx surfaces
-- a more node-like `aegislinkd` runtime with `init`, `start`, runtime config resolution, and `query status`
-- Ethereum gateway and verifier contracts with Foundry tests
-- a relayer pipeline with replay persistence, command-backed AegisLink integration, RPC-backed Ethereum deposit observation, and RPC-backed Ethereum release execution
-- end-to-end tests that prove the full local bridge loop from Ethereum deposit to Ethereum release
-- a dedicated `route-relayer` plus `mock-osmosis-target` service pair that delivers packet-shaped routed transfers and resolves acknowledgements asynchronously
-- route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
-- a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
-- a destination-side packet lifecycle that now moves through `received`, `executed`, `ack_ready`, and `ack_relayed`
-- packet receipts, separate execution receipts, denom-trace-style metadata, richer route actions like `recipient` override and `path`, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
-- public mock-target query surfaces for `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`
-- a routed timeout flow that is visible on the destination side and recoverable on AegisLink through refund
+- the live local Ethereum bridge loop is proven end to end
+- Phase 1 of the fuller route-harness plan is complete
+- the routed side now has explicit packet, execution, and acknowledgement lifecycle state
+- the next roadmap focus is runtime and operator realism, not basic bridge invention
 
 The current repo shape is:
 
