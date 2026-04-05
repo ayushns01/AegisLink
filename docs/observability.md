@@ -36,6 +36,7 @@ Bridge infrastructure fails badly when operators cannot tell the difference betw
 - timed-out transfers
 - per-asset route volume
 - per-route pause events
+- destination-side pool count, swap count, and credited balance count during demo or localnet runs
 
 ## Metrics to expose first
 
@@ -48,6 +49,7 @@ Bridge infrastructure fails badly when operators cannot tell the difference betw
 - `aegislink_pause_events_total`
 - `aegislink_ibc_routes_total`
 - `aegislink_ibc_route_failures_total`
+- mock target `/status` summary for local demo and inspection runs
 
 ## Logs that matter
 
@@ -72,6 +74,8 @@ If logs do not carry claim identity, incident handling becomes much slower.
   Replay rejections, rate-limit events, registry changes, attester set changes.
 - `routing`
   AegisLink to Osmosis route volume, failures, timeouts, and active channels.
+- `demo target state`
+  Mock target `/status`, `/pools`, `/balances`, and `/swaps` during recruiter demos or local debugging.
 
 ## Alert ideas
 

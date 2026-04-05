@@ -187,6 +187,68 @@ func TestMockTargetExposesPoolsBalancesAndSwapsEndpoints(t *testing.T) {
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/swaps", 1)
 }
 
+func TestMockTargetExposesStatusEndpoint(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	if _, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/9",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1status",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo",
+	}); err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+
+	resp, err := target.client.Get(target.baseURL + "/status")
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from status, got %d", resp.StatusCode)
+	}
+
+	var status struct {
+		Receipts        int `json:"receipts"`
+		Pools           int `json:"pools"`
+		Balances        int `json:"balances"`
+		Swaps           int `json:"swaps"`
+		ReadyAcks       int `json:"ready_acks"`
+		CompletedAcks   int `json:"completed_acks"`
+		FailedAcks      int `json:"failed_acks"`
+		TimedOutAcks    int `json:"timed_out_acks"`
+		RelayedAcks     int `json:"relayed_acks"`
+		PendingReceipts int `json:"pending_receipts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Receipts != 1 || status.Pools != 1 || status.Balances != 1 || status.Swaps != 1 {
+		t.Fatalf("unexpected status counts: %+v", status)
+	}
+	if status.PendingReceipts != 1 {
+		t.Fatalf("expected 1 pending receipt, got %d", status.PendingReceipts)
+	}
+	if status.ReadyAcks != 0 || status.CompletedAcks != 0 || status.FailedAcks != 0 || status.TimedOutAcks != 0 || status.RelayedAcks != 0 {
+		t.Fatalf("unexpected ack counters before resolution: %+v", status)
+	}
+}
+
 func TestMockTargetCreditsRecipientBalanceForPlainIBCReceive(t *testing.T) {
 	t.Parallel()
 

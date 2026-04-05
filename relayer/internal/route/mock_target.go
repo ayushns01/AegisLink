@@ -71,6 +71,19 @@ type MockTargetBalance struct {
 	Amount  string `json:"amount"`
 }
 
+type MockTargetStatus struct {
+	Receipts        int `json:"receipts"`
+	Pools           int `json:"pools"`
+	Balances        int `json:"balances"`
+	Swaps           int `json:"swaps"`
+	ReadyAcks       int `json:"ready_acks"`
+	CompletedAcks   int `json:"completed_acks"`
+	FailedAcks      int `json:"failed_acks"`
+	TimedOutAcks    int `json:"timed_out_acks"`
+	RelayedAcks     int `json:"relayed_acks"`
+	PendingReceipts int `json:"pending_receipts"`
+}
+
 type MockTargetConfig struct {
 	Mode      string
 	Delay     time.Duration
@@ -104,6 +117,7 @@ func NewMockTargetHandlerWithConfig(cfg MockTargetConfig) http.Handler {
 	mux.HandleFunc("/pools", target.handlePools)
 	mux.HandleFunc("/balances", target.handleBalances)
 	mux.HandleFunc("/swaps", target.handleSwaps)
+	mux.HandleFunc("/status", target.handleStatus)
 	return mux
 }
 
@@ -213,6 +227,18 @@ func (t *MockTarget) handleSwaps(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(t.state.Swaps)
 }
 
+func (t *MockTarget) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.statusLocked())
+}
+
 func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -256,6 +282,42 @@ func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(receipt)
+}
+
+func (t *MockTarget) statusLocked() MockTargetStatus {
+	status := MockTargetStatus{
+		Receipts: len(t.state.Receipts),
+		Pools:    len(t.state.Pools),
+		Balances: len(t.state.Balances),
+		Swaps:    len(t.state.Swaps),
+	}
+
+	for _, receipt := range t.state.Receipts {
+		if receipt.AckRelayed {
+			status.RelayedAcks++
+		}
+		switch strings.TrimSpace(receipt.AckState) {
+		case "pending":
+			status.PendingReceipts++
+		case string(AckStatusCompleted):
+			status.CompletedAcks++
+			if !receipt.AckRelayed {
+				status.ReadyAcks++
+			}
+		case string(AckStatusFailed):
+			status.FailedAcks++
+			if !receipt.AckRelayed {
+				status.ReadyAcks++
+			}
+		case string(AckStatusTimedOut):
+			status.TimedOutAcks++
+			if !receipt.AckRelayed {
+				status.ReadyAcks++
+			}
+		}
+	}
+
+	return status
 }
 
 func normalizeMockTargetMode(mode string) MockTargetMode {

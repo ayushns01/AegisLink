@@ -1,4 +1,4 @@
-.PHONY: format test test-e2e test-route-e2e demo devnet compose-devnet
+.PHONY: format test test-e2e test-route-e2e demo inspect-demo devnet compose-devnet
 
 GO_TEST_ENV = GOCACHE=/tmp/aegislink-gocache GOMODCACHE=/tmp/aegislink-gomodcache
 
@@ -19,6 +19,10 @@ test-route-e2e:
 demo:
 	@echo "Running the live local AegisLink demo flow..."
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer|TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
+
+inspect-demo:
+	@echo "Inspecting the live local demo surfaces..."
+	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
 
 devnet:
 	@echo "AegisLink shell:"

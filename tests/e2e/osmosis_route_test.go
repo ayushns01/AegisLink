@@ -563,6 +563,26 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 	if pools[0].OutputDenom != "uion" {
 		t.Fatalf("expected uion pool from endpoint, got %+v", pools[0])
 	}
+
+	statusOutput := readMockTargetEndpoint(t, target.url+"/status")
+	var status struct {
+		Receipts        int `json:"receipts"`
+		Pools           int `json:"pools"`
+		Balances        int `json:"balances"`
+		Swaps           int `json:"swaps"`
+		CompletedAcks   int `json:"completed_acks"`
+		ReadyAcks       int `json:"ready_acks"`
+		PendingReceipts int `json:"pending_receipts"`
+	}
+	if err := json.Unmarshal(statusOutput, &status); err != nil {
+		t.Fatalf("decode status endpoint: %v", err)
+	}
+	if status.Receipts != 1 || status.Pools != 1 || status.Balances != 1 || status.Swaps != 1 {
+		t.Fatalf("unexpected status endpoint payload: %+v", status)
+	}
+	if status.CompletedAcks != 1 || status.ReadyAcks != 0 || status.PendingReceipts != 0 {
+		t.Fatalf("unexpected ack summary payload: %+v", status)
+	}
 }
 
 func TestRouteRelayerCompletesTransferOnlyAfterManualAckResolution(t *testing.T) {

@@ -10,6 +10,12 @@ From the repository root:
 make demo
 ```
 
+For the inspection-oriented path:
+
+```bash
+make inspect-demo
+```
+
 The demo runs two proof paths:
 
 1. A live local Ethereum deposit that is observed over RPC, relayed into AegisLink, and routed onward through the Osmosis-style target.
@@ -20,7 +26,7 @@ The demo runs two proof paths:
 - Ethereum is not mocked away. Deposits come from the local Anvil-backed path.
 - AegisLink is not just a contract wrapper. It owns bridge accounting, routing, and policy.
 - Outbound routing is not just a status flip. The destination target executes pool-backed swaps.
-- The destination side is queryable through `/pools`, `/balances`, and `/swaps`.
+- The destination side is queryable through `/status`, `/pools`, `/balances`, and `/swaps`.
 
 ## What to say while showing it
 
