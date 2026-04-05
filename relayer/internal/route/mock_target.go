@@ -31,20 +31,38 @@ type MockTarget struct {
 }
 
 type MockTargetState struct {
-	Receipts []MockTargetReceipt `json:"receipts"`
-	Swaps    []MockTargetSwap    `json:"swaps"`
-	Pools    []MockTargetPool    `json:"pools"`
-	Balances []MockTargetBalance `json:"balances"`
+	Packets    []MockTargetPacket    `json:"packets"`
+	Receipts   []MockTargetPacket    `json:"receipts,omitempty"`
+	Executions []MockTargetExecution `json:"executions"`
+	Swaps      []MockTargetSwap      `json:"swaps"`
+	Pools      []MockTargetPool      `json:"pools"`
+	Balances   []MockTargetBalance   `json:"balances"`
 }
 
-type MockTargetReceipt struct {
-	TransferID string       `json:"transfer_id"`
-	AckState   string       `json:"ack_state"`
-	AckReason  string       `json:"ack_reason,omitempty"`
-	AckRelayed bool         `json:"ack_relayed"`
-	Packet     Packet       `json:"packet"`
-	DenomTrace DenomTrace   `json:"denom_trace"`
-	Action     *RouteAction `json:"action,omitempty"`
+type MockTargetPacket struct {
+	TransferID         string       `json:"transfer_id"`
+	DestinationChainID string       `json:"destination_chain_id"`
+	PacketState        string       `json:"packet_state"`
+	AckState           string       `json:"ack_state"`
+	AckReason          string       `json:"ack_reason,omitempty"`
+	AckPayload         *Ack         `json:"ack_payload,omitempty"`
+	AckRelayed         bool         `json:"ack_relayed"`
+	Packet             Packet       `json:"packet"`
+	DenomTrace         DenomTrace   `json:"denom_trace"`
+	Action             *RouteAction `json:"action,omitempty"`
+}
+
+type MockTargetExecution struct {
+	TransferID     string `json:"transfer_id"`
+	PacketSequence uint64 `json:"packet_sequence"`
+	Result         string `json:"result"`
+	Recipient      string `json:"recipient"`
+	InputDenom     string `json:"input_denom"`
+	InputAmount    string `json:"input_amount"`
+	OutputDenom    string `json:"output_denom,omitempty"`
+	OutputAmount   string `json:"output_amount,omitempty"`
+	DexChainID     string `json:"dex_chain_id,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 type MockTargetSwap struct {
@@ -72,10 +90,14 @@ type MockTargetBalance struct {
 }
 
 type MockTargetStatus struct {
+	Packets         int `json:"packets"`
 	Receipts        int `json:"receipts"`
+	Executions      int `json:"executions"`
 	Pools           int `json:"pools"`
 	Balances        int `json:"balances"`
 	Swaps           int `json:"swaps"`
+	ReceivedPackets int `json:"received_packets"`
+	ExecutedPackets int `json:"executed_packets"`
 	ReadyAcks       int `json:"ready_acks"`
 	CompletedAcks   int `json:"completed_acks"`
 	FailedAcks      int `json:"failed_acks"`
@@ -114,6 +136,8 @@ func NewMockTargetHandlerWithConfig(cfg MockTargetConfig) http.Handler {
 	mux.HandleFunc("/transfers", target.handleTransfers)
 	mux.HandleFunc("/acks", target.handleAcks)
 	mux.HandleFunc("/acks/", target.handleAckControl)
+	mux.HandleFunc("/packets", target.handlePackets)
+	mux.HandleFunc("/executions", target.handleExecutions)
 	mux.HandleFunc("/pools", target.handlePools)
 	mux.HandleFunc("/balances", target.handleBalances)
 	mux.HandleFunc("/swaps", target.handleSwaps)
@@ -125,6 +149,7 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		t.mu.Lock()
+		t.syncLegacyReceiptsLocked()
 		defer t.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(t.state)
 	case http.MethodPost:
@@ -135,18 +160,18 @@ func (t *MockTarget) handleTransfers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		t.mu.Lock()
-		if _, exists := t.findReceiptLocked(envelope.Transfer.TransferID); !exists {
-			receipt := MockTargetReceipt{
-				TransferID: envelope.Transfer.TransferID,
-				AckState:   ackStateForMode(t.mode),
-				AckReason:  ackReasonForMode(t.mode),
-				Packet:     envelope.Packet,
-				DenomTrace: envelope.DenomTrace,
-				Action:     envelope.Action,
-			}
-			t.applyExecutionLocked(&receipt, envelope)
-			t.state.Receipts = append(t.state.Receipts, receipt)
+		if _, exists := t.findPacketLocked(envelope.Transfer.TransferID); !exists {
+			t.state.Packets = append(t.state.Packets, MockTargetPacket{
+				TransferID:         envelope.Transfer.TransferID,
+				DestinationChainID: envelope.Transfer.DestinationChainID,
+				PacketState:        "received",
+				AckState:           "pending",
+				Packet:             envelope.Packet,
+				DenomTrace:         envelope.DenomTrace,
+				Action:             envelope.Action,
+			})
 		}
+		t.syncLegacyReceiptsLocked()
 		if err := persistMockTargetState(t.statePath, t.state); err != nil {
 			t.mu.Unlock()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -175,20 +200,52 @@ func (t *MockTarget) handleAcks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	if changed := t.advanceReceivedPacketsLocked(); changed {
+		t.syncLegacyReceiptsLocked()
+		if err := persistMockTargetState(t.statePath, t.state); err != nil {
+			t.mu.Unlock()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 
-	acks := make([]AckRecord, 0, len(t.state.Receipts))
-	for _, receipt := range t.state.Receipts {
-		if !ackStateReady(receipt.AckState) || receipt.AckRelayed {
+	acks := make([]AckRecord, 0, len(t.state.Packets))
+	for _, packet := range t.state.Packets {
+		if packet.PacketState != "ack_ready" || packet.AckPayload == nil || packet.AckRelayed {
 			continue
 		}
 		acks = append(acks, AckRecord{
-			TransferID: receipt.TransferID,
-			Status:     AckStatus(receipt.AckState),
-			Reason:     receipt.AckReason,
+			TransferID: packet.TransferID,
+			Status:     packet.AckPayload.Status,
+			Reason:     packet.AckPayload.Reason,
 		})
 	}
+	t.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(acks)
+}
+
+func (t *MockTarget) handlePackets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.state.Packets)
+}
+
+func (t *MockTarget) handleExecutions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.state.Executions)
 }
 
 func (t *MockTarget) handlePools(w http.ResponseWriter, r *http.Request) {
@@ -254,64 +311,77 @@ func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	receipt, ok := t.findReceiptLocked(transferID)
+	packet, ok := t.findPacketLocked(transferID)
 	if !ok {
-		http.Error(w, "receipt not found", http.StatusNotFound)
+		http.Error(w, "packet not found", http.StatusNotFound)
 		return
 	}
 
 	switch {
 	case action == "confirm":
-		receipt.AckRelayed = true
+		if packet.PacketState != "ack_ready" {
+			http.Error(w, "ack not ready", http.StatusConflict)
+			return
+		}
+		packet.AckRelayed = true
+		packet.PacketState = "ack_relayed"
 	case action == "complete":
-		receipt.AckState = string(AckStatusCompleted)
-		receipt.AckReason = ""
+		t.ensurePacketExecutedLocked(packet)
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusCompleted})
 	case action == "fail":
-		receipt.AckState = string(AckStatusFailed)
-		receipt.AckReason = "mock ack failed"
+		t.ensurePacketExecutedLocked(packet)
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: "mock ack failed"})
 	case action == "timeout":
-		receipt.AckState = string(AckStatusTimedOut)
-		receipt.AckReason = "mock timeout"
+		t.ensurePacketExecutedLocked(packet)
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusTimedOut, Reason: "mock timeout"})
 	default:
 		http.NotFound(w, r)
 		return
 	}
 
+	t.syncLegacyReceiptsLocked()
 	if err := persistMockTargetState(t.statePath, t.state); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(receipt)
+	_ = json.NewEncoder(w).Encode(packet)
 }
 
 func (t *MockTarget) statusLocked() MockTargetStatus {
 	status := MockTargetStatus{
-		Receipts: len(t.state.Receipts),
-		Pools:    len(t.state.Pools),
-		Balances: len(t.state.Balances),
-		Swaps:    len(t.state.Swaps),
+		Packets:    len(t.state.Packets),
+		Receipts:   len(t.state.Packets),
+		Executions: len(t.state.Executions),
+		Pools:      len(t.state.Pools),
+		Balances:   len(t.state.Balances),
+		Swaps:      len(t.state.Swaps),
 	}
 
-	for _, receipt := range t.state.Receipts {
-		if receipt.AckRelayed {
+	for _, packet := range t.state.Packets {
+		switch strings.TrimSpace(packet.PacketState) {
+		case "received":
+			status.ReceivedPackets++
+			status.PendingReceipts++
+		case "executed":
+			status.ExecutedPackets++
+			status.PendingReceipts++
+		case "ack_relayed":
 			status.RelayedAcks++
 		}
-		switch strings.TrimSpace(receipt.AckState) {
-		case "pending":
-			status.PendingReceipts++
+		switch strings.TrimSpace(packet.AckState) {
 		case string(AckStatusCompleted):
 			status.CompletedAcks++
-			if !receipt.AckRelayed {
+			if packet.PacketState == "ack_ready" && !packet.AckRelayed {
 				status.ReadyAcks++
 			}
 		case string(AckStatusFailed):
 			status.FailedAcks++
-			if !receipt.AckRelayed {
+			if packet.PacketState == "ack_ready" && !packet.AckRelayed {
 				status.ReadyAcks++
 			}
 		case string(AckStatusTimedOut):
 			status.TimedOutAcks++
-			if !receipt.AckRelayed {
+			if packet.PacketState == "ack_ready" && !packet.AckRelayed {
 				status.ReadyAcks++
 			}
 		}
@@ -333,49 +403,131 @@ func normalizeMockTargetMode(mode string) MockTargetMode {
 	}
 }
 
-func (t *MockTarget) findReceiptLocked(transferID string) (*MockTargetReceipt, bool) {
-	for i := range t.state.Receipts {
-		if t.state.Receipts[i].TransferID == strings.TrimSpace(transferID) {
-			return &t.state.Receipts[i], true
+func (t *MockTarget) findPacketLocked(transferID string) (*MockTargetPacket, bool) {
+	for i := range t.state.Packets {
+		if t.state.Packets[i].TransferID == strings.TrimSpace(transferID) {
+			return &t.state.Packets[i], true
 		}
 	}
 	return nil, false
 }
 
-func (t *MockTarget) applyExecutionLocked(receipt *MockTargetReceipt, envelope DeliveryEnvelope) {
+func (t *MockTarget) syncLegacyReceiptsLocked() {
+	t.state.Receipts = append([]MockTargetPacket(nil), t.state.Packets...)
+}
+
+func (t *MockTarget) advanceReceivedPacketsLocked() bool {
+	changed := false
+	for i := range t.state.Packets {
+		if t.state.Packets[i].PacketState != "received" {
+			continue
+		}
+		t.executePacketLocked(&t.state.Packets[i])
+		changed = true
+	}
+	return changed
+}
+
+func (t *MockTarget) ensurePacketExecutedLocked(packet *MockTargetPacket) {
+	if packet.PacketState == "received" {
+		t.executePacketLocked(packet)
+	}
+}
+
+func (t *MockTarget) executePacketLocked(packet *MockTargetPacket) {
 	t.ensurePoolsLocked()
 
-	if envelope.Action != nil && envelope.Action.Type == "swap" {
-		outputAmount, err := t.executeSwapLocked(envelope)
+	if packet.Action != nil && packet.Action.Type == "swap" {
+		execution := MockTargetExecution{
+			TransferID:     packet.TransferID,
+			PacketSequence: packet.Packet.Sequence,
+			Result:         "swap_success",
+			Recipient:      packet.Packet.Data.Receiver,
+			InputDenom:     packet.DenomTrace.IBCDenom,
+			InputAmount:    strings.TrimSpace(packet.Packet.Data.Amount),
+			OutputDenom:    packet.Action.TargetDenom,
+			DexChainID:     packet.DestinationChainID,
+		}
+		outputAmount, err := t.executeSwapLocked(packet)
 		if err != nil {
-			receipt.AckState = string(AckStatusFailed)
-			receipt.AckReason = err.Error()
+			execution.Result = "swap_failed"
+			execution.Error = err.Error()
+			t.state.Executions = append(t.state.Executions, execution)
+			t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: err.Error()})
 			return
 		}
+		execution.OutputAmount = outputAmount
 		t.state.Swaps = append(t.state.Swaps, MockTargetSwap{
-			TransferID:   envelope.Transfer.TransferID,
-			InputDenom:   envelope.DenomTrace.IBCDenom,
-			OutputDenom:  envelope.Action.TargetDenom,
-			InputAmount:  strings.TrimSpace(envelope.Packet.Data.Amount),
+			TransferID:   packet.TransferID,
+			InputDenom:   packet.DenomTrace.IBCDenom,
+			OutputDenom:  packet.Action.TargetDenom,
+			InputAmount:  strings.TrimSpace(packet.Packet.Data.Amount),
 			OutputAmount: outputAmount,
-			Recipient:    envelope.Packet.Data.Receiver,
-			DexChainID:   envelope.Transfer.DestinationChainID,
+			Recipient:    packet.Packet.Data.Receiver,
+			DexChainID:   packet.DestinationChainID,
 		})
-		if err := t.creditBalanceLocked(envelope.Packet.Data.Receiver, envelope.Action.TargetDenom, outputAmount); err != nil {
-			receipt.AckState = string(AckStatusFailed)
-			receipt.AckReason = err.Error()
+		if err := t.creditBalanceLocked(packet.Packet.Data.Receiver, packet.Action.TargetDenom, outputAmount); err != nil {
+			execution.Result = "swap_failed"
+			execution.Error = err.Error()
+			t.state.Executions = append(t.state.Executions, execution)
+			t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: err.Error()})
+			return
 		}
+		t.state.Executions = append(t.state.Executions, execution)
+		t.advancePacketAfterExecutionLocked(packet)
 		return
 	}
 
-	if err := t.creditBalanceLocked(
-		envelope.Packet.Data.Receiver,
-		envelope.DenomTrace.IBCDenom,
-		strings.TrimSpace(envelope.Packet.Data.Amount),
-	); err != nil {
-		receipt.AckState = string(AckStatusFailed)
-		receipt.AckReason = err.Error()
+	execution := MockTargetExecution{
+		TransferID:     packet.TransferID,
+		PacketSequence: packet.Packet.Sequence,
+		Result:         "credit",
+		Recipient:      packet.Packet.Data.Receiver,
+		InputDenom:     packet.DenomTrace.IBCDenom,
+		InputAmount:    strings.TrimSpace(packet.Packet.Data.Amount),
+		OutputDenom:    packet.DenomTrace.IBCDenom,
+		OutputAmount:   strings.TrimSpace(packet.Packet.Data.Amount),
+		DexChainID:     packet.DestinationChainID,
 	}
+	if err := t.creditBalanceLocked(
+		packet.Packet.Data.Receiver,
+		packet.DenomTrace.IBCDenom,
+		strings.TrimSpace(packet.Packet.Data.Amount),
+	); err != nil {
+		execution.Result = "credit_failed"
+		execution.Error = err.Error()
+		t.state.Executions = append(t.state.Executions, execution)
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: err.Error()})
+		return
+	}
+	t.state.Executions = append(t.state.Executions, execution)
+	t.advancePacketAfterExecutionLocked(packet)
+}
+
+func (t *MockTarget) advancePacketAfterExecutionLocked(packet *MockTargetPacket) {
+	switch t.mode {
+	case MockTargetModeSuccess:
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusCompleted})
+	case MockTargetModeFail:
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: "mock ack failed"})
+	case MockTargetModeTimeout:
+		t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusTimedOut, Reason: "mock timeout"})
+	default:
+		packet.PacketState = "executed"
+		packet.AckState = "pending"
+		packet.AckReason = ""
+		packet.AckPayload = nil
+		packet.AckRelayed = false
+	}
+}
+
+func (t *MockTarget) markPacketAckReadyLocked(packet *MockTargetPacket, ack Ack) {
+	packet.PacketState = "ack_ready"
+	packet.AckState = string(ack.Status)
+	packet.AckReason = strings.TrimSpace(ack.Reason)
+	packet.AckRelayed = false
+	ackCopy := ack
+	packet.AckPayload = &ackCopy
 }
 
 func (t *MockTarget) ensurePoolsLocked() {
@@ -404,21 +556,21 @@ func cloneMockTargetPools(pools []MockTargetPool) []MockTargetPool {
 	return cloned
 }
 
-func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error) {
+func (t *MockTarget) executeSwapLocked(packet *MockTargetPacket) (string, error) {
 	poolIndex := -1
 	for i := range t.state.Pools {
 		pool := t.state.Pools[i]
-		if pool.InputDenom == strings.TrimSpace(envelope.DenomTrace.IBCDenom) && pool.OutputDenom == strings.TrimSpace(envelope.Action.TargetDenom) {
+		if pool.InputDenom == strings.TrimSpace(packet.DenomTrace.IBCDenom) && pool.OutputDenom == strings.TrimSpace(packet.Action.TargetDenom) {
 			poolIndex = i
 			break
 		}
 	}
 	if poolIndex < 0 {
-		return "", fmt.Errorf("no pool for %s -> %s", envelope.DenomTrace.IBCDenom, envelope.Action.TargetDenom)
+		return "", fmt.Errorf("no pool for %s -> %s", packet.DenomTrace.IBCDenom, packet.Action.TargetDenom)
 	}
 
 	pool := t.state.Pools[poolIndex]
-	inputAmount, err := parsePositiveDecimal(strings.TrimSpace(envelope.Packet.Data.Amount), "swap amount")
+	inputAmount, err := parsePositiveDecimal(strings.TrimSpace(packet.Packet.Data.Amount), "swap amount")
 	if err != nil {
 		return "", err
 	}
@@ -449,7 +601,7 @@ func (t *MockTarget) executeSwapLocked(envelope DeliveryEnvelope) (string, error
 	if outputAmount.Sign() <= 0 || outputAmount.Cmp(reserveOut) >= 0 {
 		return "", fmt.Errorf("insufficient liquidity for %s -> %s", pool.InputDenom, pool.OutputDenom)
 	}
-	if minOut := strings.TrimSpace(envelope.Action.MinOut); minOut != "" {
+	if minOut := strings.TrimSpace(packet.Action.MinOut); minOut != "" {
 		minOutAmount, err := parsePositiveDecimal(minOut, "min_out")
 		if err != nil {
 			return "", err
@@ -531,15 +683,6 @@ func ackReasonForMode(mode MockTargetMode) string {
 		return "mock timeout"
 	default:
 		return ""
-	}
-}
-
-func ackStateReady(state string) bool {
-	switch strings.TrimSpace(state) {
-	case string(AckStatusCompleted), string(AckStatusFailed), string(AckStatusTimedOut):
-		return true
-	default:
-		return false
 	}
 }
 

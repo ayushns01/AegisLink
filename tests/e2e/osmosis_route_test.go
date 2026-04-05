@@ -346,14 +346,15 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	}
 
 	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis.json")
-	target := startMockOsmosisTarget(t, targetStatePath, "success")
+	target := startMockOsmosisTarget(t, targetStatePath, "manual")
 	defer target.cancel()
 
 	runRouteRelayerOnce(t, statePath, target.url)
 
-	var state struct {
-		Receipts []struct {
-			Packet struct {
+	var delivered struct {
+		Packets []struct {
+			PacketState string `json:"packet_state"`
+			Packet      struct {
 				Sequence uint64 `json:"sequence"`
 				Data     struct {
 					Memo string `json:"memo"`
@@ -362,7 +363,50 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 			DenomTrace struct {
 				IBCDenom string `json:"ibc_denom"`
 			} `json:"denom_trace"`
-		} `json:"receipts"`
+		} `json:"packets"`
+		Executions []struct{} `json:"executions"`
+		Swaps      []struct{} `json:"swaps"`
+		Balances   []struct{} `json:"balances"`
+	}
+	readJSONFile(t, targetStatePath, &delivered)
+
+	if len(delivered.Packets) != 1 {
+		t.Fatalf("expected one packet after delivery, got %d", len(delivered.Packets))
+	}
+	if delivered.Packets[0].PacketState != "received" {
+		t.Fatalf("expected received packet state after first route run, got %q", delivered.Packets[0].PacketState)
+	}
+	if delivered.Packets[0].Packet.Sequence != 1 {
+		t.Fatalf("expected packet sequence 1, got %d", delivered.Packets[0].Packet.Sequence)
+	}
+	if delivered.Packets[0].Packet.Data.Memo != "swap:uosmo" {
+		t.Fatalf("expected memo swap:uosmo, got %q", delivered.Packets[0].Packet.Data.Memo)
+	}
+	if delivered.Packets[0].DenomTrace.IBCDenom != "ibc/uatom-usdc" {
+		t.Fatalf("expected ibc denom ibc/uatom-usdc, got %q", delivered.Packets[0].DenomTrace.IBCDenom)
+	}
+	if len(delivered.Executions) != 0 || len(delivered.Swaps) != 0 || len(delivered.Balances) != 0 {
+		t.Fatalf("expected no destination execution before ack poll, got executions=%d swaps=%d balances=%d", len(delivered.Executions), len(delivered.Swaps), len(delivered.Balances))
+	}
+
+	runRouteRelayerOnce(t, statePath, target.url)
+
+	var state struct {
+		Packets []struct {
+			PacketState string `json:"packet_state"`
+			Packet      struct {
+				Sequence uint64 `json:"sequence"`
+				Data     struct {
+					Memo string `json:"memo"`
+				} `json:"data"`
+			} `json:"packet"`
+			DenomTrace struct {
+				IBCDenom string `json:"ibc_denom"`
+			} `json:"denom_trace"`
+		} `json:"packets"`
+		Executions []struct {
+			Result string `json:"result"`
+		} `json:"executions"`
 		Swaps []struct {
 			TransferID   string `json:"transfer_id"`
 			OutputDenom  string `json:"output_denom"`
@@ -382,17 +426,23 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	}
 	readJSONFile(t, targetStatePath, &state)
 
-	if len(state.Receipts) != 1 {
-		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
 	}
-	if state.Receipts[0].Packet.Sequence != 1 {
-		t.Fatalf("expected packet sequence 1, got %d", state.Receipts[0].Packet.Sequence)
+	if state.Packets[0].PacketState != "executed" {
+		t.Fatalf("expected executed packet state after ack poll, got %q", state.Packets[0].PacketState)
 	}
-	if state.Receipts[0].Packet.Data.Memo != "swap:uosmo" {
-		t.Fatalf("expected memo swap:uosmo, got %q", state.Receipts[0].Packet.Data.Memo)
+	if state.Packets[0].Packet.Sequence != 1 {
+		t.Fatalf("expected packet sequence 1, got %d", state.Packets[0].Packet.Sequence)
 	}
-	if state.Receipts[0].DenomTrace.IBCDenom != "ibc/uatom-usdc" {
-		t.Fatalf("expected ibc denom ibc/uatom-usdc, got %q", state.Receipts[0].DenomTrace.IBCDenom)
+	if state.Packets[0].Packet.Data.Memo != "swap:uosmo" {
+		t.Fatalf("expected memo swap:uosmo, got %q", state.Packets[0].Packet.Data.Memo)
+	}
+	if state.Packets[0].DenomTrace.IBCDenom != "ibc/uatom-usdc" {
+		t.Fatalf("expected ibc denom ibc/uatom-usdc, got %q", state.Packets[0].DenomTrace.IBCDenom)
+	}
+	if len(state.Executions) != 1 || state.Executions[0].Result != "swap_success" {
+		t.Fatalf("expected one swap_success execution, got %+v", state.Executions)
 	}
 	if len(state.Swaps) != 1 {
 		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
@@ -439,7 +489,8 @@ func TestRouteRelayerMarksTransferFailedWhenDestinationSwapMinOutIsNotMet(t *tes
 		t.Fatalf("save state: %v", err)
 	}
 
-	target := startMockOsmosisTarget(t, filepath.Join(t.TempDir(), "mock-osmosis-fail-min-out.json"), "success")
+	targetStatePath := filepath.Join(t.TempDir(), "mock-osmosis-fail-min-out.json")
+	target := startMockOsmosisTarget(t, targetStatePath, "success")
 	defer target.cancel()
 
 	runRouteRelayerOnce(t, statePath, target.url)
@@ -461,6 +512,81 @@ func TestRouteRelayerMarksTransferFailedWhenDestinationSwapMinOutIsNotMet(t *tes
 	}
 	if transfers[0].FailureReason == "" {
 		t.Fatal("expected failure reason to be recorded")
+	}
+
+	var state struct {
+		Packets []struct {
+			TransferID  string `json:"transfer_id"`
+			PacketState string `json:"packet_state"`
+			AckState    string `json:"ack_state"`
+			AckReason   string `json:"ack_reason"`
+		} `json:"packets"`
+		Executions []struct {
+			TransferID string `json:"transfer_id"`
+			Result     string `json:"result"`
+			Error      string `json:"error"`
+		} `json:"executions"`
+		Swaps []struct{} `json:"swaps"`
+	}
+	readJSONFile(t, targetStatePath, &state)
+
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
+	}
+	if state.Packets[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %q", transfer.TransferID, state.Packets[0].TransferID)
+	}
+	if state.Packets[0].PacketState != "ack_relayed" {
+		t.Fatalf("expected ack_relayed packet state after failed execution was consumed, got %q", state.Packets[0].PacketState)
+	}
+	if state.Packets[0].AckState != "ack_failed" {
+		t.Fatalf("expected ack_failed packet ack state, got %q", state.Packets[0].AckState)
+	}
+	if state.Packets[0].AckReason == "" {
+		t.Fatal("expected packet ack reason to be recorded")
+	}
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution receipt, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "swap_failed" {
+		t.Fatalf("expected swap_failed execution result, got %q", state.Executions[0].Result)
+	}
+	if state.Executions[0].Error == "" {
+		t.Fatal("expected execution error to be recorded")
+	}
+	if len(state.Swaps) != 0 {
+		t.Fatalf("expected no swap records after failed execution, got %d", len(state.Swaps))
+	}
+
+	packetsOutput := readMockTargetEndpoint(t, target.url+"/packets")
+	var packets []struct {
+		PacketState string `json:"packet_state"`
+		AckState    string `json:"ack_state"`
+		AckReason   string `json:"ack_reason"`
+	}
+	if err := json.Unmarshal(packetsOutput, &packets); err != nil {
+		t.Fatalf("decode packets endpoint: %v", err)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("expected one packet from endpoint, got %d", len(packets))
+	}
+	if packets[0].PacketState != "ack_relayed" || packets[0].AckState != "ack_failed" || packets[0].AckReason == "" {
+		t.Fatalf("unexpected packets endpoint payload: %+v", packets[0])
+	}
+
+	executionsOutput := readMockTargetEndpoint(t, target.url+"/executions")
+	var executions []struct {
+		Result string `json:"result"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal(executionsOutput, &executions); err != nil {
+		t.Fatalf("decode executions endpoint: %v", err)
+	}
+	if len(executions) != 1 {
+		t.Fatalf("expected one execution from endpoint, got %d", len(executions))
+	}
+	if executions[0].Result != "swap_failed" || executions[0].Error == "" {
+		t.Fatalf("unexpected executions endpoint payload: %+v", executions[0])
 	}
 }
 
@@ -535,6 +661,36 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 		t.Fatalf("unexpected swaps endpoint payload: %+v", swaps[0])
 	}
 
+	packetsOutput := readMockTargetEndpoint(t, target.url+"/packets")
+	var packets []struct {
+		PacketState string `json:"packet_state"`
+	}
+	if err := json.Unmarshal(packetsOutput, &packets); err != nil {
+		t.Fatalf("decode packets endpoint: %v", err)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("expected one packet from endpoint, got %d", len(packets))
+	}
+	if packets[0].PacketState != "ack_relayed" {
+		t.Fatalf("expected ack_relayed packet from endpoint, got %+v", packets[0])
+	}
+
+	executionsOutput := readMockTargetEndpoint(t, target.url+"/executions")
+	var executions []struct {
+		Result       string `json:"result"`
+		OutputDenom  string `json:"output_denom"`
+		OutputAmount string `json:"output_amount"`
+	}
+	if err := json.Unmarshal(executionsOutput, &executions); err != nil {
+		t.Fatalf("decode executions endpoint: %v", err)
+	}
+	if len(executions) != 1 {
+		t.Fatalf("expected one execution from endpoint, got %d", len(executions))
+	}
+	if executions[0].Result != "swap_success" || executions[0].OutputDenom != "uion" || executions[0].OutputAmount != "12121212" {
+		t.Fatalf("unexpected executions endpoint payload: %+v", executions[0])
+	}
+
 	balancesOutput := readMockTargetEndpoint(t, target.url+"/balances")
 	var balances []struct {
 		Denom  string `json:"denom"`
@@ -566,21 +722,24 @@ func TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget(t *testing.T) {
 
 	statusOutput := readMockTargetEndpoint(t, target.url+"/status")
 	var status struct {
+		Packets         int `json:"packets"`
 		Receipts        int `json:"receipts"`
+		Executions      int `json:"executions"`
 		Pools           int `json:"pools"`
 		Balances        int `json:"balances"`
 		Swaps           int `json:"swaps"`
 		CompletedAcks   int `json:"completed_acks"`
 		ReadyAcks       int `json:"ready_acks"`
+		RelayedAcks     int `json:"relayed_acks"`
 		PendingReceipts int `json:"pending_receipts"`
 	}
 	if err := json.Unmarshal(statusOutput, &status); err != nil {
 		t.Fatalf("decode status endpoint: %v", err)
 	}
-	if status.Receipts != 1 || status.Pools != 1 || status.Balances != 1 || status.Swaps != 1 {
+	if status.Packets != 1 || status.Receipts != 1 || status.Executions != 1 || status.Pools != 1 || status.Balances != 1 || status.Swaps != 1 {
 		t.Fatalf("unexpected status endpoint payload: %+v", status)
 	}
-	if status.CompletedAcks != 1 || status.ReadyAcks != 0 || status.PendingReceipts != 0 {
+	if status.CompletedAcks != 1 || status.ReadyAcks != 0 || status.RelayedAcks != 1 || status.PendingReceipts != 0 {
 		t.Fatalf("unexpected ack summary payload: %+v", status)
 	}
 }
@@ -606,14 +765,15 @@ func TestRouteRelayerCompletesTransferOnlyAfterManualAckResolution(t *testing.T)
 	defer target.cancel()
 
 	runRouteRelayerOnce(t, statePath, target.url)
+	runRouteRelayerOnce(t, statePath, target.url)
 
 	loaded, err := aegisapp.Load(statePath)
 	if err != nil {
-		t.Fatalf("reload state after delivery: %v", err)
+		t.Fatalf("reload state after delivery and execution: %v", err)
 	}
 	transfers := loaded.IBCRouterKeeper.ExportTransfers()
 	if len(transfers) != 1 || transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
-		t.Fatalf("expected pending transfer after delivery, got %+v", transfers)
+		t.Fatalf("expected pending transfer before manual ack resolution, got %+v", transfers)
 	}
 
 	resolveMockOsmosisAck(t, target.url, transfer.TransferID, "complete")
@@ -632,17 +792,21 @@ func TestRouteRelayerCompletesTransferOnlyAfterManualAckResolution(t *testing.T)
 	}
 
 	var state struct {
-		Receipts []struct {
-			TransferID string `json:"transfer_id"`
-			AckRelayed bool   `json:"ack_relayed"`
-		} `json:"receipts"`
+		Packets []struct {
+			TransferID  string `json:"transfer_id"`
+			PacketState string `json:"packet_state"`
+			AckRelayed  bool   `json:"ack_relayed"`
+		} `json:"packets"`
 	}
 	readJSONFile(t, targetStatePath, &state)
-	if len(state.Receipts) != 1 {
-		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
 	}
-	if !state.Receipts[0].AckRelayed {
-		t.Fatal("expected ack to be marked relayed after second run")
+	if state.Packets[0].PacketState != "ack_relayed" {
+		t.Fatalf("expected ack_relayed packet state after third run, got %q", state.Packets[0].PacketState)
+	}
+	if !state.Packets[0].AckRelayed {
+		t.Fatal("expected ack to be marked relayed after third run")
 	}
 }
 

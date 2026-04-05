@@ -25,15 +25,26 @@ The demo runs two proof paths:
 
 - Ethereum is not mocked away. Deposits come from the local Anvil-backed path.
 - AegisLink is not just a contract wrapper. It owns bridge accounting, routing, and policy.
-- Outbound routing is not just a status flip. The destination target executes pool-backed swaps.
-- The destination side is queryable through `/status`, `/pools`, `/balances`, and `/swaps`.
+- Outbound routing is not just a status flip. The destination target persists packet receipt, executes pool-backed swaps, and later produces an acknowledgement.
+- The destination side is queryable through `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`.
+
+## Route lifecycle to point at
+
+During the inspection path, call out the destination-side lifecycle explicitly:
+
+- `received`: the target accepted and persisted the routed packet
+- `executed`: the target finished credit or swap execution
+- `ack_ready`: a destination result is ready for the route-relayer to pick up
+- `ack_relayed`: the acknowledgement has been consumed and confirmed back to AegisLink
+
+Those states are what make the local harness feel closer to real interchain delivery than a single callback.
 
 ## What to say while showing it
 
 - `Ethereum emits the canonical source event.`
 - `The relayer carries evidence into AegisLink.`
 - `AegisLink mints and routes according to policy.`
-- `The mock Osmosis target executes the destination-side swap and exposes the resulting state.`
+- `The mock Osmosis target persists the packet, executes the destination-side swap, and exposes both packet and execution state.`
 - `The route can also fail for execution reasons like missing pool or min_out, not only transport reasons.`
 
 ## Important honesty line

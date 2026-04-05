@@ -68,6 +68,7 @@ Use these to build the project step by step:
 - [Step-by-step roadmap](docs/implementation/01-step-by-step-roadmap.md)
 - [Tech stack and repo plan](docs/implementation/02-tech-stack-and-repo-plan.md)
 - [0-to-100 execution plan](docs/superpowers/plans/2026-03-30-aegislink-0-to-100-implementation.md)
+- [Final stretch plan](docs/superpowers/plans/2026-04-05-aegislink-final-stretch-plan.md)
 - [Initial implementation plan, historical](docs/superpowers/plans/2026-03-28-eth-cosmos-aegislink-implementation.md)
 
 Use these for operational and launch thinking:
@@ -107,8 +108,8 @@ That demo exercises:
 - a live local Ethereum deposit
 - relayer submission into AegisLink
 - outbound routing into the Osmosis-style target
-- destination-side swap execution
-- public target queries for pools, balances, and swaps
+- destination-side packet receipt, execution, and swap lifecycle
+- public target queries for packets, executions, pools, balances, and swaps
 
 For the full walkthrough, use [Demo walkthrough](docs/demo-walkthrough.md).
 
@@ -140,8 +141,9 @@ As of April 5, 2026, AegisLink is a runtime-backed local bridge prototype with a
 - a dedicated `route-relayer` plus `mock-osmosis-target` service pair that delivers packet-shaped routed transfers and resolves acknowledgements asynchronously
 - route lifecycle support for pending, completed, failed, timed-out, and refunded Osmosis-style transfers
 - a routed-flow proof that takes a live Ethereum deposit, mints on AegisLink, initiates a route, hands it to a local target, and ends in a completed transfer record on the AegisLink side
-- packet receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
-- public mock-target query surfaces for `/status`, `/pools`, `/balances`, and `/swaps`
+- a destination-side packet lifecycle that now moves through `received`, `executed`, `ack_ready`, and `ack_relayed`
+- packet receipts, separate execution receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven `ack_failed` outcomes on the local Osmosis-style target
+- public mock-target query surfaces for `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`
 
 The current repo shape is:
 

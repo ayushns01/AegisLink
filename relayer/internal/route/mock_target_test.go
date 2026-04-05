@@ -40,20 +40,13 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 		t.Fatalf("expected received ack, got %q", ack.Status)
 	}
 
-	acks, err := target.ReadyAcks(context.Background())
-	if err != nil {
-		t.Fatalf("ready acks before resolution: %v", err)
-	}
-	if len(acks) != 0 {
-		t.Fatalf("expected no ready acks before resolution, got %d", len(acks))
-	}
-
-	var state struct {
-		Receipts []struct {
-			TransferID string `json:"transfer_id"`
-			AckState   string `json:"ack_state"`
-			AckRelayed bool   `json:"ack_relayed"`
-			Packet     struct {
+	var delivered struct {
+		Packets []struct {
+			TransferID  string `json:"transfer_id"`
+			PacketState string `json:"packet_state"`
+			AckState    string `json:"ack_state"`
+			AckRelayed  bool   `json:"ack_relayed"`
+			Packet      struct {
 				Sequence uint64 `json:"sequence"`
 				Data     struct {
 					Denom    string `json:"denom"`
@@ -71,7 +64,93 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 				Type        string `json:"type"`
 				TargetDenom string `json:"target_denom"`
 			} `json:"action"`
-		} `json:"receipts"`
+		} `json:"packets"`
+		Executions []struct{} `json:"executions"`
+		Swaps      []struct{} `json:"swaps"`
+		Balances   []struct{} `json:"balances"`
+	}
+	readJSONFile(t, statePath, &delivered)
+
+	if len(delivered.Packets) != 1 {
+		t.Fatalf("expected one packet after delivery, got %d", len(delivered.Packets))
+	}
+	packet := delivered.Packets[0]
+	if packet.TransferID != "ibc/eth.usdc/1" {
+		t.Fatalf("expected transfer id ibc/eth.usdc/1, got %q", packet.TransferID)
+	}
+	if packet.PacketState != "received" {
+		t.Fatalf("expected received packet state after delivery, got %q", packet.PacketState)
+	}
+	if packet.AckState != "pending" {
+		t.Fatalf("expected pending ack state after delivery, got %q", packet.AckState)
+	}
+	if packet.AckRelayed {
+		t.Fatal("expected packet ack to be unrelayed after delivery")
+	}
+	if packet.Packet.Sequence != 1 {
+		t.Fatalf("expected packet sequence 1, got %d", packet.Packet.Sequence)
+	}
+	if packet.Packet.Data.Denom != "eth.usdc" {
+		t.Fatalf("expected source denom eth.usdc, got %q", packet.Packet.Data.Denom)
+	}
+	if packet.DenomTrace.Path != "transfer/channel-0" {
+		t.Fatalf("expected denom trace path transfer/channel-0, got %q", packet.DenomTrace.Path)
+	}
+	if packet.Action.Type != "swap" || packet.Action.TargetDenom != "uosmo" {
+		t.Fatalf("expected swap action to uosmo, got %+v", packet.Action)
+	}
+	if len(delivered.Executions) != 0 {
+		t.Fatalf("expected no executions before ack poll, got %d", len(delivered.Executions))
+	}
+	if len(delivered.Swaps) != 0 {
+		t.Fatalf("expected no swaps before ack poll, got %d", len(delivered.Swaps))
+	}
+	if len(delivered.Balances) != 0 {
+		t.Fatalf("expected no balances before ack poll, got %d", len(delivered.Balances))
+	}
+
+	acks, err := target.ReadyAcks(context.Background())
+	if err != nil {
+		t.Fatalf("ready acks before resolution: %v", err)
+	}
+	if len(acks) != 0 {
+		t.Fatalf("expected no ready acks before resolution, got %d", len(acks))
+	}
+
+	var state struct {
+		Packets []struct {
+			TransferID  string `json:"transfer_id"`
+			PacketState string `json:"packet_state"`
+			AckState    string `json:"ack_state"`
+			AckRelayed  bool   `json:"ack_relayed"`
+			Packet      struct {
+				Sequence uint64 `json:"sequence"`
+				Data     struct {
+					Denom    string `json:"denom"`
+					Amount   string `json:"amount"`
+					Receiver string `json:"receiver"`
+					Memo     string `json:"memo"`
+				} `json:"data"`
+			} `json:"packet"`
+			DenomTrace struct {
+				Path      string `json:"path"`
+				BaseDenom string `json:"base_denom"`
+				IBCDenom  string `json:"ibc_denom"`
+			} `json:"denom_trace"`
+			Action struct {
+				Type        string `json:"type"`
+				TargetDenom string `json:"target_denom"`
+			} `json:"action"`
+		} `json:"packets"`
+		Executions []struct {
+			TransferID   string `json:"transfer_id"`
+			Result       string `json:"result"`
+			InputDenom   string `json:"input_denom"`
+			OutputDenom  string `json:"output_denom"`
+			OutputAmount string `json:"output_amount"`
+			Recipient    string `json:"recipient"`
+			DexChainID   string `json:"dex_chain_id"`
+		} `json:"executions"`
 		Swaps []struct {
 			TransferID   string `json:"transfer_id"`
 			InputDenom   string `json:"input_denom"`
@@ -95,30 +174,48 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	}
 	readJSONFile(t, statePath, &state)
 
-	if len(state.Receipts) != 1 {
-		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
 	}
-	receipt := state.Receipts[0]
-	if receipt.TransferID != "ibc/eth.usdc/1" {
-		t.Fatalf("expected transfer id ibc/eth.usdc/1, got %q", receipt.TransferID)
+	packet = state.Packets[0]
+	if packet.TransferID != "ibc/eth.usdc/1" {
+		t.Fatalf("expected transfer id ibc/eth.usdc/1, got %q", packet.TransferID)
 	}
-	if receipt.AckState != "pending" {
-		t.Fatalf("expected pending ack state, got %q", receipt.AckState)
+	if packet.PacketState != "executed" {
+		t.Fatalf("expected executed packet state after ack poll, got %q", packet.PacketState)
 	}
-	if receipt.AckRelayed {
+	if packet.AckState != "pending" {
+		t.Fatalf("expected pending ack state, got %q", packet.AckState)
+	}
+	if packet.AckRelayed {
 		t.Fatal("expected ack to be unrelayed")
 	}
-	if receipt.Packet.Sequence != 1 {
-		t.Fatalf("expected packet sequence 1, got %d", receipt.Packet.Sequence)
+	if packet.Packet.Sequence != 1 {
+		t.Fatalf("expected packet sequence 1, got %d", packet.Packet.Sequence)
 	}
-	if receipt.Packet.Data.Denom != "eth.usdc" {
-		t.Fatalf("expected source denom eth.usdc, got %q", receipt.Packet.Data.Denom)
+	if packet.Packet.Data.Denom != "eth.usdc" {
+		t.Fatalf("expected source denom eth.usdc, got %q", packet.Packet.Data.Denom)
 	}
-	if receipt.DenomTrace.Path != "transfer/channel-0" {
-		t.Fatalf("expected denom trace path transfer/channel-0, got %q", receipt.DenomTrace.Path)
+	if packet.DenomTrace.Path != "transfer/channel-0" {
+		t.Fatalf("expected denom trace path transfer/channel-0, got %q", packet.DenomTrace.Path)
 	}
-	if receipt.Action.Type != "swap" || receipt.Action.TargetDenom != "uosmo" {
-		t.Fatalf("expected swap action to uosmo, got %+v", receipt.Action)
+	if packet.Action.Type != "swap" || packet.Action.TargetDenom != "uosmo" {
+		t.Fatalf("expected swap action to uosmo, got %+v", packet.Action)
+	}
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution record, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "swap_success" {
+		t.Fatalf("expected swap_success execution, got %q", state.Executions[0].Result)
+	}
+	if state.Executions[0].InputDenom != "ibc/uatom-usdc" {
+		t.Fatalf("expected input denom ibc/uatom-usdc, got %q", state.Executions[0].InputDenom)
+	}
+	if state.Executions[0].OutputDenom != "uosmo" {
+		t.Fatalf("expected output denom uosmo, got %q", state.Executions[0].OutputDenom)
+	}
+	if state.Executions[0].OutputAmount != "47619047" {
+		t.Fatalf("expected execution output amount 47619047, got %q", state.Executions[0].OutputAmount)
 	}
 	if len(state.Swaps) != 1 {
 		t.Fatalf("expected one swap record, got %d", len(state.Swaps))
@@ -181,7 +278,12 @@ func TestMockTargetExposesPoolsBalancesAndSwapsEndpoints(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("submit transfer: %v", err)
 	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
 
+	assertEndpointJSONCount(t, target.client, target.baseURL+"/packets", 1)
+	assertEndpointJSONCount(t, target.client, target.baseURL+"/executions", 1)
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/pools", 1)
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/balances", 1)
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/swaps", 1)
@@ -224,10 +326,14 @@ func TestMockTargetExposesStatusEndpoint(t *testing.T) {
 	}
 
 	var status struct {
+		Packets         int `json:"packets"`
 		Receipts        int `json:"receipts"`
+		Executions      int `json:"executions"`
 		Pools           int `json:"pools"`
 		Balances        int `json:"balances"`
 		Swaps           int `json:"swaps"`
+		ReceivedPackets int `json:"received_packets"`
+		ExecutedPackets int `json:"executed_packets"`
 		ReadyAcks       int `json:"ready_acks"`
 		CompletedAcks   int `json:"completed_acks"`
 		FailedAcks      int `json:"failed_acks"`
@@ -238,8 +344,11 @@ func TestMockTargetExposesStatusEndpoint(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if status.Receipts != 1 || status.Pools != 1 || status.Balances != 1 || status.Swaps != 1 {
+	if status.Packets != 1 || status.Receipts != 1 || status.Executions != 0 || status.Pools != 1 || status.Balances != 0 || status.Swaps != 0 {
 		t.Fatalf("unexpected status counts: %+v", status)
+	}
+	if status.ReceivedPackets != 1 || status.ExecutedPackets != 0 {
+		t.Fatalf("unexpected packet lifecycle counts: %+v", status)
 	}
 	if status.PendingReceipts != 1 {
 		t.Fatalf("expected 1 pending receipt, got %d", status.PendingReceipts)
@@ -278,11 +387,18 @@ func TestMockTargetCreditsRecipientBalanceForPlainIBCReceive(t *testing.T) {
 	if ack.Status != AckStatusReceived {
 		t.Fatalf("expected received ack, got %q", ack.Status)
 	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
 
 	var state struct {
-		Receipts []struct {
-			TransferID string `json:"transfer_id"`
-		} `json:"receipts"`
+		Packets []struct {
+			TransferID  string `json:"transfer_id"`
+			PacketState string `json:"packet_state"`
+		} `json:"packets"`
+		Executions []struct {
+			Result string `json:"result"`
+		} `json:"executions"`
 		Swaps []struct {
 			TransferID string `json:"transfer_id"`
 		} `json:"swaps"`
@@ -294,8 +410,14 @@ func TestMockTargetCreditsRecipientBalanceForPlainIBCReceive(t *testing.T) {
 	}
 	readJSONFile(t, statePath, &state)
 
-	if len(state.Receipts) != 1 {
-		t.Fatalf("expected one receipt, got %d", len(state.Receipts))
+	if len(state.Packets) != 1 {
+		t.Fatalf("expected one packet, got %d", len(state.Packets))
+	}
+	if state.Packets[0].PacketState != "executed" {
+		t.Fatalf("expected executed packet state, got %q", state.Packets[0].PacketState)
+	}
+	if len(state.Executions) != 1 || state.Executions[0].Result != "credit" {
+		t.Fatalf("expected one credit execution, got %+v", state.Executions)
 	}
 	if len(state.Swaps) != 0 {
 		t.Fatalf("expected no swaps for plain receive, got %d", len(state.Swaps))
@@ -444,16 +566,13 @@ func TestMockTargetRejectsSwapWhenPoolHasNoOutputLiquidity(t *testing.T) {
 		},
 	}
 
-	receipt := &MockTargetReceipt{
-		TransferID: "ibc/eth.usdc/5",
-		AckState:   "pending",
-	}
-	target.applyExecutionLocked(receipt, DeliveryEnvelope{
-		Transfer: Transfer{
-			TransferID:         "ibc/eth.usdc/5",
-			DestinationChainID: "osmosis-1",
-		},
+	packet := &MockTargetPacket{
+		TransferID:         "ibc/eth.usdc/5",
+		DestinationChainID: "osmosis-1",
+		PacketState:        "received",
+		AckState:           "pending",
 		Packet: Packet{
+			Sequence: 5,
 			Data: PacketData{
 				Amount:   "25000000",
 				Receiver: "osmo1noliquidity",
@@ -464,13 +583,20 @@ func TestMockTargetRejectsSwapWhenPoolHasNoOutputLiquidity(t *testing.T) {
 			Type:        "swap",
 			TargetDenom: "uosmo",
 		},
-	})
-
-	if receipt.AckState != "ack_failed" {
-		t.Fatalf("expected ack_failed state, got %q", receipt.AckState)
 	}
-	if receipt.AckReason == "" {
+	target.executePacketLocked(packet)
+
+	if packet.PacketState != "ack_ready" {
+		t.Fatalf("expected ack_ready packet state, got %q", packet.PacketState)
+	}
+	if packet.AckState != "ack_failed" {
+		t.Fatalf("expected ack_failed state, got %q", packet.AckState)
+	}
+	if packet.AckReason == "" {
 		t.Fatal("expected insufficient liquidity reason")
+	}
+	if len(target.state.Executions) != 1 || target.state.Executions[0].Result != "swap_failed" {
+		t.Fatalf("expected one swap_failed execution, got %+v", target.state.Executions)
 	}
 	if len(target.state.Swaps) != 0 {
 		t.Fatalf("expected no swap records, got %d", len(target.state.Swaps))
@@ -521,6 +647,9 @@ func TestMockTargetUsesConfiguredFeeAwarePoolForSwap(t *testing.T) {
 	}
 	if ack.Status != AckStatusReceived {
 		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
 	}
 
 	var state struct {
@@ -609,6 +738,9 @@ func TestMockTargetUsesConfiguredAlternatePoolForDifferentOutputDenom(t *testing
 	}
 	if ack.Status != AckStatusReceived {
 		t.Fatalf("expected received ack, got %q", ack.Status)
+	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
 	}
 
 	var state struct {
