@@ -14,13 +14,16 @@ import (
 	"strings"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/app"
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/opslog"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		_ = opslog.Write(os.Stderr, "error", "aegislinkd", "command_failed", "aegislinkd command failed", map[string]any{
+			"error": err.Error(),
+		})
 		os.Exit(1)
 	}
 }
@@ -39,11 +42,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	switch args[0] {
 	case "init":
-		return runInit(args[1:], stdout)
+		return runInit(args[1:], stdout, stderr)
 	case "start":
-		return runStart(args[1:], stdout)
+		return runStart(args[1:], stdout, stderr)
 	case "query":
-		return runQuery(args[1:], stdout)
+		return runQuery(args[1:], stdout, stderr)
 	case "tx":
 		return runTx(args[1:], stdout)
 	default:
@@ -51,14 +54,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
-func runQuery(args []string, stdout io.Writer) error {
+func runQuery(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("missing query subcommand")
 	}
 
 	switch args[0] {
 	case "status":
-		return queryStatus(args[1:], stdout)
+		return queryStatus(args[1:], stdout, stderr)
 	case "summary":
 		return querySummary(args[1:], stdout)
 	case "claim":
@@ -74,7 +77,7 @@ func runQuery(args []string, stdout io.Writer) error {
 	}
 }
 
-func runInit(args []string, stdout io.Writer) error {
+func runInit(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
@@ -93,6 +96,18 @@ func runInit(args []string, stdout io.Writer) error {
 		return err
 	}
 
+	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_init", "runtime home initialized", map[string]any{
+		"chain_id":           cfg.ChainID,
+		"home_dir":           cfg.HomeDir,
+		"runtime_mode":       cfg.RuntimeMode,
+		"module_count":       len(cfg.Modules),
+		"configured_signers": len(cfg.AllowedSigners),
+		"required_threshold": cfg.RequiredThreshold,
+		"config_path":        cfg.ConfigPath,
+		"genesis_path":       cfg.GenesisPath,
+		"state_path":         cfg.StatePath,
+	})
+
 	return writeJSON(stdout, map[string]any{
 		"status":       "initialized",
 		"app_name":     cfg.AppName,
@@ -105,7 +120,7 @@ func runInit(args []string, stdout io.Writer) error {
 	})
 }
 
-func runStart(args []string, stdout io.Writer) error {
+func runStart(args []string, stdout, stderr io.Writer) error {
 	cfg, err := resolveRuntimeConfigFromArgs("start", args)
 	if err != nil {
 		return err
@@ -117,10 +132,19 @@ func runStart(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, statusEnvelope("started", a.Status()))
+	status := a.Status()
+	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_start", "runtime started", map[string]any{
+		"chain_id":           status.ChainID,
+		"home_dir":           status.HomeDir,
+		"module_count":       status.Modules,
+		"configured_signers": len(status.AllowedSigners),
+		"enabled_route_ids":  status.EnabledRouteIDs,
+		"current_height":     status.CurrentHeight,
+	})
+	return writeJSON(stdout, statusEnvelope("started", status))
 }
 
-func queryStatus(args []string, stdout io.Writer) error {
+func queryStatus(args []string, stdout, stderr io.Writer) error {
 	cfg, err := resolveRuntimeConfigFromArgs("status", args)
 	if err != nil {
 		return err
@@ -129,7 +153,16 @@ func queryStatus(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, a.Status())
+	status := a.Status()
+	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_status", "runtime status queried", map[string]any{
+		"chain_id":          status.ChainID,
+		"home_dir":          status.HomeDir,
+		"module_count":      status.Modules,
+		"enabled_route_ids": status.EnabledRouteIDs,
+		"transfers":         status.Transfers,
+		"processed_claims":  status.ProcessedClaims,
+	})
+	return writeJSON(stdout, status)
 }
 
 func runTx(args []string, stdout io.Writer) error {

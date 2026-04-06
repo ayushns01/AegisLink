@@ -53,6 +53,38 @@ Bridge infrastructure fails badly when operators cannot tell the difference betw
 - `aegislink_ibc_route_failures_total`
 - mock target `/status` summary plus `/packets` and `/executions` for local demo and inspection runs
 
+## Structured logs available now
+
+The current repo now emits structured JSON logs for the main operator surfaces:
+
+- `aegislinkd`
+  - `runtime_init`
+  - `runtime_start`
+  - `runtime_status`
+  - `command_failed`
+- `bridge-relayer`
+  - `run_start`
+  - `run_complete`
+  - `run_failed`
+- `route-relayer`
+  - `run_start`
+  - `run_complete`
+  - `run_failed`
+- `mock-osmosis-target`
+  - `server_start`
+  - `server_stopped`
+  - `startup_failed`
+
+These logs now carry the fields that matter during local operation:
+
+- chain ID
+- home dir and runtime paths
+- configured signer count and required threshold
+- enabled route IDs
+- deposit and withdrawal run summary counts
+- route acknowledgement and delivery summary counts
+- mock target address, mode, and pool count
+
 ## Logs that matter
 
 Logs should always include:
@@ -67,6 +99,19 @@ Logs should always include:
 - rejection reason when applicable
 
 If logs do not carry claim identity, incident handling becomes much slower.
+
+## Run summaries available now
+
+The operator-facing binaries now emit short summaries instead of only succeeding silently:
+
+- `aegislinkd start`
+  Reports chain ID, home dir, module count, signer count, and enabled routes.
+- `bridge-relayer`
+  Reports deposit observations, duplicate suppression, submit attempts, withdrawal observations, and release attempts.
+- `route-relayer`
+  Reports ready acknowledgements, completed or failed acknowledgements, observed transfers, delivered transfers, and received-only deliveries.
+- `mock-osmosis-target`
+  Reports startup mode, listen address, persisted state path, and pool count.
 
 ## Dashboards to prepare
 

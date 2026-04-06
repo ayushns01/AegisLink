@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,11 +75,18 @@ func ResolveConfig(cfg Config) (Config, error) {
 		return Config{}, err
 	}
 
+	if err := validateConfig(cfg); err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
 }
 
 func InitHome(cfg Config, force bool) (Config, error) {
 	cfg = normalizeConfig(cfg)
+	if err := validateConfig(cfg); err != nil {
+		return Config{}, err
+	}
 
 	configExists, err := fileExists(cfg.ConfigPath)
 	if err != nil {
@@ -226,4 +234,29 @@ func fileExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+func validateConfig(cfg Config) error {
+	if strings.TrimSpace(cfg.HomeDir) == "" {
+		return errors.New("home dir is required")
+	}
+	if strings.TrimSpace(cfg.ConfigPath) == "" {
+		return errors.New("config path is required")
+	}
+	if strings.TrimSpace(cfg.GenesisPath) == "" {
+		return errors.New("genesis path is required")
+	}
+	if strings.TrimSpace(cfg.StatePath) == "" {
+		return errors.New("state path is required")
+	}
+	if len(cfg.AllowedSigners) == 0 {
+		return errors.New("at least one allowed signer is required")
+	}
+	if cfg.RequiredThreshold == 0 {
+		return errors.New("required threshold must be greater than zero")
+	}
+	if int(cfg.RequiredThreshold) > len(cfg.AllowedSigners) {
+		return fmt.Errorf("required threshold %d exceeds configured signers %d", cfg.RequiredThreshold, len(cfg.AllowedSigners))
+	}
+	return nil
 }

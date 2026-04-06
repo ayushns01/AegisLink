@@ -34,6 +34,17 @@ Use the smallest pause that removes risk, but choose a full pause if the blast r
 - [ ] Stop automated retries if they are making the state noisier.
 - [ ] Preserve logs, metrics, and signer evidence.
 
+Use the fastest inspection surfaces first:
+
+- `aegislinkd query status`
+  Confirms current chain ID, runtime paths, signer threshold, processed claim count, and enabled routes.
+- bridge-relayer structured logs
+  Confirm whether deposits or withdrawals were observed, retried, and completed during the last run.
+- route-relayer structured logs
+  Confirm whether the route is stuck before delivery, after delivery, or after acknowledgement became ready.
+- mock target `/status`, `/packets`, and `/executions`
+  Confirm whether the destination actually received the packet, executed it, or produced a failure or timeout outcome.
+
 ## Investigation checklist
 
 - [ ] Determine whether the issue is verification, accounting, routing, or infrastructure.
@@ -41,6 +52,15 @@ Use the smallest pause that removes risk, but choose a full pause if the blast r
 - [ ] Check whether any supported asset needs to be disabled in the registry.
 - [ ] Check whether the attester set or relayer config changed recently.
 - [ ] Check whether IBC acknowledgements or timeouts are involved.
+
+Practical triage split:
+
+- `verification or accounting issue`
+  Look at `aegislinkd` status plus bridge-relayer summaries first.
+- `route issue`
+  Look at route-relayer summaries plus mock target packet or execution state first.
+- `timeout or refund issue`
+  Confirm whether the transfer is still `ack_ready` on the target or already `timed_out` on AegisLink before taking recovery action.
 
 ## Recovery checklist
 

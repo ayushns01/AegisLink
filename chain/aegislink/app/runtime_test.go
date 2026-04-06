@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
@@ -171,6 +172,22 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	}
 	if status.Modules != 5 {
 		t.Fatalf("expected 5 modules, got %d", status.Modules)
+	}
+}
+
+func TestResolveConfigRejectsThresholdAboveSignerCount(t *testing.T) {
+	t.Parallel()
+
+	_, err := ResolveConfig(Config{
+		HomeDir:           filepath.Join(t.TempDir(), "home"),
+		AllowedSigners:    []string{"relayer-1"},
+		RequiredThreshold: 2,
+	})
+	if err == nil {
+		t.Fatal("expected invalid threshold error")
+	}
+	if !strings.Contains(err.Error(), "required threshold") {
+		t.Fatalf("expected threshold validation error, got %v", err)
 	}
 }
 

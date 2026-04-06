@@ -82,3 +82,14 @@ This is still a strong local prototype, not a production bridge:
 - The Osmosis side is an `osmosis-lite` harness, not a full real IBC-connected Osmosis node.
 
 That honesty makes the project stronger, not weaker.
+
+## Demo failure troubleshooting
+
+- `make demo fails before the route target starts`
+  Check the relayer stderr logs first. The bridge-relayer and route-relayer now emit structured JSON summaries that show whether the failure happened on the Ethereum observation side, the AegisLink submission side, or the route acknowledgement side.
+- `AegisLink looks healthy but the route does not complete`
+  Inspect `/status`, `/packets`, and `/executions` on the mock target. If the packet is `received` but not `executed`, the failure is on the destination execution side. If it is `ack_ready` but not `ack_relayed`, the route-relayer is the likely bottleneck.
+- `The destination swap failed`
+  Check `/swaps`, `/pools`, and `/executions` for the execution error. Common causes are unsupported route intent, missing pool liquidity, or `min_out` not being met.
+- `The route timed out`
+  Confirm AegisLink shows the transfer as `timed_out`, then demonstrate the refund-safe path instead of trying to force a completion.

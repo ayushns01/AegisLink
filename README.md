@@ -137,12 +137,13 @@ That flow creates and uses:
 
 ## Current checkpoint
 
-As of April 5, 2026:
+As of April 6, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
 - Phase 1 of the fuller route-harness plan is complete
+- Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is runtime and operator realism, not basic bridge invention
+- the next roadmap focus is deeper runtime realism, not basic bridge invention
 
 The current repo shape is:
 
@@ -157,4 +158,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The current local route-harness phase is complete. The next active roadmap work is now after that milestone: stronger operator surfaces, structured logs, and continued runtime hardening toward a fuller Cosmos node experience.
+The local route-harness and operator-surface phases are now in place. The next active roadmap work is the deeper realism layer after that milestone: continued runtime hardening toward a fuller Cosmos node experience and optional verifier hardening.

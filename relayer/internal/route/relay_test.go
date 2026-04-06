@@ -108,8 +108,18 @@ func TestRelayerRunOnceLeavesTransferPendingAfterDeliveryReceipt(t *testing.T) {
 	}
 
 	relayer := NewRelayer(source, sink, target)
-	if err := relayer.RunOnce(context.Background()); err != nil {
+	summary, err := relayer.RunOnceWithSummary(context.Background())
+	if err != nil {
 		t.Fatalf("run once: %v", err)
+	}
+	if summary.TransfersObserved != 1 || summary.TransfersDelivered != 1 {
+		t.Fatalf("unexpected transfer summary: %+v", summary)
+	}
+	if summary.ReceivedDeliveries != 1 {
+		t.Fatalf("expected one received delivery summary, got %+v", summary)
+	}
+	if summary.ReadyAcks != 0 || summary.CompletedAcks != 0 || summary.FailedAcks != 0 || summary.TimedOutAcks != 0 {
+		t.Fatalf("unexpected ack summary: %+v", summary)
 	}
 	if len(target.calls) != 1 || target.calls[0].TransferID != "ibc/eth.usdc/1" {
 		t.Fatalf("expected one submitted transfer, got %+v", target.calls)

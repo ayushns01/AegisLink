@@ -16,6 +16,7 @@ import (
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 	"math/big"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -41,6 +42,7 @@ type Status struct {
 	ModuleNames        []string          `json:"module_names"`
 	Modules            int               `json:"modules"`
 	AllowedSigners     []string          `json:"allowed_signers"`
+	EnabledRouteIDs    []string          `json:"enabled_route_ids"`
 	RequiredThreshold  uint32            `json:"required_threshold"`
 	CurrentHeight      uint64            `json:"current_height"`
 	Assets             int               `json:"assets"`
@@ -209,6 +211,7 @@ func (a *App) Save() error {
 func (a *App) Status() Status {
 	bridgeState := a.BridgeKeeper.ExportState()
 	transfers := a.IBCRouterKeeper.ExportTransfers()
+	routes := a.IBCRouterKeeper.ExportRoutes()
 
 	status := Status{
 		AppName:           a.Config.AppName,
@@ -222,6 +225,7 @@ func (a *App) Status() Status {
 		ModuleNames:       a.ModuleNames(),
 		Modules:           len(a.modules),
 		AllowedSigners:    append([]string(nil), a.Config.AllowedSigners...),
+		EnabledRouteIDs:   enabledRouteIDs(routes),
 		RequiredThreshold: a.Config.RequiredThreshold,
 		CurrentHeight:     bridgeState.CurrentHeight,
 		Assets:            len(a.RegistryKeeper.ExportAssets()),
@@ -250,6 +254,22 @@ func (a *App) Status() Status {
 	}
 
 	return status
+}
+
+func enabledRouteIDs(routes []ibcrouterkeeper.Route) []string {
+	ids := make([]string, 0, len(routes))
+	for _, route := range routes {
+		if !route.Enabled {
+			continue
+		}
+		ids = append(ids, routeID(route))
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func routeID(route ibcrouterkeeper.Route) string {
+	return route.AssetID + "@" + route.DestinationChainID + ":" + route.ChannelID
 }
 
 func normalizeConfig(cfg Config) Config {

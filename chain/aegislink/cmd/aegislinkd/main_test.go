@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
@@ -128,6 +129,7 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 		Initialized      bool   `json:"initialized"`
 		Assets           int    `json:"assets"`
 		Routes           int    `json:"routes"`
+		EnabledRouteIDs  []string `json:"enabled_route_ids"`
 		Transfers        int    `json:"transfers"`
 		PendingTransfers int    `json:"pending_transfers"`
 		HomeDir          string `json:"home_dir"`
@@ -148,6 +150,9 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	if status.Assets != 1 || status.Routes != 1 {
 		t.Fatalf("unexpected status counts: %+v", status)
 	}
+	if len(status.EnabledRouteIDs) != 1 || status.EnabledRouteIDs[0] != "eth.usdc@osmosis-1:channel-0" {
+		t.Fatalf("expected enabled route id eth.usdc@osmosis-1:channel-0, got %+v", status.EnabledRouteIDs)
+	}
 	if status.Transfers != 0 || status.PendingTransfers != 0 {
 		t.Fatalf("expected zero transfers in seeded runtime, got %+v", status)
 	}
@@ -156,6 +161,58 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	}
 	if status.StatePath != cfg.StatePath {
 		t.Fatalf("expected state path %q, got %q", cfg.StatePath, status.StatePath)
+	}
+}
+
+func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+	cfg, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir: homeDir,
+		ChainID: "aegislink-devnet-1",
+	}, false)
+	if err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+	app := seededRuntimeAppWithIBCRoute(t, cfg.StatePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save seeded state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"start",
+		"--home", homeDir,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run start: %v\nstderr=%s", err, stderr.String())
+	}
+
+	events := parseJSONLogLines(t, stderr.String())
+	if len(events) == 0 {
+		t.Fatal("expected structured log output")
+	}
+
+	last := events[len(events)-1]
+	if last["event"] != "runtime_start" {
+		t.Fatalf("expected runtime_start event, got %+v", last)
+	}
+	if last["chain_id"] != "aegislink-devnet-1" {
+		t.Fatalf("expected chain id aegislink-devnet-1, got %+v", last["chain_id"])
+	}
+	if last["home_dir"] != homeDir {
+		t.Fatalf("expected home dir %q, got %+v", homeDir, last["home_dir"])
+	}
+	if last["module_count"] != float64(5) {
+		t.Fatalf("expected module count 5, got %+v", last["module_count"])
+	}
+	if last["configured_signers"] != float64(3) {
+		t.Fatalf("expected configured signers 3, got %+v", last["configured_signers"])
+	}
+	enabled, ok := last["enabled_route_ids"].([]any)
+	if !ok || len(enabled) != 1 || enabled[0] != "eth.usdc@osmosis-1:channel-0" {
+		t.Fatalf("expected enabled route ids to include eth.usdc@osmosis-1:channel-0, got %+v", last["enabled_route_ids"])
 	}
 }
 
@@ -693,6 +750,25 @@ func mustAmount(t *testing.T, value string) *big.Int {
 		t.Fatalf("invalid amount %q", value)
 	}
 	return amount
+}
+
+func parseJSONLogLines(t *testing.T, raw string) []map[string]any {
+	t.Helper()
+
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	var events []map[string]any
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("decode log line %q: %v", line, err)
+		}
+		events = append(events, event)
+	}
+	return events
 }
 
 func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {

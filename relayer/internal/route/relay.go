@@ -104,6 +104,16 @@ type Relayer struct {
 	target Target
 }
 
+type RunSummary struct {
+	ReadyAcks         int `json:"ready_acks"`
+	CompletedAcks     int `json:"completed_acks"`
+	FailedAcks        int `json:"failed_acks"`
+	TimedOutAcks      int `json:"timed_out_acks"`
+	TransfersObserved int `json:"transfers_observed"`
+	TransfersDelivered int `json:"transfers_delivered"`
+	ReceivedDeliveries int `json:"received_deliveries"`
+}
+
 func NewRelayer(source PendingTransferSource, sink AckSink, target Target) *Relayer {
 	return &Relayer{
 		source: source,
@@ -113,39 +123,51 @@ func NewRelayer(source PendingTransferSource, sink AckSink, target Target) *Rela
 }
 
 func (r *Relayer) RunOnce(ctx context.Context) error {
+	_, err := r.RunOnceWithSummary(ctx)
+	return err
+}
+
+func (r *Relayer) RunOnceWithSummary(ctx context.Context) (RunSummary, error) {
+	var summary RunSummary
 	readyAcks, err := r.target.ReadyAcks(ctx)
 	if err != nil {
-		return err
+		return summary, err
 	}
+	summary.ReadyAcks = len(readyAcks)
 
 	for _, ack := range readyAcks {
 		if err := r.applyAck(ctx, ack.TransferID, Ack{Status: ack.Status, Reason: ack.Reason}); err != nil {
-			return err
+			return summary, err
 		}
+		summary.recordAck(ack.Status)
 		if err := r.target.ConfirmAck(ctx, ack.TransferID); err != nil {
-			return err
+			return summary, err
 		}
 	}
 
 	transfers, err := r.source.PendingTransfers(ctx)
 	if err != nil {
-		return err
+		return summary, err
 	}
+	summary.TransfersObserved = len(transfers)
 
 	for _, transfer := range transfers {
 		ack, err := r.target.SubmitTransfer(ctx, transfer)
 		if err != nil {
-			return err
+			return summary, err
 		}
+		summary.TransfersDelivered++
 		if ack.Status == "" || ack.Status == AckStatusReceived {
+			summary.ReceivedDeliveries++
 			continue
 		}
 		if err := r.applyAck(ctx, transfer.TransferID, ack); err != nil {
-			return err
+			return summary, err
 		}
+		summary.recordAck(ack.Status)
 	}
 
-	return nil
+	return summary, nil
 }
 
 func (r *Relayer) applyAck(ctx context.Context, transferID string, ack Ack) error {
@@ -158,6 +180,17 @@ func (r *Relayer) applyAck(ctx context.Context, transferID string, ack Ack) erro
 		return r.sink.TimeoutTransfer(ctx, transferID)
 	default:
 		return fmt.Errorf("unexpected ack status %q", ack.Status)
+	}
+}
+
+func (s *RunSummary) recordAck(status AckStatus) {
+	switch status {
+	case AckStatusCompleted:
+		s.CompletedAcks++
+	case AckStatusFailed:
+		s.FailedAcks++
+	case AckStatusTimedOut:
+		s.TimedOutAcks++
 	}
 }
 

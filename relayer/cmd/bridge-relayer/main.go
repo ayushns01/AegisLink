@@ -2,17 +2,28 @@ package main
 
 import (
 	"context"
-	"log"
+	"io"
+	"os"
 
 	"github.com/ayushns01/aegislink/relayer/internal/attestations"
 	"github.com/ayushns01/aegislink/relayer/internal/config"
 	"github.com/ayushns01/aegislink/relayer/internal/cosmos"
 	"github.com/ayushns01/aegislink/relayer/internal/evm"
+	"github.com/ayushns01/aegislink/relayer/internal/opslog"
 	"github.com/ayushns01/aegislink/relayer/internal/pipeline"
 	"github.com/ayushns01/aegislink/relayer/internal/replay"
 )
 
 func main() {
+	if err := run(context.Background(), os.Stderr); err != nil {
+		_ = opslog.Write(os.Stderr, "error", "bridge-relayer", "run_failed", "bridge relayer run failed", map[string]any{
+			"error": err.Error(),
+		})
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, stderr io.Writer) error {
 	cfg := config.LoadFromEnv()
 
 	evmSource := evm.NewFileLogSource(cfg.EVMStatePath)
@@ -61,7 +72,42 @@ func main() {
 		evm.NewReleaser(releaseTarget),
 	)
 
-	if err := coord.RunOnce(context.Background()); err != nil {
-		log.Fatal(err)
+	_ = opslog.Write(stderr, "info", "bridge-relayer", "run_start", "bridge relayer run started", map[string]any{
+		"cosmos_chain_id":        cfg.CosmosChainID,
+		"attestation_threshold":  cfg.AttestationThreshold,
+		"submission_retry_limit": cfg.SubmissionRetryLimit,
+		"evm_source_mode":        evmSourceMode(cfg),
+		"cosmos_runtime_mode":    cosmosRuntimeMode(cfg),
+	})
+
+	summary, err := coord.RunOnceWithSummary(ctx)
+	if err != nil {
+		return err
 	}
+	return opslog.Write(stderr, "info", "bridge-relayer", "run_complete", "bridge relayer run completed", map[string]any{
+		"deposits_observed":            summary.DepositsObserved,
+		"duplicate_deposits":           summary.DuplicateDeposits,
+		"deposits_submitted":           summary.DepositsSubmitted,
+		"deposit_submit_attempts":      summary.DepositSubmitAttempts,
+		"withdrawals_observed":         summary.WithdrawalsObserved,
+		"duplicate_withdrawals":        summary.DuplicateWithdrawals,
+		"withdrawals_released":         summary.WithdrawalsReleased,
+		"withdrawal_release_attempts":  summary.WithdrawalReleaseAttempts,
+		"deposit_next_cursor":          summary.DepositNextCursor,
+		"withdrawal_next_cursor":       summary.WithdrawalNextCursor,
+	})
+}
+
+func evmSourceMode(cfg config.Config) string {
+	if cfg.EVMRPCURL != "" && cfg.EVMGatewayAddress != "" {
+		return "rpc"
+	}
+	return "file"
+}
+
+func cosmosRuntimeMode(cfg config.Config) string {
+	if cfg.AegisLinkCommand != "" {
+		return "command"
+	}
+	return "file"
 }

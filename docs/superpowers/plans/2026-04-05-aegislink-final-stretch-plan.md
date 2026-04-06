@@ -168,16 +168,18 @@ The correct order is:
 
 **Goal:** Make AegisLink feel more like a real chain runtime and less like a persistence shell with commands.
 
+**Phase 3 status:** Completed on April 6, 2026. The runtime now validates operator config more cleanly, status surfaces expose enabled route IDs, the main binaries emit structured JSON logs and run summaries, and the observability plus pause-recovery docs now explain how to inspect and troubleshoot the live local system.
+
 ### Task 3.1: Improve runtime startup lifecycle
 
-- [ ] Keep `init`, `start`, and `query status` stable.
-- [ ] Add clearer startup summaries:
+- [x] Keep `init`, `start`, and `query status` stable.
+- [x] Add clearer startup summaries:
   - chain ID
   - home dir
   - module count
   - configured signers
   - enabled routes
-- [ ] Add better config validation with useful operator errors.
+- [x] Add better config validation with useful operator errors.
 
 **What is happening:** the runtime becomes friendlier to operate.
 
@@ -185,13 +187,13 @@ The correct order is:
 
 ### Task 3.2: Add operator-friendly query surfaces
 
-- [ ] Add query commands for:
+- [x] Add query commands for:
   - claims by message ID
   - withdrawals
   - routes
   - transfers
   - runtime summary
-- [ ] Keep output stable and script-friendly.
+- [x] Keep output stable and script-friendly.
 
 **What is happening:** the runtime becomes inspectable without opening state files.
 
@@ -199,12 +201,12 @@ The correct order is:
 
 ### Task 3.3: Add structured logs and summaries
 
-- [ ] Add structured logs to:
+- [x] Add structured logs to:
   - `aegislinkd`
   - `bridge-relayer`
   - `route-relayer`
   - `mock-osmosis-target`
-- [ ] Add short run summaries for demo and operator flows.
+- [x] Add short run summaries for demo and operator flows.
 
 **What is happening:** the project starts to look like infrastructure, not a set of scripts.
 
@@ -212,9 +214,9 @@ The correct order is:
 
 ### Task 3.4: Add operator runbook coverage
 
-- [ ] Update `docs/observability.md`.
-- [ ] Update `docs/runbooks/pause-and-recovery.md`.
-- [ ] Add a short “demo failure troubleshooting” section.
+- [x] Update `docs/observability.md`.
+- [x] Update `docs/runbooks/pause-and-recovery.md`.
+- [x] Add a short “demo failure troubleshooting” section.
 
 **What is happening:** the operational story catches up with the code.
 

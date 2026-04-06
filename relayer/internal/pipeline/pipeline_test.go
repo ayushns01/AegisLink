@@ -48,8 +48,18 @@ func TestCoordinatorRunOnceRetriesTransientDepositSubmissionAndPersistsCheckpoin
 		releaser,
 	)
 
-	if err := coordinator.RunOnce(context.Background()); err != nil {
+	summary, err := coordinator.RunOnceWithSummary(context.Background())
+	if err != nil {
 		t.Fatalf("expected run to succeed, got error: %v", err)
+	}
+	if summary.DepositsObserved != 1 || summary.DepositsSubmitted != 1 {
+		t.Fatalf("unexpected deposit summary: %+v", summary)
+	}
+	if summary.DepositSubmitAttempts != 2 {
+		t.Fatalf("expected two deposit submit attempts, got %+v", summary)
+	}
+	if summary.WithdrawalsObserved != 0 || summary.WithdrawalsReleased != 0 {
+		t.Fatalf("unexpected withdrawal summary: %+v", summary)
 	}
 
 	if len(collector.calls) != 1 {
