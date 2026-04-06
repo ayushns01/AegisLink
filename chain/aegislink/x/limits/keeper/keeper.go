@@ -5,7 +5,9 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
+	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -15,13 +17,34 @@ var (
 )
 
 type Keeper struct {
-	limits map[string]limittypes.RateLimit
+	limits     map[string]limittypes.RateLimit
+	stateStore *sdkstore.JSONStateStore
 }
 
 func NewKeeper() *Keeper {
 	return &Keeper{
 		limits: make(map[string]limittypes.RateLimit),
 	}
+}
+
+func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keeper := NewKeeper()
+	keeper.stateStore = stateStore
+
+	var limits []limittypes.RateLimit
+	if err := stateStore.Load(&limits); err != nil {
+		return nil, err
+	}
+	if err := keeper.ImportLimits(limits); err != nil {
+		return nil, err
+	}
+
+	return keeper, nil
 }
 
 func (k *Keeper) SetLimit(limit limittypes.RateLimit) error {
@@ -31,7 +54,7 @@ func (k *Keeper) SetLimit(limit limittypes.RateLimit) error {
 
 	stored := canonicalLimit(limit)
 	k.limits[limitKey(stored.AssetID)] = stored
-	return nil
+	return k.persist()
 }
 
 func (k *Keeper) GetLimit(assetID string) (limittypes.RateLimit, bool) {
@@ -69,7 +92,14 @@ func (k *Keeper) ImportLimits(limits []limittypes.RateLimit) error {
 			return err
 		}
 	}
-	return nil
+	return k.persist()
+}
+
+func (k *Keeper) persist() error {
+	if k.stateStore == nil {
+		return nil
+	}
+	return k.stateStore.Save(k.ExportLimits())
 }
 
 func limitKey(assetID string) string {

@@ -74,6 +74,7 @@ Use these to build or review the project step by step:
 - [Tech stack and repo plan](docs/implementation/02-tech-stack-and-repo-plan.md)
 - [0-to-100 execution plan](docs/superpowers/plans/2026-03-30-aegislink-0-to-100-implementation.md)
 - [Final stretch plan](docs/superpowers/plans/2026-04-05-aegislink-final-stretch-plan.md)
+- [Future realism plan](docs/superpowers/plans/2026-04-06-aegislink-future-realism-plan.md)
 - [Initial implementation plan, historical](docs/superpowers/plans/2026-03-28-eth-cosmos-aegislink-implementation.md)
 
 Use these for operational and launch thinking:
@@ -140,6 +141,7 @@ That flow creates and uses:
 As of April 6, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
+- Phase 5 has started with real-app seams for store keys, encoding config, and genesis validation, plus store-backed keeper persistence through real Cosmos KV stores and new app-level bridge or route service boundaries, but AegisLink is still not yet a real Cosmos SDK chain
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters

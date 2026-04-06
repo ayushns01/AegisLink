@@ -1,0 +1,136 @@
+package app
+
+import (
+	"math/big"
+	"testing"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
+	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
+)
+
+func TestBridgeQueryServiceReturnsStoredClaim(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	claim := sampleDepositClaim()
+	attestation := sampleAttestation(claim)
+	if _, err := app.SubmitDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+
+	service := NewBridgeQueryService(app)
+	record, ok := service.GetClaim(claim.Identity.MessageID)
+	if !ok {
+		t.Fatalf("expected stored claim %q", claim.Identity.MessageID)
+	}
+	if record.MessageID != claim.Identity.MessageID {
+		t.Fatalf("expected message id %q, got %q", claim.Identity.MessageID, record.MessageID)
+	}
+}
+
+func TestBridgeTxServiceSubmitsDepositClaim(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	claim := sampleDepositClaim()
+	attestation := sampleAttestation(claim)
+
+	service := NewBridgeTxService(app)
+	result, err := service.SubmitDepositClaim(claim, attestation)
+	if err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if result.Status != "accepted" {
+		t.Fatalf("expected accepted claim result, got %+v", result)
+	}
+}
+
+func TestIBCRouterQueryServiceListsRoutesAndTransfers(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	if _, err := app.InitiateIBCTransfer("eth.usdc", big.NewInt(25000000), "osmo1receiver", 120, "swap:uosmo"); err != nil {
+		t.Fatalf("initiate ibc transfer: %v", err)
+	}
+
+	service := NewIBCRouterQueryService(app)
+	routes := service.ListRoutes()
+	transfers := service.ListTransfers()
+
+	if len(routes) != 1 {
+		t.Fatalf("expected one route, got %d", len(routes))
+	}
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
+		t.Fatalf("expected pending transfer, got %q", transfers[0].Status)
+	}
+}
+
+func seedBridgeRuntime(t *testing.T, app *App) {
+	t.Helper()
+
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "ethereum-sepolia",
+		SourceContract: "0xabc123",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "Ethereum USDC",
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 600,
+		MaxAmount:     big.NewInt(250000000),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            "eth.usdc",
+		DestinationChainID: "osmosis-local-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uethusdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set route: %v", err)
+	}
+}
+
+func sampleDepositClaim() bridgetypes.DepositClaim {
+	identity := bridgetypes.ClaimIdentity{
+		Kind:           bridgetypes.ClaimKindDeposit,
+		SourceChainID:  "ethereum-sepolia",
+		SourceContract: "0xbridge",
+		SourceTxHash:   "0xdeadbeef",
+		SourceLogIndex: 1,
+		Nonce:          1,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+
+	return bridgetypes.DepositClaim{
+		Identity:           identity,
+		DestinationChainID: "aegislink-local-1",
+		AssetID:            "eth.usdc",
+		Amount:             big.NewInt(25000000),
+		Recipient:          "osmo1receiver",
+		Deadline:           100,
+	}
+}
+
+func sampleAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
+	return bridgetypes.Attestation{
+		MessageID:   claim.Identity.MessageID,
+		PayloadHash: claim.Digest(),
+		Signers:     []string{"relayer-1", "relayer-2"},
+		Threshold:   2,
+		Expiry:      200,
+	}
+}

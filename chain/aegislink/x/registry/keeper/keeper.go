@@ -4,7 +4,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
+	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -13,13 +15,34 @@ var (
 )
 
 type Keeper struct {
-	assets map[string]registrytypes.Asset
+	assets     map[string]registrytypes.Asset
+	stateStore *sdkstore.JSONStateStore
 }
 
 func NewKeeper() *Keeper {
 	return &Keeper{
 		assets: make(map[string]registrytypes.Asset),
 	}
+}
+
+func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keeper := NewKeeper()
+	keeper.stateStore = stateStore
+
+	var assets []registrytypes.Asset
+	if err := stateStore.Load(&assets); err != nil {
+		return nil, err
+	}
+	if err := keeper.ImportAssets(assets); err != nil {
+		return nil, err
+	}
+
+	return keeper, nil
 }
 
 func (k *Keeper) RegisterAsset(asset registrytypes.Asset) error {
@@ -34,7 +57,7 @@ func (k *Keeper) RegisterAsset(asset registrytypes.Asset) error {
 	}
 
 	k.assets[key] = stored
-	return nil
+	return k.persist()
 }
 
 func (k *Keeper) GetAsset(assetID string) (registrytypes.Asset, bool) {
@@ -51,7 +74,7 @@ func (k *Keeper) DisableAsset(assetID string) error {
 
 	asset.Enabled = false
 	k.assets[key] = asset
-	return nil
+	return k.persist()
 }
 
 func (k *Keeper) ExportAssets() []registrytypes.Asset {
@@ -69,7 +92,14 @@ func (k *Keeper) ImportAssets(assets []registrytypes.Asset) error {
 			return err
 		}
 	}
-	return nil
+	return k.persist()
+}
+
+func (k *Keeper) persist() error {
+	if k.stateStore == nil {
+		return nil
+	}
+	return k.stateStore.Save(k.ExportAssets())
 }
 
 func assetKey(assetID string) string {

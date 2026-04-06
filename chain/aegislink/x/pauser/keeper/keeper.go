@@ -4,6 +4,9 @@ import (
 	"errors"
 	"sort"
 	"strings"
+
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
+	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -12,7 +15,8 @@ var (
 )
 
 type Keeper struct {
-	paused map[string]bool
+	paused     map[string]bool
+	stateStore *sdkstore.JSONStateStore
 }
 
 func NewKeeper() *Keeper {
@@ -21,13 +25,33 @@ func NewKeeper() *Keeper {
 	}
 }
 
+func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keeper := NewKeeper()
+	keeper.stateStore = stateStore
+
+	var pausedFlows []string
+	if err := stateStore.Load(&pausedFlows); err != nil {
+		return nil, err
+	}
+	if err := keeper.ImportPausedFlows(pausedFlows); err != nil {
+		return nil, err
+	}
+
+	return keeper, nil
+}
+
 func (k *Keeper) Pause(flow string) error {
 	key, err := flowKey(flow)
 	if err != nil {
 		return err
 	}
 	k.paused[key] = true
-	return nil
+	return k.persist()
 }
 
 func (k *Keeper) Unpause(flow string) error {
@@ -36,7 +60,7 @@ func (k *Keeper) Unpause(flow string) error {
 		return err
 	}
 	delete(k.paused, key)
-	return nil
+	return k.persist()
 }
 
 func (k *Keeper) IsPaused(flow string) bool {
@@ -70,7 +94,14 @@ func (k *Keeper) ImportPausedFlows(flows []string) error {
 			return err
 		}
 	}
-	return nil
+	return k.persist()
+}
+
+func (k *Keeper) persist() error {
+	if k.stateStore == nil {
+		return nil
+	}
+	return k.stateStore.Save(k.ExportPausedFlows())
 }
 
 func flowKey(flow string) (string, error) {

@@ -27,6 +27,8 @@ type App struct {
 	RegistryKeeper  *registrykeeper.Keeper
 	LimitsKeeper    *limitskeeper.Keeper
 	PauserKeeper    *pauserkeeper.Keeper
+	encoding        EncodingConfig
+	storeKeys       map[string]string
 	modules         []string
 }
 
@@ -79,6 +81,13 @@ func NewWithConfig(cfg Config) *App {
 	limitsAppModule := limitsmodule.NewAppModule(limitsKeeper)
 	pauserAppModule := pausermodule.NewAppModule(pauserKeeper)
 	ibcRouterAppModule := ibcroutermodule.NewAppModule(ibcRouterKeeper)
+	modules := []string{
+		bridgeAppModule.Name(),
+		registryAppModule.Name(),
+		limitsAppModule.Name(),
+		pauserAppModule.Name(),
+		ibcRouterAppModule.Name(),
+	}
 
 	return &App{
 		Config:          cfg,
@@ -87,13 +96,9 @@ func NewWithConfig(cfg Config) *App {
 		RegistryKeeper:  registryKeeper,
 		LimitsKeeper:    limitsKeeper,
 		PauserKeeper:    pauserKeeper,
-		modules: []string{
-			bridgeAppModule.Name(),
-			registryAppModule.Name(),
-			limitsAppModule.Name(),
-			pauserAppModule.Name(),
-			ibcRouterAppModule.Name(),
-		},
+		encoding:        DefaultEncodingConfig(modules),
+		storeKeys:       defaultStoreKeys(modules),
+		modules:         modules,
 	}
 }
 
@@ -137,6 +142,22 @@ func (a *App) ModuleNames() []string {
 	modules := make([]string, len(a.modules))
 	copy(modules, a.modules)
 	return modules
+}
+
+func (a *App) StoreKeys() map[string]string {
+	storeKeys := make(map[string]string, len(a.storeKeys))
+	for moduleName, key := range a.storeKeys {
+		storeKeys[moduleName] = key
+	}
+	return storeKeys
+}
+
+func (a *App) EncodingConfig() EncodingConfig {
+	return a.encoding
+}
+
+func (a *App) DefaultGenesis() Genesis {
+	return DefaultGenesis(a.Config)
 }
 
 func (a *App) SetCurrentHeight(height uint64) {
@@ -272,6 +293,14 @@ func enabledRouteIDs(routes []ibcrouterkeeper.Route) []string {
 
 func routeID(route ibcrouterkeeper.Route) string {
 	return route.AssetID + "@" + route.DestinationChainID + ":" + route.ChannelID
+}
+
+func defaultStoreKeys(modules []string) map[string]string {
+	keys := make(map[string]string, len(modules))
+	for _, moduleName := range modules {
+		keys[moduleName] = AppName + "/" + moduleName
+	}
+	return keys
 }
 
 func normalizeConfig(cfg Config) Config {

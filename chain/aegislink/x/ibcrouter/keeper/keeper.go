@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
+	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -89,6 +92,7 @@ type Keeper struct {
 	routes       map[string]Route
 	transfers    map[string]TransferRecord
 	nextSequence uint64
+	stateStore   *sdkstore.JSONStateStore
 }
 
 func NewKeeper() *Keeper {
@@ -99,13 +103,33 @@ func NewKeeper() *Keeper {
 	}
 }
 
+func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keeper := NewKeeper()
+	keeper.stateStore = stateStore
+
+	var state StateSnapshot
+	if err := stateStore.Load(&state); err != nil {
+		return nil, err
+	}
+	if err := keeper.ImportState(state); err != nil {
+		return nil, err
+	}
+
+	return keeper, nil
+}
+
 func (k *Keeper) SetRoute(route Route) error {
 	if err := route.ValidateBasic(); err != nil {
 		return err
 	}
 	stored := canonicalRoute(route)
 	k.routes[routeKey(stored.AssetID)] = stored
-	return nil
+	return k.persist()
 }
 
 func (k *Keeper) GetRoute(assetID string) (Route, bool) {
@@ -146,7 +170,7 @@ func (k *Keeper) InitiateTransfer(assetID string, amount *big.Int, receiver stri
 		Status:             TransferStatusPending,
 	}
 	k.transfers[record.TransferID] = record
-	return cloneTransferRecord(record), nil
+	return cloneTransferRecord(record), k.persist()
 }
 
 func (k *Keeper) AcknowledgeSuccess(transferID string) (TransferRecord, error) {
@@ -157,7 +181,7 @@ func (k *Keeper) AcknowledgeSuccess(transferID string) (TransferRecord, error) {
 	record.Status = TransferStatusCompleted
 	record.FailureReason = ""
 	k.transfers[record.TransferID] = record
-	return cloneTransferRecord(record), nil
+	return cloneTransferRecord(record), k.persist()
 }
 
 func (k *Keeper) AcknowledgeFailure(transferID, reason string) (TransferRecord, error) {
@@ -168,7 +192,7 @@ func (k *Keeper) AcknowledgeFailure(transferID, reason string) (TransferRecord, 
 	record.Status = TransferStatusAckFailed
 	record.FailureReason = strings.TrimSpace(reason)
 	k.transfers[record.TransferID] = record
-	return cloneTransferRecord(record), nil
+	return cloneTransferRecord(record), k.persist()
 }
 
 func (k *Keeper) TimeoutTransfer(transferID string) (TransferRecord, error) {
@@ -178,7 +202,7 @@ func (k *Keeper) TimeoutTransfer(transferID string) (TransferRecord, error) {
 	}
 	record.Status = TransferStatusTimedOut
 	k.transfers[record.TransferID] = record
-	return cloneTransferRecord(record), nil
+	return cloneTransferRecord(record), k.persist()
 }
 
 func (k *Keeper) MarkRefunded(transferID string) (TransferRecord, error) {
@@ -191,7 +215,7 @@ func (k *Keeper) MarkRefunded(transferID string) (TransferRecord, error) {
 	}
 	record.Status = TransferStatusRefunded
 	k.transfers[record.TransferID] = record
-	return cloneTransferRecord(record), nil
+	return cloneTransferRecord(record), k.persist()
 }
 
 func (k *Keeper) ExportRoutes() []Route {
@@ -267,7 +291,14 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 	if k.nextSequence == 0 {
 		k.nextSequence = 1
 	}
-	return nil
+	return k.persist()
+}
+
+func (k *Keeper) persist() error {
+	if k.stateStore == nil {
+		return nil
+	}
+	return k.stateStore.Save(k.ExportState())
 }
 
 func (k *Keeper) pendingTransfer(transferID string) (TransferRecord, error) {

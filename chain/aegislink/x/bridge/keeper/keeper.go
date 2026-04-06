@@ -7,10 +7,12 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
 	registrykeeper "github.com/ayushns01/aegislink/chain/aegislink/x/registry/keeper"
+	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -59,6 +61,7 @@ type Keeper struct {
 	withdrawals     []WithdrawalRecord
 
 	nextWithdrawalNonce uint64
+	stateStore          *sdkstore.JSONStateStore
 }
 
 func NewKeeper(registry *registrykeeper.Keeper, limits *limitskeeper.Keeper, pauser *pauserkeeper.Keeper, allowedSigners []string, requiredThreshold uint32) *Keeper {
@@ -83,8 +86,37 @@ func NewKeeper(registry *registrykeeper.Keeper, limits *limitskeeper.Keeper, pau
 	}
 }
 
+func NewStoreKeeper(
+	multiStore storetypes.CommitMultiStore,
+	key *storetypes.KVStoreKey,
+	registry *registrykeeper.Keeper,
+	limits *limitskeeper.Keeper,
+	pauser *pauserkeeper.Keeper,
+	allowedSigners []string,
+	requiredThreshold uint32,
+) (*Keeper, error) {
+	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keeper := NewKeeper(registry, limits, pauser, allowedSigners, requiredThreshold)
+	keeper.stateStore = stateStore
+
+	var state StateSnapshot
+	if err := stateStore.Load(&state); err != nil {
+		return nil, err
+	}
+	if err := keeper.ImportState(state); err != nil {
+		return nil, err
+	}
+
+	return keeper, nil
+}
+
 func (k *Keeper) SetCurrentHeight(height uint64) {
 	k.currentHeight = height
+	_ = k.persist()
 }
 
 func (k *Keeper) ExecuteDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (ClaimResult, error) {
@@ -122,7 +154,8 @@ func (k *Keeper) ExecuteDepositClaim(claim bridgetypes.DepositClaim, attestation
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
 	}
 
-	return k.acceptDepositClaim(claimKey, claim, asset), nil
+	result := k.acceptDepositClaim(claimKey, claim, asset)
+	return result, k.persist()
 }
 
 func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (WithdrawalRecord, error) {
@@ -165,7 +198,7 @@ func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient st
 	k.burnRepresentation(asset.Denom, amount)
 	k.withdrawals = append(k.withdrawals, record)
 
-	return cloneWithdrawalRecord(record), nil
+	return cloneWithdrawalRecord(record), k.persist()
 }
 
 func (k *Keeper) SupplyForDenom(denom string) *big.Int {
@@ -193,6 +226,13 @@ func (k *Keeper) Withdrawals(fromHeight, toHeight uint64) []WithdrawalRecord {
 
 func (k *Keeper) RejectedClaims() uint64 {
 	return k.rejectedClaims
+}
+
+func (k *Keeper) persist() error {
+	if k.stateStore == nil {
+		return nil
+	}
+	return k.stateStore.Save(k.ExportState())
 }
 
 func (k *Keeper) newWithdrawalRecord(assetID, assetAddress string, amount *big.Int, recipient string, deadline uint64, signature []byte) WithdrawalRecord {
