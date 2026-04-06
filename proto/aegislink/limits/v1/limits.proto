@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package aegislink.limits.v1;
 
-option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/limits/v1;limitsv1";
+option go_package = "github.com/ayushns01/aegislink/chain/aegislink/gen/go/aegislink/limits/v1;limitsv1";
 
 message RateLimit {
   string asset_id = 1;

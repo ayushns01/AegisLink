@@ -125,28 +125,30 @@ For the honest reviewer framing, use [Project positioning](docs/project-position
 `aegislinkd` now has a more node-like local runtime surface:
 
 ```bash
-go run ./chain/aegislink/cmd/aegislinkd init --home /tmp/aegislink-home --chain-id aegislink-devnet-1
+go run ./chain/aegislink/cmd/aegislinkd init --home /tmp/aegislink-home --chain-id aegislink-devnet-1 --runtime-mode sdk-store-runtime
 go run ./chain/aegislink/cmd/aegislinkd start --home /tmp/aegislink-home
 go run ./chain/aegislink/cmd/aegislinkd query status --home /tmp/aegislink-home
+make test-real-chain
 ```
 
 That flow creates and uses:
 
 - a runtime config file
 - a runtime genesis file
-- a persisted runtime state file
+- a Cosmos KV-store-backed runtime store
+- service-backed `tx` and `query` command paths
 
 ## Current checkpoint
 
 As of April 6, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
-- Phase 5 has started with real-app seams for store keys, encoding config, and genesis validation, plus store-backed keeper persistence through real Cosmos KV stores and new app-level bridge or route service boundaries, but AegisLink is still not yet a real Cosmos SDK chain
+- Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is deeper runtime realism, not basic bridge invention
+- the next roadmap focus is deeper chain realism beyond the SDK-store runtime, not basic bridge invention
 
 The current repo shape is:
 
@@ -161,4 +163,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The local route-harness and operator-surface phases are now in place. The next active roadmap work is the deeper realism layer after that milestone: continued runtime hardening toward a fuller Cosmos node experience and optional verifier hardening.
+The local route-harness, operator-surface, and SDK-store runtime phases are now in place. The next active roadmap work is the deeper realism layer after that milestone: moving from the current single-node runtime into a more networked Cosmos experience and then deeper verifier hardening.

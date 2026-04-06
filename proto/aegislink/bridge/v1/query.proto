@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package aegislink.bridge.v1;
+
+option go_package = "github.com/ayushns01/aegislink/chain/aegislink/gen/go/aegislink/bridge/v1;bridgev1";
+
+service QueryService {
+  rpc Claim(ClaimRequest) returns (ClaimResponse);
+  rpc Withdrawals(WithdrawalsRequest) returns (WithdrawalsResponse);
+}
+
+message ClaimRequest {
+  string message_id = 1;
+}
+
+message ClaimResponse {
+  string claim_key = 1;
+  string message_id = 2;
+  string denom = 3;
+  string asset_id = 4;
+  string amount = 5;
+  string status = 6;
+}
+
+message WithdrawalsRequest {
+  uint64 from_height = 1;
+  uint64 to_height = 2;
+}
+
+message Withdrawal {
+  string kind = 1;
+  string source_chain_id = 2;
+  string source_contract = 3;
+  string source_tx_hash = 4;
+  uint64 source_log_index = 5;
+  uint64 nonce = 6;
+  string message_id = 7;
+  string asset_id = 8;
+  string asset_address = 9;
+  string amount = 10;
+  string recipient = 11;
+  uint64 deadline = 12;
+  uint64 block_height = 13;
+  string signature_base64 = 14;
+}
+
+message WithdrawalsResponse {
+  repeated Withdrawal withdrawals = 1;
+}

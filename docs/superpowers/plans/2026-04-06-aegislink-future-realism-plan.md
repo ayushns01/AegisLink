@@ -109,9 +109,9 @@ There are five future finish lines after Phase 4:
 
 ## Phase 5: Real AegisLink Cosmos Runtime
 
-**Goal:** Replace the JSON-backed runtime shell with a real single-node Cosmos SDK and CometBFT application while preserving the current bridge behavior.
+**Goal:** Replace the JSON-backed runtime shell with a realer single-node Cosmos SDK runtime path while preserving the current bridge behavior. In the current repo scope, this means store-backed keepers, generated proto surfaces, service-backed CLI flows, and a single-node bootstrap or e2e proof. A fully networked CometBFT or ABCI node still remains future work beyond this checkpoint.
 
-**Phase 5 status:** In progress on April 6, 2026. Tasks 5.1 and 5.2 are now implemented in the working tree, and Task 5.3 has started: the app has explicit store-key, encoding-config, and genesis-validation seams, the bridge plus policy keepers can persist through real Cosmos KV stores, and the app now has bridge and route service objects to anchor future proto and CLI wiring. AegisLink is still not yet a real Cosmos SDK and CometBFT node because generated tx or query services and the single-node runtime are still ahead.
+**Phase 5 status:** Complete on April 6, 2026 for the single-node SDK-store milestone. The app now has explicit store-key, encoding-config, and genesis-validation seams, bridge plus policy state persists through real Cosmos KV stores, generated bridge or route proto surfaces exist inside the `chain/aegislink` module, `aegislinkd` tx or query flows run against the SDK-store runtime through app services, and `tests/e2e/real_chain_test.go` proves the bootstrap plus claim lifecycle end to end. This is still not yet a full networked CometBFT or ABCI chain, and that distinction should remain explicit in docs and demos.
 
 ### Task 5.1: Create the real app skeleton
 
@@ -149,7 +149,7 @@ Run: `go test ./chain/aegislink/app -run 'TestNewApp|TestDefaultGenesis|TestEnco
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add chain/aegislink/app
@@ -199,7 +199,7 @@ Run: `go test ./chain/aegislink/x/... -run 'Test.*SDKKeeper'`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add chain/aegislink/x
@@ -219,7 +219,7 @@ git commit -m "feat: add store-backed aegislink keepers"
 - Modify: `buf.gen.yaml`
 - Test: `chain/aegislink/cmd/aegislinkd/main_test.go`
 
-- [ ] **Step 1: Write failing CLI and query tests**
+- [x] **Step 1: Write failing CLI and query tests**
 
 Cover:
 - query claim by message ID
@@ -227,13 +227,13 @@ Cover:
 - tx submit deposit claim
 - tx execute withdrawal
 
-- [ ] **Step 2: Run the focused runtime CLI tests**
+- [x] **Step 2: Run the focused runtime CLI tests**
 
 Run: `go test ./chain/aegislink/cmd/aegislinkd -run 'TestRunQuery|TestRunTx'`
 
 Expected: FAIL because real service-backed CLI does not exist yet.
 
-- [ ] **Step 3: Add proto services and generated types**
+- [x] **Step 3: Add proto services and generated types**
 
 Run:
 - `buf lint`
@@ -241,11 +241,11 @@ Run:
 
 Expected: PASS once the proto surfaces are valid.
 
-- [ ] **Step 4: Implement service-backed CLI wiring**
+- [x] **Step 4: Implement service-backed CLI wiring**
 
 Use gRPC query clients and tx broadcasting instead of direct state-file mutation.
 
-- [ ] **Step 5: Re-run focused CLI tests**
+- [x] **Step 5: Re-run focused CLI tests**
 
 Run: `go test ./chain/aegislink/cmd/aegislinkd -run 'TestRunQuery|TestRunTx'`
 
@@ -270,7 +270,7 @@ git commit -m "feat: add aegislink tx and query services"
 - Create: `scripts/localnet/bootstrap_real_chain.sh`
 - Test: `tests/e2e/real_chain_test.go`
 
-- [ ] **Step 1: Write failing single-node e2e tests**
+- [x] **Step 1: Write failing single-node e2e tests**
 
 Cover:
 - `aegislinkd init`
@@ -278,21 +278,21 @@ Cover:
 - submit a real deposit claim tx
 - query resulting state through the running node
 
-- [ ] **Step 2: Run the real-chain e2e slice**
+- [x] **Step 2: Run the real-chain e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRealAegisLinkChain'`
 
 Expected: FAIL because no real node exists yet.
 
-- [ ] **Step 3: Implement the single-node bootstrap**
+- [x] **Step 3: Implement the single-node bootstrap**
 
 Add:
 - real home directory layout
 - genesis generation
-- validator key/bootstrap flow
-- start command that runs the app with CometBFT
+- bootstrap flow for the SDK-store single-node runtime
+- `aegislinkd` commands that run against that runtime through `init`, `start`, `tx`, and `query`
 
-- [ ] **Step 4: Re-run the real-chain e2e slice**
+- [x] **Step 4: Re-run the real-chain e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRealAegisLinkChain'`
 
@@ -306,10 +306,11 @@ git commit -m "feat: run aegislink as a real single-node chain"
 ```
 
 **Phase 5 exit criteria:**
-- `aegislinkd` starts a real single-node chain
+- `aegislinkd` starts a real single-node SDK-store runtime
 - state lives in Cosmos stores, not JSON snapshots
-- tx and query flows go through real services
+- tx and query flows go through generated service surfaces and app services
 - current bridge behavior is preserved
+- docs stay honest that this is still not yet a full CometBFT or ABCI networked chain
 
 ---
 

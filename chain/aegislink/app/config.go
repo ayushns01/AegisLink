@@ -18,6 +18,7 @@ import (
 const AppName = "aegislink"
 const DefaultChainID = "aegislink-local-1"
 const DefaultRuntimeMode = "runtime-shell"
+const RuntimeModeSDKStore = "sdk-store-runtime"
 
 var ErrRuntimeAlreadyInitialized = errors.New("runtime already initialized")
 
@@ -107,8 +108,14 @@ func InitHome(cfg Config, force bool) (Config, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.ConfigPath), 0o755); err != nil {
 		return Config{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(cfg.StatePath), 0o755); err != nil {
-		return Config{}, err
+	if cfg.RuntimeMode == RuntimeModeSDKStore {
+		if err := os.MkdirAll(cfg.StatePath, 0o755); err != nil {
+			return Config{}, err
+		}
+	} else {
+		if err := os.MkdirAll(filepath.Dir(cfg.StatePath), 0o755); err != nil {
+			return Config{}, err
+		}
 	}
 
 	if err := writeConfigFile(cfg.ConfigPath, cfg); err != nil {
@@ -117,8 +124,18 @@ func InitHome(cfg Config, force bool) (Config, error) {
 	if err := writeGenesisFile(cfg.GenesisPath, DefaultGenesis(cfg)); err != nil {
 		return Config{}, err
 	}
-	if err := persistRuntimeState(cfg.StatePath, runtimeState{}); err != nil {
-		return Config{}, err
+	if cfg.RuntimeMode == RuntimeModeSDKStore {
+		runtime, err := newStoreRuntime(cfg)
+		if err != nil {
+			return Config{}, err
+		}
+		if err := runtime.db.Close(); err != nil {
+			return Config{}, err
+		}
+	} else {
+		if err := persistRuntimeState(cfg.StatePath, runtimeState{}); err != nil {
+			return Config{}, err
+		}
 	}
 
 	return cfg, nil
@@ -173,6 +190,10 @@ func runtimeGenesisPath(homeDir string) string {
 
 func runtimeStatePath(homeDir string) string {
 	return filepath.Join(homeDir, "data", "state.json")
+}
+
+func runtimeStorePath(homeDir string) string {
+	return filepath.Join(homeDir, "data", "store")
 }
 
 func mergeConfig(base Config, override Config) Config {
@@ -237,6 +258,11 @@ func fileExists(path string) (bool, error) {
 }
 
 func validateConfig(cfg Config) error {
+	switch strings.TrimSpace(cfg.RuntimeMode) {
+	case "", DefaultRuntimeMode, RuntimeModeSDKStore:
+	default:
+		return fmt.Errorf("unsupported runtime mode %q", cfg.RuntimeMode)
+	}
 	if strings.TrimSpace(cfg.HomeDir) == "" {
 		return errors.New("home dir is required")
 	}

@@ -6,6 +6,8 @@ contracts/ethereum/broadcast/
 cache/
 broadcast/
 gen/
+!chain/aegislink/gen/
+!chain/aegislink/gen/**
 bin/
 coverage/
 *.test

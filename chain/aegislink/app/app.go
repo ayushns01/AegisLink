@@ -29,6 +29,7 @@ type App struct {
 	PauserKeeper    *pauserkeeper.Keeper
 	encoding        EncodingConfig
 	storeKeys       map[string]string
+	storeRuntime    *storeRuntime
 	modules         []string
 }
 
@@ -64,11 +65,18 @@ type Status struct {
 }
 
 func New() *App {
-	return NewWithConfig(DefaultConfig())
+	app, err := NewWithConfig(DefaultConfig())
+	if err != nil {
+		panic(err)
+	}
+	return app
 }
 
-func NewWithConfig(cfg Config) *App {
+func NewWithConfig(cfg Config) (*App, error) {
 	cfg = normalizeConfig(cfg)
+	if cfg.RuntimeMode == RuntimeModeSDKStore {
+		return newStoreBackedApp(cfg)
+	}
 
 	registryKeeper := registrykeeper.NewKeeper()
 	limitsKeeper := limitskeeper.NewKeeper()
@@ -76,6 +84,17 @@ func NewWithConfig(cfg Config) *App {
 	ibcRouterKeeper := ibcrouterkeeper.NewKeeper()
 	bridgeKeeper := bridgekeeper.NewKeeper(registryKeeper, limitsKeeper, pauserKeeper, cfg.AllowedSigners, cfg.RequiredThreshold)
 
+	return newAppFromKeepers(cfg, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper), nil
+}
+
+func newAppFromKeepers(
+	cfg Config,
+	bridgeKeeper *bridgekeeper.Keeper,
+	ibcRouterKeeper *ibcrouterkeeper.Keeper,
+	registryKeeper *registrykeeper.Keeper,
+	limitsKeeper *limitskeeper.Keeper,
+	pauserKeeper *pauserkeeper.Keeper,
+) *App {
 	bridgeAppModule := bridgemodule.NewAppModule(bridgeKeeper)
 	registryAppModule := registrymodule.NewAppModule(registryKeeper)
 	limitsAppModule := limitsmodule.NewAppModule(limitsKeeper)
@@ -113,7 +132,14 @@ func LoadWithConfig(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := NewWithConfig(resolved)
+	app, err := NewWithConfig(resolved)
+	if err != nil {
+		return nil, err
+	}
+	if resolved.RuntimeMode == RuntimeModeSDKStore {
+		return app, nil
+	}
+
 	state, err := loadRuntimeState(app.Config.StatePath)
 	if err != nil {
 		return nil, err
@@ -221,6 +247,9 @@ func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferReco
 }
 
 func (a *App) Save() error {
+	if a.Config.RuntimeMode == RuntimeModeSDKStore {
+		return nil
+	}
 	return persistRuntimeState(a.Config.StatePath, runtimeState{
 		Assets:      a.RegistryKeeper.ExportAssets(),
 		Limits:      a.LimitsKeeper.ExportLimits(),
@@ -228,6 +257,13 @@ func (a *App) Save() error {
 		Bridge:      a.BridgeKeeper.ExportState(),
 		IBCRouter:   a.IBCRouterKeeper.ExportState(),
 	})
+}
+
+func (a *App) Close() error {
+	if a.storeRuntime == nil || a.storeRuntime.db == nil {
+		return nil
+	}
+	return a.storeRuntime.db.Close()
 }
 
 func (a *App) Status() Status {
@@ -324,7 +360,11 @@ func normalizeConfig(cfg Config) Config {
 		cfg.GenesisPath = runtimeGenesisPath(cfg.HomeDir)
 	}
 	if cfg.StatePath == "" {
-		cfg.StatePath = runtimeStatePath(cfg.HomeDir)
+		if cfg.RuntimeMode == RuntimeModeSDKStore {
+			cfg.StatePath = runtimeStorePath(cfg.HomeDir)
+		} else {
+			cfg.StatePath = runtimeStatePath(cfg.HomeDir)
+		}
 	}
 	if len(cfg.Modules) == 0 {
 		cfg.Modules = append([]string(nil), defaults.Modules...)

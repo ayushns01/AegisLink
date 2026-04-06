@@ -19,13 +19,16 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	t.Parallel()
 
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
-	app := NewWithConfig(Config{
+	app, err := NewWithConfig(Config{
 		AppName:           AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
 	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
 
 	asset := registrytypes.Asset{
 		AssetID:        "eth.usdc",
@@ -132,6 +135,82 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	}
 }
 
+func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "aegislink-store")
+	app, err := NewWithConfig(Config{
+		AppName:           AppName,
+		RuntimeMode:       RuntimeModeSDKStore,
+		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+		StatePath:         storePath,
+		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		RequiredThreshold: 2,
+	})
+	if err != nil {
+		t.Fatalf("new store runtime app: %v", err)
+	}
+
+	asset := registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "11155111",
+		SourceContract: "0xasset",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "USDC",
+		Enabled:        true,
+	}
+	if err := app.RegisterAsset(asset); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       asset.AssetID,
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount(t, "1000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            asset.AssetID,
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/usdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set route: %v", err)
+	}
+
+	claim := validDepositClaim(t)
+	attestation := validAttestationForClaim(claim)
+	app.SetCurrentHeight(50)
+	if _, err := app.SubmitDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("submit deposit: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close store runtime app: %v", err)
+	}
+
+	reloaded, err := LoadWithConfig(Config{
+		RuntimeMode: RuntimeModeSDKStore,
+		StatePath:   storePath,
+		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+	})
+	if err != nil {
+		t.Fatalf("reload store runtime: %v", err)
+	}
+	defer reloaded.Close()
+
+	if supply := reloaded.BridgeKeeper.SupplyForDenom(asset.Denom); supply.Cmp(claim.Amount) != 0 {
+		t.Fatalf("expected persisted supply %s, got %s", claim.Amount.String(), supply.String())
+	}
+	if _, ok := reloaded.RegistryKeeper.GetAsset(asset.AssetID); !ok {
+		t.Fatalf("expected registered asset after reload")
+	}
+	if len(reloaded.IBCRouterKeeper.ExportRoutes()) != 1 {
+		t.Fatalf("expected one route after reload, got %d", len(reloaded.IBCRouterKeeper.ExportRoutes()))
+	}
+}
+
 func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +254,36 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	}
 	if status.FailedClaims != 0 {
 		t.Fatalf("expected zero failed claims on fresh runtime, got %d", status.FailedClaims)
+	}
+}
+
+func TestInitHomeCreatesSDKStoreRuntimeArtifacts(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+	cfg, err := InitHome(Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-sdk-1",
+		AppName:     AppName,
+		RuntimeMode: RuntimeModeSDKStore,
+		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+	}, false)
+	if err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	if _, err := os.Stat(cfg.ConfigPath); err != nil {
+		t.Fatalf("expected config file: %v", err)
+	}
+	if _, err := os.Stat(cfg.GenesisPath); err != nil {
+		t.Fatalf("expected genesis file: %v", err)
+	}
+	info, err := os.Stat(cfg.StatePath)
+	if err != nil {
+		t.Fatalf("expected state path: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected sdk runtime state path to be a directory, got file at %s", cfg.StatePath)
 	}
 }
 

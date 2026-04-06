@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package aegislink.ibcrouter.v1;
+
+option go_package = "github.com/ayushns01/aegislink/chain/aegislink/gen/go/aegislink/ibcrouter/v1;ibcrouterv1";
+
+service QueryService {
+  rpc Routes(RoutesRequest) returns (RoutesResponse);
+  rpc Transfers(TransfersRequest) returns (TransfersResponse);
+}
+
+message RoutesRequest {}
+
+message Route {
+  string asset_id = 1;
+  string destination_chain_id = 2;
+  string channel_id = 3;
+  string destination_denom = 4;
+  bool enabled = 5;
+}
+
+message RoutesResponse {
+  repeated Route routes = 1;
+}
+
+message TransfersRequest {}
+
+message Transfer {
+  string transfer_id = 1;
+  string asset_id = 2;
+  string amount = 3;
+  string receiver = 4;
+  string destination_chain_id = 5;
+  string channel_id = 6;
+  string destination_denom = 7;
+  uint64 timeout_height = 8;
+  string memo = 9;
+  string status = 10;
+  string failure_reason = 11;
+}
+
+message TransfersResponse {
+  repeated Transfer transfers = 1;
+}

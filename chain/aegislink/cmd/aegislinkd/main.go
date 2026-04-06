@@ -15,7 +15,9 @@ import (
 
 	"github.com/ayushns01/aegislink/chain/aegislink/app"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/opslog"
+	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcroutercli "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/client/cli"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
@@ -83,14 +85,16 @@ func runInit(args []string, stdout, stderr io.Writer) error {
 
 	home := flags.String("home", "", "runtime home directory")
 	chainID := flags.String("chain-id", "", "runtime chain id")
+	runtimeMode := flags.String("runtime-mode", "", "runtime mode")
 	force := flags.Bool("force", false, "overwrite existing runtime artifacts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
 	cfg, err := app.InitHome(app.Config{
-		HomeDir: *home,
-		ChainID: *chainID,
+		HomeDir:     *home,
+		ChainID:     *chainID,
+		RuntimeMode: *runtimeMode,
 	}, *force)
 	if err != nil {
 		return err
@@ -194,15 +198,16 @@ func querySummary(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("summary", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	bridgeState := a.BridgeKeeper.ExportState()
 	summary := struct {
 		AppName       string            `json:"app_name"`
@@ -230,7 +235,7 @@ func queryClaim(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("claim", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	messageID := flags.String("message-id", "", "message id for the processed claim")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -239,30 +244,15 @@ func queryClaim(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing message id")
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
+	service := app.NewBridgeQueryService(a)
 
-	for _, claim := range a.BridgeKeeper.ExportState().ProcessedClaims {
-		if claim.MessageID != *messageID {
-			continue
-		}
-		return writeJSON(stdout, struct {
-			ClaimKey  string `json:"claim_key"`
-			MessageID string `json:"message_id"`
-			Denom     string `json:"denom"`
-			AssetID   string `json:"asset_id"`
-			Amount    string `json:"amount"`
-			Status    string `json:"status"`
-		}{
-			ClaimKey:  claim.ClaimKey,
-			MessageID: claim.MessageID,
-			Denom:     claim.Denom,
-			AssetID:   claim.AssetID,
-			Amount:    claim.Amount,
-			Status:    string(claim.Status),
-		})
+	if claim, ok := service.GetClaim(*messageID); ok {
+		return writeJSON(stdout, bridgecli.ClaimResponse(claim))
 	}
 
 	return fmt.Errorf("claim %q not found", *messageID)
@@ -272,84 +262,39 @@ func queryWithdrawals(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("withdrawals", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	fromHeight := flags.Uint64("from-height", 0, "inclusive start height")
 	toHeight := flags.Uint64("to-height", math.MaxUint64, "inclusive end height")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
-	withdrawals := a.Withdrawals(*fromHeight, *toHeight)
-	response := make([]struct {
-		Kind           string `json:"kind"`
-		SourceChainID  string `json:"source_chain_id"`
-		SourceContract string `json:"source_contract"`
-		SourceTxHash   string `json:"source_tx_hash"`
-		SourceLogIndex uint64 `json:"source_log_index"`
-		Nonce          uint64 `json:"nonce"`
-		MessageID      string `json:"message_id"`
-		AssetID        string `json:"asset_id"`
-		AssetAddress   string `json:"asset_address"`
-		Amount         string `json:"amount"`
-		Recipient      string `json:"recipient"`
-		Deadline       uint64 `json:"deadline"`
-		BlockHeight    uint64 `json:"block_height"`
-		Signature      string `json:"signature"`
-	}, 0, len(withdrawals))
-	for _, withdrawal := range withdrawals {
-		response = append(response, struct {
-			Kind           string `json:"kind"`
-			SourceChainID  string `json:"source_chain_id"`
-			SourceContract string `json:"source_contract"`
-			SourceTxHash   string `json:"source_tx_hash"`
-			SourceLogIndex uint64 `json:"source_log_index"`
-			Nonce          uint64 `json:"nonce"`
-			MessageID      string `json:"message_id"`
-			AssetID        string `json:"asset_id"`
-			AssetAddress   string `json:"asset_address"`
-			Amount         string `json:"amount"`
-			Recipient      string `json:"recipient"`
-			Deadline       uint64 `json:"deadline"`
-			BlockHeight    uint64 `json:"block_height"`
-			Signature      string `json:"signature"`
-		}{
-			Kind:           string(withdrawal.Identity.Kind),
-			SourceChainID:  withdrawal.Identity.SourceChainID,
-			SourceContract: withdrawal.Identity.SourceContract,
-			SourceTxHash:   withdrawal.Identity.SourceTxHash,
-			SourceLogIndex: withdrawal.Identity.SourceLogIndex,
-			Nonce:          withdrawal.Identity.Nonce,
-			MessageID:      withdrawal.Identity.MessageID,
-			AssetID:        withdrawal.AssetID,
-			AssetAddress:   withdrawal.AssetAddress,
-			Amount:         withdrawal.Amount.String(),
-			Recipient:      withdrawal.Recipient,
-			Deadline:       withdrawal.Deadline,
-			BlockHeight:    withdrawal.BlockHeight,
-			Signature:      base64.StdEncoding.EncodeToString(withdrawal.Signature),
-		})
-	}
-	return writeJSON(stdout, response)
+	defer closeApp(a)
+	service := app.NewBridgeQueryService(a)
+	withdrawals := service.ListWithdrawals(*fromHeight, *toHeight)
+	return writeJSON(stdout, bridgecli.WithdrawalsResponse(withdrawals).Withdrawals)
 }
 
 func queryRoutes(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("routes", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
-	routes := a.Routes()
+	defer closeApp(a)
+	service := app.NewIBCRouterQueryService(a)
+	routes := service.ListRoutes()
 	sort.Slice(routes, func(i, j int) bool {
 		if routes[i].AssetID != routes[j].AssetID {
 			return routes[i].AssetID < routes[j].AssetID
@@ -359,75 +304,37 @@ func queryRoutes(args []string, stdout io.Writer) error {
 		}
 		return routes[i].ChannelID < routes[j].ChannelID
 	})
-	return writeJSON(stdout, routes)
+	return writeJSON(stdout, ibcroutercli.RoutesResponse(routes).Routes)
 }
 
 func queryTransfers(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("transfers", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
-	transfers := a.Transfers()
+	defer closeApp(a)
+	service := app.NewIBCRouterQueryService(a)
+	transfers := service.ListTransfers()
 	sort.Slice(transfers, func(i, j int) bool {
 		return transfers[i].TransferID < transfers[j].TransferID
 	})
 
-	response := make([]struct {
-		TransferID         string `json:"transfer_id"`
-		AssetID            string `json:"asset_id"`
-		Amount             string `json:"amount"`
-		Receiver           string `json:"receiver"`
-		DestinationChainID string `json:"destination_chain_id"`
-		ChannelID          string `json:"channel_id"`
-		DestinationDenom   string `json:"destination_denom"`
-		TimeoutHeight      uint64 `json:"timeout_height"`
-		Memo               string `json:"memo"`
-		Status             string `json:"status"`
-		FailureReason      string `json:"failure_reason"`
-	}, 0, len(transfers))
-	for _, transfer := range transfers {
-		response = append(response, struct {
-			TransferID         string `json:"transfer_id"`
-			AssetID            string `json:"asset_id"`
-			Amount             string `json:"amount"`
-			Receiver           string `json:"receiver"`
-			DestinationChainID string `json:"destination_chain_id"`
-			ChannelID          string `json:"channel_id"`
-			DestinationDenom   string `json:"destination_denom"`
-			TimeoutHeight      uint64 `json:"timeout_height"`
-			Memo               string `json:"memo"`
-			Status             string `json:"status"`
-			FailureReason      string `json:"failure_reason"`
-		}{
-			TransferID:         transfer.TransferID,
-			AssetID:            transfer.AssetID,
-			Amount:             transfer.Amount.String(),
-			Receiver:           transfer.Receiver,
-			DestinationChainID: transfer.DestinationChainID,
-			ChannelID:          transfer.ChannelID,
-			DestinationDenom:   transfer.DestinationDenom,
-			TimeoutHeight:      transfer.TimeoutHeight,
-			Memo:               transfer.Memo,
-			Status:             string(transfer.Status),
-			FailureReason:      transfer.FailureReason,
-		})
-	}
-	return writeJSON(stdout, response)
+	return writeJSON(stdout, ibcroutercli.TransfersResponse(transfers).Transfers)
 }
 
 func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("submit-deposit-claim", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	submissionFile := flags.String("submission-file", "", "path to claim+attestation json")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -436,29 +343,31 @@ func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing submission file")
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	claim, attestation, err := loadSubmission(*submissionFile)
 	if err != nil {
 		return err
 	}
-	result, err := a.SubmitDepositClaim(claim, attestation)
+	service := app.NewBridgeTxService(a)
+	result, err := service.SubmitDepositClaim(claim, attestation)
 	if err != nil {
 		return err
 	}
 	if err := a.Save(); err != nil {
 		return err
 	}
-	return writeJSON(stdout, result)
+	return writeJSON(stdout, bridgecli.SubmitDepositClaimResponse(result))
 }
 
 func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("execute-withdrawal", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	assetID := flags.String("asset-id", "", "asset identifier to withdraw")
 	amountRaw := flags.String("amount", "", "withdrawal amount")
 	recipient := flags.String("recipient", "", "ethereum recipient address")
@@ -493,15 +402,17 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 		return fmt.Errorf("decode signature: %w", err)
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	if *height > 0 {
 		a.SetCurrentHeight(*height)
 	}
 
-	withdrawal, err := a.ExecuteWithdrawal(*assetID, amount, *recipient, *deadline, signature)
+	service := app.NewBridgeTxService(a)
+	withdrawal, err := service.ExecuteWithdrawal(*assetID, amount, *recipient, *deadline, signature)
 	if err != nil {
 		return err
 	}
@@ -509,44 +420,14 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	return writeJSON(stdout, struct {
-		Kind           string `json:"kind"`
-		SourceChainID  string `json:"source_chain_id"`
-		SourceContract string `json:"source_contract"`
-		SourceTxHash   string `json:"source_tx_hash"`
-		SourceLogIndex uint64 `json:"source_log_index"`
-		Nonce          uint64 `json:"nonce"`
-		MessageID      string `json:"message_id"`
-		AssetID        string `json:"asset_id"`
-		AssetAddress   string `json:"asset_address"`
-		Amount         string `json:"amount"`
-		Recipient      string `json:"recipient"`
-		Deadline       uint64 `json:"deadline"`
-		BlockHeight    uint64 `json:"block_height"`
-		Signature      string `json:"signature"`
-	}{
-		Kind:           string(withdrawal.Identity.Kind),
-		SourceChainID:  withdrawal.Identity.SourceChainID,
-		SourceContract: withdrawal.Identity.SourceContract,
-		SourceTxHash:   withdrawal.Identity.SourceTxHash,
-		SourceLogIndex: withdrawal.Identity.SourceLogIndex,
-		Nonce:          withdrawal.Identity.Nonce,
-		MessageID:      withdrawal.Identity.MessageID,
-		AssetID:        withdrawal.AssetID,
-		AssetAddress:   withdrawal.AssetAddress,
-		Amount:         withdrawal.Amount.String(),
-		Recipient:      withdrawal.Recipient,
-		Deadline:       withdrawal.Deadline,
-		BlockHeight:    withdrawal.BlockHeight,
-		Signature:      base64.StdEncoding.EncodeToString(withdrawal.Signature),
-	})
+	return writeJSON(stdout, bridgecli.ExecuteWithdrawalResponse(withdrawal))
 }
 
 func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("initiate-ibc-transfer", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	assetID := flags.String("asset-id", "", "asset identifier to route")
 	amountRaw := flags.String("amount", "", "transfer amount")
 	receiver := flags.String("receiver", "", "destination receiver")
@@ -572,10 +453,11 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	transfer, err := a.InitiateIBCTransfer(*assetID, amount, *receiver, *timeoutHeight, *memo)
 	if err != nil {
 		return err
@@ -590,7 +472,7 @@ func txFailIBCTransfer(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("fail-ibc-transfer", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	transferID := flags.String("transfer-id", "", "transfer identifier")
 	reason := flags.String("reason", "", "ack failure reason")
 	if err := flags.Parse(args); err != nil {
@@ -600,10 +482,11 @@ func txFailIBCTransfer(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing transfer id")
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	transfer, err := a.FailIBCTransfer(*transferID, *reason)
 	if err != nil {
 		return err
@@ -618,7 +501,7 @@ func txTimeoutIBCTransfer(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("timeout-ibc-transfer", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	transferID := flags.String("transfer-id", "", "transfer identifier")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -627,10 +510,11 @@ func txTimeoutIBCTransfer(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing transfer id")
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	transfer, err := a.TimeoutIBCTransfer(*transferID)
 	if err != nil {
 		return err
@@ -645,7 +529,7 @@ func txCompleteIBCTransfer(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("complete-ibc-transfer", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	transferID := flags.String("transfer-id", "", "transfer identifier")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -654,10 +538,11 @@ func txCompleteIBCTransfer(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing transfer id")
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	transfer, err := a.CompleteIBCTransfer(*transferID)
 	if err != nil {
 		return err
@@ -672,7 +557,7 @@ func txRefundIBCTransfer(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("refund-ibc-transfer", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
-	statePath := flags.String("state-path", "", "path to persisted app state")
+	runtimeFlags := addRuntimeFlags(flags)
 	transferID := flags.String("transfer-id", "", "transfer identifier")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -681,10 +566,11 @@ func txRefundIBCTransfer(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing transfer id")
 	}
 
-	a, err := app.Load(*statePath)
+	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	transfer, err := a.RefundIBCTransfer(*transferID)
 	if err != nil {
 		return err
@@ -822,6 +708,7 @@ func resolveRuntimeConfigFromArgs(name string, args []string) (app.Config, error
 	configPath := flags.String("config-path", "", "runtime config path")
 	statePath := flags.String("state-path", "", "runtime state path")
 	genesisPath := flags.String("genesis-path", "", "runtime genesis path")
+	runtimeMode := flags.String("runtime-mode", "", "runtime mode")
 	if err := flags.Parse(args); err != nil {
 		return app.Config{}, err
 	}
@@ -831,7 +718,47 @@ func resolveRuntimeConfigFromArgs(name string, args []string) (app.Config, error
 		ConfigPath:  *configPath,
 		StatePath:   *statePath,
 		GenesisPath: *genesisPath,
+		RuntimeMode: *runtimeMode,
 	})
+}
+
+type runtimeFlagSet struct {
+	home        *string
+	configPath  *string
+	statePath   *string
+	genesisPath *string
+	runtimeMode *string
+}
+
+func addRuntimeFlags(flags *flag.FlagSet) runtimeFlagSet {
+	return runtimeFlagSet{
+		home:        flags.String("home", "", "runtime home directory"),
+		configPath:  flags.String("config-path", "", "runtime config path"),
+		statePath:   flags.String("state-path", "", "runtime state path"),
+		genesisPath: flags.String("genesis-path", "", "runtime genesis path"),
+		runtimeMode: flags.String("runtime-mode", "", "runtime mode"),
+	}
+}
+
+func loadRuntimeApp(flags runtimeFlagSet) (*app.App, error) {
+	cfg, err := app.ResolveConfig(app.Config{
+		HomeDir:     *flags.home,
+		ConfigPath:  *flags.configPath,
+		StatePath:   *flags.statePath,
+		GenesisPath: *flags.genesisPath,
+		RuntimeMode: *flags.runtimeMode,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return app.LoadWithConfig(cfg)
+}
+
+func closeApp(a *app.App) {
+	if a == nil {
+		return
+	}
+	_ = a.Close()
 }
 
 func statusEnvelope(kind string, status app.Status) map[string]any {

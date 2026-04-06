@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package aegislink.registry.v1;
 
-option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/registry/v1;registryv1";
+option go_package = "github.com/ayushns01/aegislink/chain/aegislink/gen/go/aegislink/registry/v1;registryv1";
 
 message Asset {
   string asset_id = 1;

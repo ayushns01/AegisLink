@@ -17,14 +17,16 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 
 - Ethereum gateway contracts emit and consume real local events and release transactions over the Anvil-backed path.
 - The bridge-relayer and route-relayer are real services with replay-aware processing and route lifecycle handling.
-- AegisLink persists bridge, policy, and route state and exposes operator-facing CLI commands.
+- AegisLink persists bridge, policy, and route state in Cosmos KV stores and exposes operator-facing `init`, `start`, `tx`, and `query` CLI commands.
+- Bridge and route interfaces now have generated proto surfaces and service-backed CLI response mapping inside the `chain/aegislink` module.
 - Routed transfers produce packet state, execution receipts, balances, pool updates, swap records, and later acknowledgements on the destination side.
 - The end-to-end local flow is exercised in tests and exposed through `make demo` and `make inspect-demo`.
+- The repo now also proves a single-node real-chain flow through `make test-real-chain`.
 
 ## What is still a local harness
 
-- AegisLink is a persistent Cosmos-inspired runtime, not a full networked CometBFT or ABCI chain.
-- State is persisted in local runtime files rather than in a real Cosmos application stack with IAVL and live consensus.
+- AegisLink is now a store-backed single-node runtime, but it is still not a full networked CometBFT or ABCI chain.
+- State is persisted in Cosmos KV stores, but the repo still does not claim live consensus, IAVL-backed network operation, or real IBC today.
 - The destination side is an `osmosis-lite` harness, not a live IBC-connected Osmosis node.
 - The route target is realistic enough to exercise packet lifecycle and destination execution, but it is still a controlled local environment.
 
@@ -39,8 +41,8 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
-- `The current repository proves the bridge and route lifecycle end to end, but the Cosmos side is still a persistent runtime rather than a full networked chain.`
-- `The roadmap from here is runtime and operator realism, then deeper verifier hardening.`
+- `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
+- `The roadmap from here is deeper chain realism, then fuller IBC realism and verifier hardening.`
 
 Avoid phrasing like:
 

@@ -224,13 +224,16 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	t.Parallel()
 
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
-	app := aegisapp.NewWithConfig(aegisapp.Config{
+	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
 	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
 	if err := app.RegisterAsset(registrytypes.Asset{
 		AssetID:        "eth.usdc",
 		SourceChainID:  "11155111",
@@ -288,6 +291,48 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	}
 }
 
+func TestRunTxSubmitDepositClaimUsesSDKStoreRuntimeHome(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "sdk-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	app.SetCurrentHeight(50)
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	submissionPath := filepath.Join(t.TempDir(), "submission.json")
+	claim := validDepositClaim(t)
+	writeSubmissionFile(t, submissionPath, claim, validAttestationForClaim(claim))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "submit-deposit-claim",
+		"--home", homeDir,
+		"--submission-file", submissionPath,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx submit-deposit-claim: %v\nstderr=%s", err, stderr.String())
+	}
+
+	loaded, err := aegisapp.LoadWithConfig(aegisapp.Config{
+		HomeDir:     homeDir,
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	})
+	if err != nil {
+		t.Fatalf("reload sdk runtime: %v", err)
+	}
+	defer func() {
+		if err := loaded.Close(); err != nil {
+			t.Fatalf("close loaded sdk runtime: %v", err)
+		}
+	}()
+	if supply := loaded.BridgeKeeper.SupplyForDenom("uethusdc"); supply.String() != "100000000" {
+		t.Fatalf("expected minted supply 100000000, got %s", supply.String())
+	}
+}
+
 func TestRunQueryClaimPrintsPersistedAcceptedClaim(t *testing.T) {
 	t.Parallel()
 
@@ -306,6 +351,58 @@ func TestRunQueryClaimPrintsPersistedAcceptedClaim(t *testing.T) {
 	if err := run([]string{
 		"query", "claim",
 		"--state-path", statePath,
+		"--message-id", claim.Identity.MessageID,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query claim: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		MessageID string `json:"message_id"`
+		AssetID   string `json:"asset_id"`
+		Denom     string `json:"denom"`
+		Amount    string `json:"amount"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.MessageID != claim.Identity.MessageID {
+		t.Fatalf("expected message id %q, got %q", claim.Identity.MessageID, result.MessageID)
+	}
+	if result.AssetID != claim.AssetID {
+		t.Fatalf("expected asset id %q, got %q", claim.AssetID, result.AssetID)
+	}
+	if result.Denom != "uethusdc" {
+		t.Fatalf("expected denom uethusdc, got %q", result.Denom)
+	}
+	if result.Amount != claim.Amount.String() {
+		t.Fatalf("expected amount %s, got %q", claim.Amount.String(), result.Amount)
+	}
+	if result.Status != "accepted" {
+		t.Fatalf("expected accepted status, got %q", result.Status)
+	}
+}
+
+func TestRunQueryClaimUsesSDKStoreRuntimeHome(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "sdk-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "claim",
+		"--home", homeDir,
 		"--message-id", claim.Identity.MessageID,
 	}, &stdout, &stderr); err != nil {
 		t.Fatalf("run query claim: %v\nstderr=%s", err, stderr.String())
@@ -778,13 +875,16 @@ func parseJSONLogLines(t *testing.T, raw string) []map[string]any {
 func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 	t.Helper()
 
-	app := aegisapp.NewWithConfig(aegisapp.Config{
+	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
 	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
 	if err := app.RegisterAsset(registrytypes.Asset{
 		AssetID:        "eth.usdc",
 		SourceChainID:  "11155111",
@@ -819,6 +919,52 @@ func seededRuntimeAppWithIBCRoute(t *testing.T, statePath string) *aegisapp.App 
 		Enabled:            true,
 	}); err != nil {
 		t.Fatalf("set ibc route: %v", err)
+	}
+	return app
+}
+
+func initSDKRuntimeHome(t *testing.T, homeDir string) aegisapp.Config {
+	t.Helper()
+
+	cfg, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:           homeDir,
+		AppName:           aegisapp.AppName,
+		ChainID:           "aegislink-sdk-1",
+		RuntimeMode:       aegisapp.RuntimeModeSDKStore,
+		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		RequiredThreshold: 2,
+	}, false)
+	if err != nil {
+		t.Fatalf("init sdk runtime home: %v", err)
+	}
+	return cfg
+}
+
+func seededSDKRuntimeApp(t *testing.T, cfg aegisapp.Config) *aegisapp.App {
+	t.Helper()
+
+	app, err := aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("load sdk runtime app: %v", err)
+	}
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "11155111",
+		SourceContract: "0xasset",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "USDC",
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount(t, "1000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
 	}
 	return app
 }

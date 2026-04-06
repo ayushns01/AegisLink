@@ -315,13 +315,16 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	t.Helper()
 
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
-	app := aegisapp.NewWithConfig(aegisapp.Config{
+	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
 	})
+	if err != nil {
+		t.Fatalf("new runtime fixture app: %v", err)
+	}
 
 	if err := app.RegisterAsset(registrytypes.Asset{
 		AssetID:        "eth.usdc",
@@ -423,13 +426,16 @@ func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress strin
 	t.Helper()
 
 	statePath := filepath.Join(t.TempDir(), "aegislink-bootstrap-state.json")
-	app := aegisapp.NewWithConfig(aegisapp.Config{
+	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
 	})
+	if err != nil {
+		t.Fatalf("new bootstrap app: %v", err)
+	}
 
 	if err := app.RegisterAsset(registrytypes.Asset{
 		AssetID:        "eth.usdc",

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package aegislink.bridge.v1;
 
-option go_package = "github.com/ayushns01/aegislink/gen/go/aegislink/bridge/v1;bridgev1";
+option go_package = "github.com/ayushns01/aegislink/chain/aegislink/gen/go/aegislink/bridge/v1;bridgev1";
 
 enum ClaimKind {
   CLAIM_KIND_UNSPECIFIED = 0;
