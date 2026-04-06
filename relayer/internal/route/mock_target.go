@@ -99,6 +99,7 @@ type MockTargetStatus struct {
 	Pools           int `json:"pools"`
 	Balances        int `json:"balances"`
 	Swaps           int `json:"swaps"`
+	SwapFailures    int `json:"swap_failures"`
 	ReceivedPackets int `json:"received_packets"`
 	ExecutedPackets int `json:"executed_packets"`
 	ReadyAcks       int `json:"ready_acks"`
@@ -387,6 +388,11 @@ func (t *MockTarget) statusLocked() MockTargetStatus {
 			if packet.PacketState == "ack_ready" && !packet.AckRelayed {
 				status.ReadyAcks++
 			}
+		}
+	}
+	for _, execution := range t.state.Executions {
+		if execution.Result == "swap_failed" {
+			status.SwapFailures++
 		}
 	}
 

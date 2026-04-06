@@ -332,6 +332,7 @@ func TestMockTargetExposesStatusEndpoint(t *testing.T) {
 		Pools           int `json:"pools"`
 		Balances        int `json:"balances"`
 		Swaps           int `json:"swaps"`
+		SwapFailures    int `json:"swap_failures"`
 		ReceivedPackets int `json:"received_packets"`
 		ExecutedPackets int `json:"executed_packets"`
 		ReadyAcks       int `json:"ready_acks"`
@@ -355,6 +356,60 @@ func TestMockTargetExposesStatusEndpoint(t *testing.T) {
 	}
 	if status.ReadyAcks != 0 || status.CompletedAcks != 0 || status.FailedAcks != 0 || status.TimedOutAcks != 0 || status.RelayedAcks != 0 {
 		t.Fatalf("unexpected ack counters before resolution: %+v", status)
+	}
+	if status.SwapFailures != 0 {
+		t.Fatalf("expected zero swap failures before execution, got %d", status.SwapFailures)
+	}
+}
+
+func TestMockTargetStatusCountsSwapFailures(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	if _, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/10",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1status",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uatom-usdc",
+		TimeoutHeight:      140,
+		Memo:               "swap:uosmo:min_out=9999999999",
+	}); err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+
+	resp, err := target.client.Get(target.baseURL + "/status")
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var status struct {
+		FailedAcks   int `json:"failed_acks"`
+		SwapFailures int `json:"swap_failures"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.FailedAcks != 1 {
+		t.Fatalf("expected one failed ack, got %d", status.FailedAcks)
+	}
+	if status.SwapFailures != 1 {
+		t.Fatalf("expected one swap failure, got %d", status.SwapFailures)
 	}
 }
 

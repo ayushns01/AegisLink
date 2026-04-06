@@ -49,6 +49,7 @@ type Status struct {
 	Limits             int               `json:"limits"`
 	PausedFlows        int               `json:"paused_flows"`
 	ProcessedClaims    int               `json:"processed_claims"`
+	FailedClaims       uint64            `json:"failed_claims"`
 	Withdrawals        int               `json:"withdrawals"`
 	Routes             int               `json:"routes"`
 	Transfers          int               `json:"transfers"`
@@ -232,6 +233,7 @@ func (a *App) Status() Status {
 		Limits:            len(a.LimitsKeeper.ExportLimits()),
 		PausedFlows:       len(a.PauserKeeper.ExportPausedFlows()),
 		ProcessedClaims:   len(bridgeState.ProcessedClaims),
+		FailedClaims:      a.BridgeKeeper.RejectedClaims(),
 		Withdrawals:       len(bridgeState.Withdrawals),
 		Routes:            len(a.IBCRouterKeeper.ExportRoutes()),
 		Transfers:         len(transfers),

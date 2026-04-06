@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "./BridgeVerifier.sol";
+import "./IBridgeVerifier.sol";
 
 interface IERC20Minimal {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
@@ -29,7 +29,7 @@ contract BridgeGateway {
     }
 
     address public owner;
-    BridgeVerifier public immutable verifier;
+    IBridgeVerifier public immutable verifier;
     bool public paused;
     uint256 public nextNonce = 1;
 
@@ -59,7 +59,7 @@ contract BridgeGateway {
     constructor(address verifier_) {
         if (verifier_ == address(0)) revert InvalidVerifier();
         owner = msg.sender;
-        verifier = BridgeVerifier(verifier_);
+        verifier = IBridgeVerifier(verifier_);
     }
 
     modifier onlyOwner() {
@@ -127,18 +127,21 @@ contract BridgeGateway {
 
         uint256 gatewayBalanceBefore = IERC20BalanceOf(asset).balanceOf(address(this));
         uint256 recipientBalanceBefore = IERC20BalanceOf(asset).balanceOf(recipient);
-        verifier.verifyAndConsume(
-            messageId,
-            keccak256(abi.encode(block.chainid, address(this), asset, recipient, amount, messageId, expiry)),
-            expiry,
-            signature
-        );
+        verifier.verifyAndConsume(messageId, releasePayloadHash(asset, recipient, amount, messageId, expiry), expiry, signature);
 
         releaseId = keccak256(abi.encode(address(this), messageId, asset, recipient, amount));
         _transferOut(asset, recipient, amount);
         _assertCanonicalRelease(asset, recipient, amount, gatewayBalanceBefore, recipientBalanceBefore);
 
         emit WithdrawalReleased(messageId, releaseId, asset, recipient, amount, expiry);
+    }
+
+    function releasePayloadHash(address asset, address recipient, uint256 amount, bytes32 messageId, uint64 expiry)
+        public
+        view
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(block.chainid, address(this), asset, recipient, amount, messageId, expiry));
     }
 
     function _transferIn(address asset, address from, uint256 amount) internal {

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-contract BridgeVerifier {
+import "./IBridgeVerifier.sol";
+
+contract BridgeVerifier is IBridgeVerifier {
     error InvalidAttestation();
     error AttestationExpired();
     error ProofAlreadyUsed();
@@ -49,6 +51,7 @@ contract BridgeVerifier {
 
     function verifyAndConsume(bytes32 messageId, bytes32 payloadHash, uint64 expiry, bytes calldata signature)
         external
+        override
         onlyGateway
         returns (address signer)
     {

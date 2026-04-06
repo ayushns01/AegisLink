@@ -56,3 +56,10 @@ The next realism steps are:
 2. Add stronger structured logs, summaries, and runbook coverage.
 3. Replace more of the local harness boundary with fuller Cosmos and IBC realism.
 4. Only after that, spend time on optional verifier and production-style hardening.
+
+## Hardening now present
+
+- The bridge keeper now has stronger replay and supply-conservation invariant coverage.
+- The route keeper now has explicit recoverable-refund state-machine coverage.
+- The Ethereum gateway now depends on a narrow verifier interface, so the current v1 verifier can be swapped more cleanly for future threshold or light-client implementations.
+- Demo-facing status summaries now expose failed claims and destination swap failures instead of only happy-path counts.

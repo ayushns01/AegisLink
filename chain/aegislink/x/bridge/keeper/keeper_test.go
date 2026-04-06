@@ -191,6 +191,85 @@ func TestExecuteWithdrawalRejectsOverLimitClaim(t *testing.T) {
 	}
 }
 
+func TestBridgeReplayResistanceCountsOnlyUniqueClaims(t *testing.T) {
+	t.Parallel()
+
+	keeper, baseClaim, _, _, _, _ := newKeeperFixture(t)
+
+	totalAccepted := big.NewInt(0)
+	for i := 0; i < 5; i++ {
+		claim := baseClaim
+		claim.Identity.SourceTxHash = "0xdeadbeef" + string(rune('a'+i))
+		claim.Identity.SourceLogIndex = uint64(i + 1)
+		claim.Identity.Nonce = uint64(i + 1)
+		claim.Identity.MessageID = claim.Identity.DerivedMessageID()
+		claim.Amount = mustAmount("10000000")
+		attestation := validAttestation(claim)
+
+		if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
+			t.Fatalf("expected unique claim %d to succeed, got %v", i, err)
+		}
+		if _, err := keeper.ExecuteDepositClaim(claim, attestation); !errors.Is(err, ErrDuplicateClaim) {
+			t.Fatalf("expected duplicate rejection for claim %d, got %v", i, err)
+		}
+		totalAccepted.Add(totalAccepted, claim.Amount)
+	}
+
+	state := keeper.ExportState()
+	if len(state.ProcessedClaims) != 5 {
+		t.Fatalf("expected 5 processed claims, got %d", len(state.ProcessedClaims))
+	}
+	if state.RejectedClaims != 5 {
+		t.Fatalf("expected 5 rejected duplicate claims, got %d", state.RejectedClaims)
+	}
+	if supply := keeper.SupplyForDenom("uethusdc"); supply.Cmp(totalAccepted) != 0 {
+		t.Fatalf("expected supply %s after duplicates, got %s", totalAccepted.String(), supply.String())
+	}
+}
+
+func TestBridgeSupplyConservationAcrossDepositAndWithdrawalSequence(t *testing.T) {
+	t.Parallel()
+
+	keeper, baseClaim, _, _, _, _ := newKeeperFixture(t)
+
+	accepted := big.NewInt(0)
+	withdrawn := big.NewInt(0)
+	withdrawAmounts := []string{"5000000", "7000000", "3000000"}
+	depositAmounts := []string{"10000000", "12000000", "8000000"}
+
+	for i, amount := range depositAmounts {
+		claim := baseClaim
+		claim.Identity.SourceTxHash = "0xbeefcafe" + string(rune('a'+i))
+		claim.Identity.SourceLogIndex = uint64(i + 10)
+		claim.Identity.Nonce = uint64(i + 10)
+		claim.Identity.MessageID = claim.Identity.DerivedMessageID()
+		claim.Amount = mustAmount(amount)
+		attestation := validAttestation(claim)
+
+		if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
+			t.Fatalf("deposit %d failed: %v", i, err)
+		}
+		accepted.Add(accepted, claim.Amount)
+	}
+
+	for i, amount := range withdrawAmounts {
+		keeper.SetCurrentHeight(uint64(60 + i))
+		withdrawAmount := mustAmount(amount)
+		if _, err := keeper.ExecuteWithdrawal("eth.usdc", withdrawAmount, "0xrecipient", 200, []byte("proof")); err != nil {
+			t.Fatalf("withdrawal %d failed: %v", i, err)
+		}
+		withdrawn.Add(withdrawn, withdrawAmount)
+	}
+
+	expectedSupply := new(big.Int).Sub(accepted, withdrawn)
+	if supply := keeper.SupplyForDenom("uethusdc"); supply.Cmp(expectedSupply) != 0 {
+		t.Fatalf("expected conserved supply %s, got %s", expectedSupply.String(), supply.String())
+	}
+	if len(keeper.Withdrawals(60, 62)) != len(withdrawAmounts) {
+		t.Fatalf("expected %d withdrawals recorded, got %d", len(withdrawAmounts), len(keeper.Withdrawals(60, 62)))
+	}
+}
+
 func newKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgetypes.Attestation, *registrykeeper.Keeper, *limitskeeper.Keeper, *pauserkeeper.Keeper) {
 	t.Helper()
 

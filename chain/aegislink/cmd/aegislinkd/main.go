@@ -854,6 +854,7 @@ func statusEnvelope(kind string, status app.Status) map[string]any {
 		"limits":              status.Limits,
 		"paused_flows":        status.PausedFlows,
 		"processed_claims":    status.ProcessedClaims,
+		"failed_claims":       status.FailedClaims,
 		"withdrawals":         status.Withdrawals,
 		"routes":              status.Routes,
 		"transfers":           status.Transfers,

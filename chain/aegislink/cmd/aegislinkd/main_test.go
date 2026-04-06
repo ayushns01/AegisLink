@@ -124,16 +124,17 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	}
 
 	var status struct {
-		AppName          string `json:"app_name"`
-		ChainID          string `json:"chain_id"`
-		Initialized      bool   `json:"initialized"`
-		Assets           int    `json:"assets"`
-		Routes           int    `json:"routes"`
+		AppName          string   `json:"app_name"`
+		ChainID          string   `json:"chain_id"`
+		Initialized      bool     `json:"initialized"`
+		Assets           int      `json:"assets"`
+		Routes           int      `json:"routes"`
 		EnabledRouteIDs  []string `json:"enabled_route_ids"`
-		Transfers        int    `json:"transfers"`
-		PendingTransfers int    `json:"pending_transfers"`
-		HomeDir          string `json:"home_dir"`
-		StatePath        string `json:"state_path"`
+		FailedClaims     int      `json:"failed_claims"`
+		Transfers        int      `json:"transfers"`
+		PendingTransfers int      `json:"pending_transfers"`
+		HomeDir          string   `json:"home_dir"`
+		StatePath        string   `json:"state_path"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
 		t.Fatalf("decode status output: %v\n%s", err, stdout.String())
@@ -152,6 +153,9 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	}
 	if len(status.EnabledRouteIDs) != 1 || status.EnabledRouteIDs[0] != "eth.usdc@osmosis-1:channel-0" {
 		t.Fatalf("expected enabled route id eth.usdc@osmosis-1:channel-0, got %+v", status.EnabledRouteIDs)
+	}
+	if status.FailedClaims != 0 {
+		t.Fatalf("expected zero failed claims in seeded runtime, got %d", status.FailedClaims)
 	}
 	if status.Transfers != 0 || status.PendingTransfers != 0 {
 		t.Fatalf("expected zero transfers in seeded runtime, got %+v", status)

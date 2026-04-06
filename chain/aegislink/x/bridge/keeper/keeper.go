@@ -54,6 +54,7 @@ type Keeper struct {
 	currentHeight     uint64
 
 	processedClaims map[string]ClaimRecord
+	rejectedClaims  uint64
 	supplyByDenom   map[string]*big.Int
 	withdrawals     []WithdrawalRecord
 
@@ -88,29 +89,36 @@ func (k *Keeper) SetCurrentHeight(height uint64) {
 
 func (k *Keeper) ExecuteDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (ClaimResult, error) {
 	if err := claim.ValidateBasic(); err != nil {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected}, err
 	}
 
 	claimKey := claim.Identity.ReplayKey()
 	if _, exists := k.processedClaims[claimKey]; exists {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, ErrDuplicateClaim
 	}
 
 	if err := k.verifyDepositClaim(claim, attestation); err != nil {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
 	}
 
 	asset, ok := k.registryKeeper.GetAsset(claim.AssetID)
 	if !ok {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, ErrUnknownAsset
 	}
 	if !asset.Enabled {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, ErrAssetDisabled
 	}
 	if err := k.pauserKeeper.AssertNotPaused(claim.AssetID); err != nil {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, fmt.Errorf("%w: %s", ErrAssetPaused, claim.AssetID)
 	}
 	if err := k.limitsKeeper.CheckTransfer(claim.AssetID, claim.Amount); err != nil {
+		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
 	}
 
@@ -181,6 +189,10 @@ func (k *Keeper) Withdrawals(fromHeight, toHeight uint64) []WithdrawalRecord {
 		withdrawals = append(withdrawals, cloneWithdrawalRecord(withdrawal))
 	}
 	return withdrawals
+}
+
+func (k *Keeper) RejectedClaims() uint64 {
+	return k.rejectedClaims
 }
 
 func (k *Keeper) newWithdrawalRecord(assetID, assetAddress string, amount *big.Int, recipient string, deadline uint64, signature []byte) WithdrawalRecord {

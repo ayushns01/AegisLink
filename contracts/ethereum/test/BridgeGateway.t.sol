@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "../BridgeGateway.sol";
 import "../BridgeVerifier.sol";
+import "../IBridgeVerifier.sol";
 
 interface Vm {
     function addr(uint256 privateKey) external returns (address);
@@ -247,6 +248,46 @@ contract BridgeGatewayTest {
         }
     }
 
+    function testReleasePayloadHashHelperMatchesV1DigestFormula() public view {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        bytes32 messageId = _releaseMessageId(1, amount, expiry);
+        address recipient = address(0xCA11);
+
+        bytes32 helperHash = gateway.releasePayloadHash(address(token), recipient, amount, messageId, expiry);
+        bytes32 inlineHash = keccak256(abi.encode(block.chainid, address(gateway), address(token), recipient, amount, messageId, expiry));
+
+        if (helperHash != inlineHash) {
+            revert("payload hash mismatch");
+        }
+    }
+
+    function testGatewayCanUseGenericVerifierInterface() public {
+        MockVerifier mockVerifier = new MockVerifier();
+        BridgeGateway genericGateway = new BridgeGateway(address(mockVerifier));
+        TestToken genericToken = new TestToken("USDC", "USDC", 6);
+        genericToken.mint(address(genericGateway), 1_000_000_000);
+        genericGateway.setSupportedAsset(address(genericToken), ASSET_ID, true);
+
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        bytes32 messageId = keccak256(
+            abi.encode(block.chainid, address(genericGateway), uint256(1), address(genericToken), amount, address(uint160(0xCA11)), expiry)
+        );
+
+        genericGateway.release(address(genericToken), payable(address(0xCA11)), amount, messageId, expiry, hex"1234");
+
+        if (mockVerifier.lastMessageId() != messageId) {
+            revert("generic verifier message id mismatch");
+        }
+        if (
+            mockVerifier.lastPayloadHash()
+                != genericGateway.releasePayloadHash(address(genericToken), address(0xCA11), amount, messageId, expiry)
+        ) {
+            revert("generic verifier payload hash mismatch");
+        }
+    }
+
     function _depositId(uint256 nonce) internal view returns (bytes32) {
         return keccak256(abi.encode(address(gateway), nonce));
     }
@@ -333,6 +374,25 @@ contract BridgeGatewayTest {
         bytes32 digest = keccak256(abi.encode(messageId, payloadHash, expiry));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
+    }
+}
+
+contract MockVerifier is IBridgeVerifier {
+    bytes32 public lastMessageId;
+    bytes32 public lastPayloadHash;
+    uint64 public lastExpiry;
+    bytes public lastProof;
+
+    function verifyAndConsume(bytes32 messageId, bytes32 payloadHash, uint64 expiry, bytes calldata proof)
+        external
+        override
+        returns (address signer)
+    {
+        lastMessageId = messageId;
+        lastPayloadHash = payloadHash;
+        lastExpiry = expiry;
+        lastProof = proof;
+        return signer;
     }
 }
 

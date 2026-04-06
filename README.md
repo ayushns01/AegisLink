@@ -142,6 +142,7 @@ As of April 6, 2026:
 - the live local Ethereum bridge loop is proven end to end
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
+- Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
 - the next roadmap focus is deeper runtime realism, not basic bridge invention
 

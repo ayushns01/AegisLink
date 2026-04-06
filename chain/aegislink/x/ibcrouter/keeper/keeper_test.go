@@ -123,6 +123,38 @@ func TestAcknowledgeSuccessMarksTransferCompleted(t *testing.T) {
 	}
 }
 
+func TestRouteStateMachineAllowsOnlyRecoverableRefunds(t *testing.T) {
+	t.Parallel()
+
+	k := seededRouterKeeper(t)
+	transfer, err := k.InitiateTransfer("eth.usdc", mustAmount("25000000"), "osmo1recipient", 120, "swap")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+	if _, err := k.MarkRefunded(transfer.TransferID); !errors.Is(err, ErrTransferNotRecoverable) {
+		t.Fatalf("expected pending transfer refund to fail, got %v", err)
+	}
+
+	failed, err := k.AcknowledgeFailure(transfer.TransferID, "swap failed")
+	if err != nil {
+		t.Fatalf("ack failure: %v", err)
+	}
+	if failed.Status != TransferStatusAckFailed {
+		t.Fatalf("expected ack_failed status, got %q", failed.Status)
+	}
+
+	refunded, err := k.MarkRefunded(transfer.TransferID)
+	if err != nil {
+		t.Fatalf("refund failed transfer: %v", err)
+	}
+	if refunded.Status != TransferStatusRefunded {
+		t.Fatalf("expected refunded status, got %q", refunded.Status)
+	}
+	if _, err := k.MarkRefunded(transfer.TransferID); !errors.Is(err, ErrTransferNotRecoverable) {
+		t.Fatalf("expected second refund to fail, got %v", err)
+	}
+}
+
 func seededRouterKeeper(t *testing.T) *Keeper {
 	t.Helper()
 

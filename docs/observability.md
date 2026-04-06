@@ -113,6 +113,13 @@ The operator-facing binaries now emit short summaries instead of only succeeding
 - `mock-osmosis-target`
   Reports startup mode, listen address, persisted state path, and pool count.
 
+The current demo-facing status surfaces also expose richer hardening counters:
+
+- `aegislinkd query status`
+  Includes `processed_claims`, `failed_claims`, `pending_transfers`, `failed_transfers`, and `timed_out_transfers`.
+- mock target `/status`
+  Includes acknowledgement counts plus `swap_failures` so destination execution failures are visible without opening execution receipts first.
+
 ## Dashboards to prepare
 
 - `bridge health`

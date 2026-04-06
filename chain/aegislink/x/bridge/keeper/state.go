@@ -10,6 +10,7 @@ import (
 type StateSnapshot struct {
 	CurrentHeight       uint64                     `json:"current_height"`
 	NextWithdrawalNonce uint64                     `json:"next_withdrawal_nonce"`
+	RejectedClaims      uint64                     `json:"rejected_claims"`
 	ProcessedClaims     []ClaimRecordSnapshot      `json:"processed_claims"`
 	SupplyByDenom       map[string]string          `json:"supply_by_denom"`
 	Withdrawals         []WithdrawalRecordSnapshot `json:"withdrawals"`
@@ -39,6 +40,7 @@ func (k *Keeper) ExportState() StateSnapshot {
 	state := StateSnapshot{
 		CurrentHeight:       k.currentHeight,
 		NextWithdrawalNonce: k.nextWithdrawalNonce,
+		RejectedClaims:      k.rejectedClaims,
 		ProcessedClaims:     make([]ClaimRecordSnapshot, 0, len(k.processedClaims)),
 		SupplyByDenom:       make(map[string]string, len(k.supplyByDenom)),
 		Withdrawals:         make([]WithdrawalRecordSnapshot, 0, len(k.withdrawals)),
@@ -76,6 +78,7 @@ func (k *Keeper) ExportState() StateSnapshot {
 func (k *Keeper) ImportState(state StateSnapshot) error {
 	k.currentHeight = state.CurrentHeight
 	k.nextWithdrawalNonce = state.NextWithdrawalNonce
+	k.rejectedClaims = state.RejectedClaims
 	if k.nextWithdrawalNonce == 0 {
 		k.nextWithdrawalNonce = 1
 	}

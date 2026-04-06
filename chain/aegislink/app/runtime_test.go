@@ -173,6 +173,9 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	if status.Modules != 5 {
 		t.Fatalf("expected 5 modules, got %d", status.Modules)
 	}
+	if status.FailedClaims != 0 {
+		t.Fatalf("expected zero failed claims on fresh runtime, got %d", status.FailedClaims)
+	}
 }
 
 func TestResolveConfigRejectsThresholdAboveSignerCount(t *testing.T) {

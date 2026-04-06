@@ -228,29 +228,31 @@ The correct order is:
 
 **Goal:** Push the project deeper technically if time remains after the recruiter-grade finish line is reached.
 
+**Phase 4 status:** Completed on April 6, 2026. The Ethereum side now depends on a narrow verifier interface instead of a concrete verifier type, the bridge and route layers have stronger invariant-style tests around replay and recovery safety, and the runtime plus target status summaries now expose hardening counters like failed claims and destination swap failures.
+
 ### Task 4.1: Stronger verifier abstraction
 
-- [ ] Refine the Ethereum-side verifier boundary so future threshold or light-client work can slot in more cleanly.
-- [ ] Keep the current verifiable-relayer v1 path intact.
+- [x] Refine the Ethereum-side verifier boundary so future threshold or light-client work can slot in more cleanly.
+- [x] Keep the current verifiable-relayer v1 path intact.
 
 **What success proves:** the security roadmap is believable and implementation-ready.
 
 ### Task 4.2: Invariant and fuzz-style testing
 
-- [ ] Add more state-machine style tests for bridge and route invariants.
-- [ ] Add property-style checks for supply conservation and replay resistance.
+- [x] Add more state-machine style tests for bridge and route invariants.
+- [x] Add property-style checks for supply conservation and replay resistance.
 
 **What success proves:** the bridge logic is not only tested on happy paths.
 
 ### Task 4.3: Richer metrics
 
-- [ ] Add counters for:
+- [x] Add counters for:
   - processed claims
   - failed claims
   - pending routes
   - timed-out routes
   - destination swap failures
-- [ ] Expose them through demo-friendly status summaries.
+- [x] Expose them through demo-friendly status summaries.
 
 **What success proves:** the project looks like something an infra team could operate.
 
