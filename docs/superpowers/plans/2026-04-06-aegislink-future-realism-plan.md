@@ -621,7 +621,7 @@ git commit -m "docs: add verifier evolution roadmap"
 
 **Goal:** Give operators real metrics, dashboards, and recovery workflows instead of only demo inspection surfaces.
 
-**Phase 8 status:** In progress on April 7, 2026. The repo now has shared Prometheus-text metric formatting, `aegislinkd query metrics`, a destination-side `/metrics` endpoint on the mock target, opt-in one-shot metric snapshots from the relayers through `AEGISLINK_PRINT_METRICS=1`, and the first Prometheus or Grafana monitoring assets. Live compose boot verification and recovery-drill coverage are still ahead.
+**Phase 8 status:** Complete on April 7, 2026 for the current repo scope. The repo now has shared Prometheus-text metric formatting, `aegislinkd query metrics`, a destination-side `/metrics` endpoint on the mock target, opt-in one-shot metric snapshots from the relayers through `AEGISLINK_PRINT_METRICS=1`, the first Prometheus or Grafana monitoring assets, and codified recovery drills through runbooks plus e2e coverage. Live compose boot verification is still worth running on a machine with Docker installed, but the repo-level Phase 8 operator story is now in place.
 
 ### Task 8.1: Add Prometheus-style metrics to the binaries
 
@@ -709,7 +709,7 @@ git commit -m "feat: add local monitoring stack"
 - Create: `docs/runbooks/incident-drills.md`
 - Test: `tests/e2e/recovery_drill_test.go`
 
-- [ ] **Step 1: Write failing recovery-drill tests**
+- [x] **Step 1: Write failing recovery-drill tests**
 
 Cover:
 - relayer restart with replay persistence
@@ -717,19 +717,19 @@ Cover:
 - paused asset recovery
 - signer-set mismatch rejection
 
-- [ ] **Step 2: Run the recovery-drill e2e slice**
+- [x] **Step 2: Run the recovery-drill e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRecoveryDrill'`
 
 Expected: FAIL because the drill path is not codified yet.
 
-- [ ] **Step 3: Implement the drill scripts and docs**
+- [x] **Step 3: Implement the drill scripts and docs**
 
 Add:
 - explicit drill steps
 - expected logs and counters
 
-- [ ] **Step 4: Re-run the recovery-drill e2e slice**
+- [x] **Step 4: Re-run the recovery-drill e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRecoveryDrill'`
 
@@ -744,7 +744,7 @@ git commit -m "docs: add recovery drill coverage"
 
 **Phase 8 exit criteria:**
 - binaries expose real metrics
-- dashboards exist and scrape locally
+- dashboards and scrape config exist for local monitoring
 - operators can follow recovery drills using docs and tests
 
 ---

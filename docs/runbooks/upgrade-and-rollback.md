@@ -49,6 +49,7 @@ Roll back if any of the following appears:
 - [ ] Revert the changed binary, config, or contract path as planned.
 - [ ] Confirm all components are back on the expected versions.
 - [ ] Re-run the most critical health checks.
+- [ ] Re-run the closest matching incident drill if rollback touched relayers, signer sets, or route behavior.
 - [ ] Resume only after rejection and acceptance paths look normal.
 
 ## Minimum health checks after rollback
@@ -62,3 +63,5 @@ Roll back if any of the following appears:
 ## Release discipline
 
 If the team cannot explain how to roll a change back, the change is not ready for production-style testing.
+
+Use [Incident drills](incident-drills.md) to prove the rollback target still supports the expected recovery behavior after the rollback is complete.

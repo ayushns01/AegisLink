@@ -87,6 +87,7 @@ Use these for operational and launch thinking:
 - [Observability plan](docs/observability.md)
 - [Demo walkthrough](docs/demo-walkthrough.md)
 - [Pause and recovery runbook](docs/runbooks/pause-and-recovery.md)
+- [Incident drills](docs/runbooks/incident-drills.md)
 - [Upgrade and rollback runbook](docs/runbooks/upgrade-and-rollback.md)
 
 ## What AegisLink v1 should say publicly
@@ -170,13 +171,13 @@ As of April 7, 2026:
 - Phase 6 is now complete for the current repo scope as a dual-runtime local route milestone: a destination runtime can be bootstrapped through `osmo-locald`, AegisLink can initiate routed transfers through the `ibcrouter` packet lifecycle, and `route-relayer` can drive acknowledgement completion against the destination home without the old HTTP target
 - Phase 7 is now complete for the current repo scope: the Ethereum side has a real threshold-verifier path with signer rotation, AegisLink attestations bind to versioned signer sets with activation and expiry rules, and the runtime exposes `query signer-set`, `query signer-sets`, and signer-set status summaries
 - the verifier evolution path is now documented explicitly, so the trust-model story is inspectable instead of buried in keeper logic or contract code
-- Phase 8 is now in progress: `aegislinkd` exposes a Prometheus-style `query metrics` snapshot, the destination target now serves `/metrics`, and the one-shot relayers can emit Prometheus text snapshots when `AEGISLINK_PRINT_METRICS=1`
+- Phase 8 is now complete for the current repo scope: the binaries expose Prometheus-style metrics, the repo ships a local monitoring scaffold, and the main operator recovery drills are codified in runbooks and e2e coverage
 - the local monitoring scaffold now exists too: Prometheus scrape config, Grafana provisioning, an initial destination-ops dashboard, and `make monitor`
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is finishing live Docker-backed validation of the monitoring stack and then moving into the recovery-drill slice
+- the next roadmap focus is Phase 9 protocol expansion, with live Docker-backed monitoring boot still worth validating on a machine that has Docker installed
 
 The current repo shape is:
 

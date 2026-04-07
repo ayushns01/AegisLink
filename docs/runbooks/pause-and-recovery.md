@@ -44,6 +44,8 @@ Use the fastest inspection surfaces first:
   Confirm whether the route is stuck before delivery, after delivery, or after acknowledgement became ready.
 - mock target `/status`, `/packets`, and `/executions`
   Confirm whether the destination actually received the packet, executed it, or produced a failure or timeout outcome.
+- [Incident drills](incident-drills.md)
+  Use the codified restart, timeout-refund, pause, and signer-set mismatch drills when the team needs to rehearse or validate recovery steps before resuming service.
 
 ## Investigation checklist
 
@@ -85,3 +87,5 @@ Every pause should produce:
 - follow-up engineering task list
 
 If the team cannot produce this output, the pause process is incomplete.
+
+Use [Incident drills](incident-drills.md) after the incident when a fix changes operator behavior, so the same failure path is rehearsed before the next rollout.

@@ -157,6 +157,8 @@ The repo now includes the first local monitoring scaffold:
 
 Use `make monitor` to bring up Prometheus, Grafana, and the destination target together.
 
+Recovery coverage is now tied to this observability layer through [Incident drills](runbooks/incident-drills.md), so the operator path is test-backed instead of being dashboard-only.
+
 ## Alert ideas
 
 - relayer has stopped observing new Ethereum blocks

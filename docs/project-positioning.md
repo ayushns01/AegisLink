@@ -27,6 +27,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now also proves a dual-runtime local route flow through `make test-real-ibc`, where `route-relayer` moves a transfer from an AegisLink home into a dedicated `osmo-locald` home.
 - The repo now also proves a threshold-verifier path in Foundry tests and versioned signer-set enforcement on the AegisLink side.
 - The runtime and CLI already expose active signer-set state and signer-set history, so the trust model is inspectable instead of buried in code.
+- The repo now includes Prometheus-style metrics, a local monitoring scaffold, and codified recovery drills, so operators can inspect and rehearse failure paths instead of only reading happy-path docs.
 
 ## What is still a local harness
 
@@ -61,7 +62,7 @@ The next realism steps are:
 
 1. Push AegisLink from the current single-node runtime toward a real networked chain daemon.
 2. Replace the current dual-runtime route bridge with fuller IBC-Go or Hermes-backed networking.
-3. Add stronger metrics, dashboards, and operator recovery surfaces.
+3. Validate the monitoring stack on a Docker-enabled machine and then deepen it with more production-style metrics or alerts.
 4. Only after that, spend time on optional verifier and production-style hardening.
 
 ## Hardening now present
