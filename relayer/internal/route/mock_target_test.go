@@ -302,6 +302,78 @@ func TestMockTargetExposesPoolsBalancesAndSwapsEndpoints(t *testing.T) {
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/swaps", 1)
 }
 
+func TestMockTargetPersistsStakeExecution(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+	target := newHTTPTargetWithClient("http://mock-osmosis", &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder.Result(), nil
+		}),
+	})
+
+	if _, err := target.SubmitTransfer(context.Background(), Transfer{
+		TransferID:         "ibc/eth.usdc/10",
+		AssetID:            "eth.usdc",
+		Amount:             "25000000",
+		Receiver:           "osmo1recipient",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uethusdc",
+		TimeoutHeight:      140,
+		Memo:               "stake:ibc/uethusdc:recipient=osmo1staker:path=validator-7",
+	}); err != nil {
+		t.Fatalf("submit transfer: %v", err)
+	}
+	if _, err := target.ReadyAcks(context.Background()); err != nil {
+		t.Fatalf("ready acks: %v", err)
+	}
+
+	var state struct {
+		Executions []struct {
+			TransferID   string `json:"transfer_id"`
+			Result       string `json:"result"`
+			Recipient    string `json:"recipient"`
+			OutputDenom  string `json:"output_denom"`
+			OutputAmount string `json:"output_amount"`
+			RoutePath    string `json:"route_path"`
+		} `json:"executions"`
+		Stakes []struct {
+			TransferID string `json:"transfer_id"`
+			Denom      string `json:"denom"`
+			Amount     string `json:"amount"`
+			Staker     string `json:"staker"`
+			Validator  string `json:"validator"`
+		} `json:"stakes"`
+	}
+	readJSONFile(t, statePath, &state)
+
+	if len(state.Executions) != 1 {
+		t.Fatalf("expected one execution, got %d", len(state.Executions))
+	}
+	if state.Executions[0].Result != "stake_success" {
+		t.Fatalf("expected stake_success result, got %q", state.Executions[0].Result)
+	}
+	if state.Executions[0].Recipient != "osmo1staker" {
+		t.Fatalf("expected execution recipient osmo1staker, got %q", state.Executions[0].Recipient)
+	}
+	if state.Executions[0].OutputDenom != "ibc/uethusdc" {
+		t.Fatalf("expected execution output denom ibc/uethusdc, got %q", state.Executions[0].OutputDenom)
+	}
+	if state.Executions[0].RoutePath != "validator-7" {
+		t.Fatalf("expected execution route path validator-7, got %q", state.Executions[0].RoutePath)
+	}
+	if len(state.Stakes) != 1 {
+		t.Fatalf("expected one stake record, got %d", len(state.Stakes))
+	}
+	if state.Stakes[0].Staker != "osmo1staker" || state.Stakes[0].Validator != "validator-7" {
+		t.Fatalf("unexpected stake record: %+v", state.Stakes[0])
+	}
+}
+
 func TestMockTargetExposesStatusEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -926,7 +998,7 @@ func TestMockTargetSupportsRecipientOverrideAndRoutePath(t *testing.T) {
 	}
 }
 
-func TestMockTargetRejectsMalformedRouteActionAsExecutionFailure(t *testing.T) {
+func TestMockTargetRejectsUnsupportedRouteActionAsExecutionFailure(t *testing.T) {
 	t.Parallel()
 
 	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
@@ -948,7 +1020,7 @@ func TestMockTargetRejectsMalformedRouteActionAsExecutionFailure(t *testing.T) {
 		ChannelID:          "channel-0",
 		DestinationDenom:   "ibc/uatom-usdc",
 		TimeoutHeight:      140,
-		Memo:               "stake:uosmo",
+		Memo:               "farm:uosmo",
 	})
 	if err != nil {
 		t.Fatalf("submit transfer: %v", err)
@@ -968,7 +1040,7 @@ func TestMockTargetRejectsMalformedRouteActionAsExecutionFailure(t *testing.T) {
 		t.Fatalf("expected failed ack, got %q", acks[0].Status)
 	}
 	if acks[0].Reason == "" {
-		t.Fatal("expected invalid action reason")
+		t.Fatal("expected unsupported action reason")
 	}
 
 	var state struct {

@@ -307,6 +307,42 @@ func parseRouteAction(memo string) (*RouteAction, string) {
 			}
 		}
 		return action, ""
+	case "stake":
+		targetDenom := strings.TrimSpace(parts[1])
+		if targetDenom == "" {
+			return nil, "missing target denom for stake action"
+		}
+		action := &RouteAction{Type: "stake", TargetDenom: targetDenom}
+		seen := make(map[string]struct{})
+		for _, part := range parts[2:] {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				return nil, "empty stake option"
+			}
+			key, value, ok := strings.Cut(part, "=")
+			if !ok {
+				return nil, fmt.Sprintf("invalid stake option %q", part)
+			}
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if key == "" || value == "" {
+				return nil, fmt.Sprintf("invalid stake option %q", part)
+			}
+			if _, exists := seen[key]; exists {
+				return nil, fmt.Sprintf("duplicate stake option %q", key)
+			}
+			seen[key] = struct{}{}
+
+			switch key {
+			case "recipient":
+				action.Recipient = value
+			case "path":
+				action.Path = value
+			default:
+				return nil, fmt.Sprintf("unsupported stake option %q", key)
+			}
+		}
+		return action, ""
 	default:
 		return nil, fmt.Sprintf("unsupported route action %q", actionType)
 	}

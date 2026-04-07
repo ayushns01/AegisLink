@@ -37,6 +37,7 @@ type MockTargetState struct {
 	Receipts   []MockTargetPacket    `json:"receipts,omitempty"`
 	Executions []MockTargetExecution `json:"executions"`
 	Swaps      []MockTargetSwap      `json:"swaps"`
+	Stakes     []MockTargetStake     `json:"stakes"`
 	Pools      []MockTargetPool      `json:"pools"`
 	Balances   []MockTargetBalance   `json:"balances"`
 }
@@ -80,6 +81,14 @@ type MockTargetSwap struct {
 	RoutePath    string `json:"route_path,omitempty"`
 }
 
+type MockTargetStake struct {
+	TransferID string `json:"transfer_id"`
+	Denom      string `json:"denom"`
+	Amount     string `json:"amount"`
+	Staker     string `json:"staker"`
+	Validator  string `json:"validator"`
+}
+
 type MockTargetPool struct {
 	InputDenom  string `json:"input_denom"`
 	OutputDenom string `json:"output_denom"`
@@ -101,6 +110,7 @@ type MockTargetStatus struct {
 	Pools           int `json:"pools"`
 	Balances        int `json:"balances"`
 	Swaps           int `json:"swaps"`
+	Stakes          int `json:"stakes"`
 	SwapFailures    int `json:"swap_failures"`
 	ReceivedPackets int `json:"received_packets"`
 	ExecutedPackets int `json:"executed_packets"`
@@ -147,6 +157,7 @@ func NewMockTargetHandlerWithConfig(cfg MockTargetConfig) http.Handler {
 	mux.HandleFunc("/pools", target.handlePools)
 	mux.HandleFunc("/balances", target.handleBalances)
 	mux.HandleFunc("/swaps", target.handleSwaps)
+	mux.HandleFunc("/stakes", target.handleStakes)
 	mux.HandleFunc("/status", target.handleStatus)
 	mux.HandleFunc("/metrics", target.handleMetrics)
 	return mux
@@ -292,6 +303,18 @@ func (t *MockTarget) handleSwaps(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(t.state.Swaps)
 }
 
+func (t *MockTarget) handleStakes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(t.state.Stakes)
+}
+
 func (t *MockTarget) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -381,6 +404,7 @@ func (t *MockTarget) statusLocked() MockTargetStatus {
 		Pools:      len(t.state.Pools),
 		Balances:   len(t.state.Balances),
 		Swaps:      len(t.state.Swaps),
+		Stakes:     len(t.state.Stakes),
 	}
 
 	for _, packet := range t.state.Packets {
@@ -530,6 +554,45 @@ func (t *MockTarget) executePacketLocked(packet *MockTargetPacket) {
 			t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: err.Error()})
 			return
 		}
+		t.state.Executions = append(t.state.Executions, execution)
+		t.advancePacketAfterExecutionLocked(packet)
+		return
+	}
+
+	if packet.Action != nil && packet.Action.Type == "stake" {
+		execution := MockTargetExecution{
+			TransferID:     packet.TransferID,
+			PacketSequence: packet.Packet.Sequence,
+			Result:         "stake_success",
+			Recipient:      recipient,
+			InputDenom:     packet.DenomTrace.IBCDenom,
+			InputAmount:    strings.TrimSpace(packet.Packet.Data.Amount),
+			OutputDenom:    packet.Action.TargetDenom,
+			OutputAmount:   strings.TrimSpace(packet.Packet.Data.Amount),
+			DexChainID:     packet.DestinationChainID,
+			RoutePath:      routePath,
+		}
+		if strings.TrimSpace(packet.Action.TargetDenom) != strings.TrimSpace(packet.DenomTrace.IBCDenom) {
+			execution.Result = "stake_failed"
+			execution.Error = fmt.Sprintf("stake action requires received denom %s", packet.DenomTrace.IBCDenom)
+			t.state.Executions = append(t.state.Executions, execution)
+			t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: execution.Error})
+			return
+		}
+		if strings.TrimSpace(routePath) == "" {
+			execution.Result = "stake_failed"
+			execution.Error = "missing validator path for stake action"
+			t.state.Executions = append(t.state.Executions, execution)
+			t.markPacketAckReadyLocked(packet, Ack{Status: AckStatusFailed, Reason: execution.Error})
+			return
+		}
+		t.state.Stakes = append(t.state.Stakes, MockTargetStake{
+			TransferID: packet.TransferID,
+			Denom:      packet.Action.TargetDenom,
+			Amount:     strings.TrimSpace(packet.Packet.Data.Amount),
+			Staker:     recipient,
+			Validator:  routePath,
+		})
 		t.state.Executions = append(t.state.Executions, execution)
 		t.advancePacketAfterExecutionLocked(packet)
 		return

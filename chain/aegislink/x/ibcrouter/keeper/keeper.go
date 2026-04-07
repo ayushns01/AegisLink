@@ -183,6 +183,9 @@ func (k *Keeper) InitiateTransferWithProfile(routeID, assetID string, amount *bi
 	if !ok {
 		return TransferRecord{}, ErrRouteProfileAssetNotAllowed
 	}
+	if !profile.Policy.AllowsAction(memo) {
+		return TransferRecord{}, ErrRouteProfilePolicyViolation
+	}
 	if !profile.Policy.AllowsMemo(memo) {
 		return TransferRecord{}, ErrRouteProfilePolicyViolation
 	}

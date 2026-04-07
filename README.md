@@ -24,6 +24,7 @@ This repository is meant to show:
 - The Phase 6 route path now boots a dedicated destination runtime through `osmo-locald`, and `route-relayer` can move a transfer from an AegisLink home into that destination home without the old HTTP mock-target entrypoint.
 - Routed transfers go through packet-shaped delivery, destination-side execution, later acknowledgement, and explicit completion, failure, timeout, or refund handling.
 - The destination target tracks packets, execution receipts, balances, pools, swaps, and acknowledgement state through public inspection endpoints.
+- Route profiles can now constrain allowed action types, and the live routed path supports both `swap` and `stake` actions with recipient and path overrides.
 
 ## What is a local harness today
 
@@ -173,12 +174,12 @@ As of April 7, 2026:
 - the verifier evolution path is now documented explicitly, so the trust-model story is inspectable instead of buried in keeper logic or contract code
 - Phase 8 is now complete for the current repo scope: the binaries expose Prometheus-style metrics, the repo ships a local monitoring scaffold, and the main operator recovery drills are codified in runbooks and e2e coverage
 - the local monitoring scaffold now exists too: Prometheus scrape config, Grafana provisioning, an initial destination-ops dashboard, and `make monitor`
-- Phase 9 is now in progress: the `ibcrouter` can register multiple destination route profiles, each with its own allowed assets and memo-policy guardrails, and the new governance module can apply asset, limit, and route-policy changes through a recorded proposal path
+- Phase 9 is now complete for the current repo scope: the `ibcrouter` can register multiple destination route profiles with allowed assets, memo-policy guardrails, and allowed action types, the governance module can apply asset, limit, and route-policy changes through a recorded proposal path, and the routed execution layer now supports both `swap` and `stake`
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus inside Phase 9 is richer route actions and destination-specific constraints, with live Docker-backed monitoring boot still worth validating on a machine that has Docker installed
+- the next roadmap focus is deeper realism beyond the completed phase set: pushing AegisLink toward a fuller networked chain daemon, replacing the current dual-runtime path with fuller IBC-Go or Hermes-backed networking, and validating the monitoring stack on a machine that has Docker installed
 
 The current repo shape is:
 
@@ -193,4 +194,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The local route-harness, operator-surface, SDK-store runtime, dual-runtime route, threshold-verifier, and recovery-drill milestones are now in place. The current active roadmap work is protocol expansion on top of that base: route profiles and governed policy changes are in, and richer route actions are next.
+The local route-harness, operator-surface, SDK-store runtime, dual-runtime route, threshold-verifier, recovery-drill, and protocol-expansion milestones are now in place. The next realism work from here is deeper networked chain and IBC integration rather than more local-harness breadth.

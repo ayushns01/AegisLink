@@ -30,6 +30,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now includes Prometheus-style metrics, a local monitoring scaffold, and codified recovery drills, so operators can inspect and rehearse failure paths instead of only reading happy-path docs.
 - The `ibcrouter` now supports destination route profiles, so multiple destinations, route-specific asset allowlists, and memo-policy guardrails can be modeled without rewriting the core bridge lifecycle.
 - The repo now also includes a minimal governance module, so asset enablement, rate-limit updates, and route-policy updates can flow through a recorded proposal path instead of direct keeper edits.
+- The route layer now supports a second concrete action beyond swaps: profile-constrained `stake` actions can execute on the dual-runtime path with recipient and validator-path hints, while unsupported actions still fail through explicit destination receipts.
 
 ## What is still a local harness
 
@@ -62,10 +63,10 @@ Avoid phrasing like:
 
 The next realism steps are:
 
-1. Finish Phase 9 by adding richer route actions and destination-specific constraints on top of the new route-profile and governance path.
-2. Push AegisLink from the current single-node runtime toward a real networked chain daemon.
-3. Replace the current dual-runtime route bridge with fuller IBC-Go or Hermes-backed networking.
-4. Validate the monitoring stack on a Docker-enabled machine and then deepen it with more production-style metrics or alerts.
+1. Push AegisLink from the current single-node runtime toward a real networked chain daemon.
+2. Replace the current dual-runtime route bridge with fuller IBC-Go or Hermes-backed networking.
+3. Validate the monitoring stack on a Docker-enabled machine and then deepen it with more production-style metrics or alerts.
+4. Expand destination integrations or route-action breadth only after the deeper runtime and networking work is credible.
 
 ## Hardening now present
 

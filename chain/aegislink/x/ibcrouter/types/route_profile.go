@@ -31,18 +31,25 @@ func (a AssetRoute) Canonical() AssetRoute {
 
 type RoutePolicy struct {
 	AllowedMemoPrefixes []string `json:"allowed_memo_prefixes"`
+	AllowedActionTypes  []string `json:"allowed_action_types"`
 }
 
 func (p RoutePolicy) Canonical() RoutePolicy {
-	if len(p.AllowedMemoPrefixes) == 0 {
-		return RoutePolicy{}
+	if len(p.AllowedMemoPrefixes) > 0 {
+		prefixes := make([]string, 0, len(p.AllowedMemoPrefixes))
+		for _, prefix := range p.AllowedMemoPrefixes {
+			prefixes = append(prefixes, strings.TrimSpace(prefix))
+		}
+		p.AllowedMemoPrefixes = prefixes
 	}
 
-	prefixes := make([]string, 0, len(p.AllowedMemoPrefixes))
-	for _, prefix := range p.AllowedMemoPrefixes {
-		prefixes = append(prefixes, strings.TrimSpace(prefix))
+	if len(p.AllowedActionTypes) > 0 {
+		types := make([]string, 0, len(p.AllowedActionTypes))
+		for _, actionType := range p.AllowedActionTypes {
+			types = append(types, strings.TrimSpace(actionType))
+		}
+		p.AllowedActionTypes = types
 	}
-	p.AllowedMemoPrefixes = prefixes
 	return p
 }
 
@@ -57,6 +64,23 @@ func (p RoutePolicy) AllowsMemo(memo string) bool {
 			return true
 		}
 		if prefix != "" && strings.HasPrefix(trimmedMemo, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p RoutePolicy) AllowsAction(memo string) bool {
+	if len(p.AllowedActionTypes) == 0 {
+		return true
+	}
+
+	actionType := routeActionType(memo)
+	if actionType == "" {
+		return true
+	}
+	for _, allowed := range p.Canonical().AllowedActionTypes {
+		if allowed == actionType {
 			return true
 		}
 	}
@@ -118,4 +142,13 @@ func (p RouteProfile) AssetRoute(assetID string) (AssetRoute, bool) {
 		}
 	}
 	return AssetRoute{}, false
+}
+
+func routeActionType(memo string) string {
+	memo = strings.TrimSpace(memo)
+	if memo == "" {
+		return ""
+	}
+	prefix, _, _ := strings.Cut(memo, ":")
+	return strings.TrimSpace(prefix)
 }

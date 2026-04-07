@@ -120,3 +120,36 @@ func TestRouteProfileEnforcesMemoPrefixPolicy(t *testing.T) {
 		t.Fatalf("expected osmosis destination chain, got %q", record.DestinationChainID)
 	}
 }
+
+func TestRouteProfileRestrictsAllowedActionTypes(t *testing.T) {
+	t.Parallel()
+
+	k := NewKeeper()
+	if err := k.SetRouteProfile(ibcroutertypes.RouteProfile{
+		RouteID:            "osmosis-stake",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		Enabled:            true,
+		Assets: []ibcroutertypes.AssetRoute{
+			{AssetID: "eth.usdc", DestinationDenom: "ibc/uethusdc"},
+		},
+		Policy: ibcroutertypes.RoutePolicy{
+			AllowedActionTypes: []string{"stake"},
+		},
+	}); err != nil {
+		t.Fatalf("set route profile: %v", err)
+	}
+
+	_, err := k.InitiateTransferWithProfile("osmosis-stake", "eth.usdc", mustAmount("1"), "osmo1receiver", 120, "swap:uosmo")
+	if !errors.Is(err, ErrRouteProfilePolicyViolation) {
+		t.Fatalf("expected route action rejection, got %v", err)
+	}
+
+	record, err := k.InitiateTransferWithProfile("osmosis-stake", "eth.usdc", mustAmount("1"), "osmo1receiver", 120, "stake:ibc/uethusdc")
+	if err != nil {
+		t.Fatalf("expected stake action to pass, got %v", err)
+	}
+	if record.Memo != "stake:ibc/uethusdc" {
+		t.Fatalf("expected stake memo to persist, got %q", record.Memo)
+	}
+}

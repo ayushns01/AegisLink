@@ -159,6 +159,30 @@ func TestParseRouteActionSupportsRecipientPathAndMinOut(t *testing.T) {
 	}
 }
 
+func TestParseRouteActionSupportsStakeAction(t *testing.T) {
+	t.Parallel()
+
+	action, actionErr := parseRouteAction("stake:ibc/uethusdc:recipient=osmo1validator:path=validator-1")
+	if actionErr != "" {
+		t.Fatalf("expected no action error, got %q", actionErr)
+	}
+	if action == nil {
+		t.Fatal("expected parsed stake action")
+	}
+	if action.Type != "stake" {
+		t.Fatalf("expected stake action type, got %q", action.Type)
+	}
+	if action.TargetDenom != "ibc/uethusdc" {
+		t.Fatalf("expected target denom ibc/uethusdc, got %q", action.TargetDenom)
+	}
+	if action.Recipient != "osmo1validator" {
+		t.Fatalf("expected recipient osmo1validator, got %q", action.Recipient)
+	}
+	if action.Path != "validator-1" {
+		t.Fatalf("expected route path validator-1, got %q", action.Path)
+	}
+}
+
 func TestParseRouteActionReportsMalformedOrUnsupportedAction(t *testing.T) {
 	t.Parallel()
 
@@ -179,7 +203,7 @@ func TestParseRouteActionReportsMalformedOrUnsupportedAction(t *testing.T) {
 		},
 		{
 			name:       "unsupported action",
-			memo:       "stake:uosmo",
+			memo:       "farm:uosmo",
 			wantErrSub: "unsupported route action",
 		},
 	}

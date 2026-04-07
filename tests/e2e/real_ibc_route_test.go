@@ -183,6 +183,92 @@ func TestRealIBCRoute(t *testing.T) {
 	}
 }
 
+func TestRouteExtensionsStakeAction(t *testing.T) {
+	t.Parallel()
+
+	aegisHome := filepath.Join(t.TempDir(), "aegis-home")
+	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_real_chain.sh", aegisHome)
+	seedRealIBCAegisLinkRuntime(t, aegisHome)
+
+	destinationHome := filepath.Join(t.TempDir(), "osmo-local-home")
+	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_destination_chain.sh", destinationHome)
+
+	initiateOutput := runGoCommand(
+		t,
+		filepath.Join(repoRoot(t), "chain", "aegislink"),
+		nil,
+		"run",
+		"./cmd/aegislinkd",
+		"tx",
+		"initiate-ibc-transfer",
+		"--home",
+		aegisHome,
+		"--runtime-mode",
+		aegisapp.RuntimeModeSDKStore,
+		"--asset-id",
+		"eth.usdc",
+		"--amount",
+		"25000000",
+		"--receiver",
+		"osmo1recipient",
+		"--timeout-height",
+		"141",
+		"--memo",
+		"stake:ibc/uethusdc:recipient=osmo1staker:path=validator-7",
+	)
+
+	var transfer struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := decodeLastJSONObject(initiateOutput, &transfer); err != nil {
+		t.Fatalf("decode transfer output: %v\n%s", err, initiateOutput)
+	}
+	if transfer.Status != "pending" {
+		t.Fatalf("expected pending transfer, got %+v", transfer)
+	}
+
+	env := map[string]string{
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD":            "go",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD_ARGS":       "run ./chain/aegislink/cmd/aegislinkd",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_HOME":           aegisHome,
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_RUNTIME_MODE":   aegisapp.RuntimeModeSDKStore,
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_CMD":          "go",
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_CMD_ARGS":     "run ./relayer/cmd/osmo-locald",
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_HOME":         destinationHome,
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_RUNTIME_MODE": "osmo-local-runtime",
+	}
+	runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/route-relayer")
+	runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/route-relayer")
+
+	executionsOutput := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./relayer/cmd/osmo-locald",
+		"query",
+		"executions",
+		"--home",
+		destinationHome,
+	)
+	var executions []struct {
+		TransferID string `json:"transfer_id"`
+		Result     string `json:"result"`
+		Recipient  string `json:"recipient"`
+		RoutePath  string `json:"route_path"`
+	}
+	if err := decodeLastJSONObject(executionsOutput, &executions); err != nil {
+		t.Fatalf("decode executions: %v\n%s", err, executionsOutput)
+	}
+	if len(executions) != 1 || executions[0].Result != "stake_success" {
+		t.Fatalf("expected one stake_success execution, got %+v", executions)
+	}
+	if executions[0].Recipient != "osmo1staker" || executions[0].RoutePath != "validator-7" {
+		t.Fatalf("unexpected execution payload: %+v", executions[0])
+	}
+}
+
 func seedRealIBCAegisLinkRuntime(t *testing.T, homeDir string) {
 	t.Helper()
 

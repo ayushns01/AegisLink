@@ -753,7 +753,7 @@ git commit -m "docs: add recovery drill coverage"
 
 **Goal:** Add extensibility only after runtime, IBC, security, and ops are credible.
 
-**Phase 9 status:** In progress on April 7, 2026. Tasks 9.1 and 9.2 are now complete for the current repo scope: `ibcrouter` supports first-class destination route profiles with route-level asset allowlists and memo-policy guardrails, and the new governance module can apply asset, limit, and route-policy updates through a recorded proposal path. Richer route actions are still ahead.
+**Phase 9 status:** Complete on April 7, 2026 for the current repo scope. `ibcrouter` now supports first-class destination route profiles with route-level asset allowlists, memo-policy guardrails, and allowed-action constraints, the governance module can apply asset, limit, and route-policy updates through a recorded proposal path, and the routed execution path now supports both `swap` and `stake` actions on the dual-runtime flow.
 
 ### Task 9.1: Generalize destination route registry
 
@@ -783,7 +783,7 @@ Run: `go test ./chain/aegislink/x/ibcrouter/keeper -run 'TestRouteProfile'`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add chain/aegislink/x/ibcrouter
@@ -819,7 +819,7 @@ Run: `go test ./chain/aegislink/x/governance/...`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add chain/aegislink/x/governance chain/aegislink/app README.md
@@ -833,30 +833,30 @@ git commit -m "feat: add policy governance module"
 - Modify: `chain/aegislink/x/ibcrouter/keeper/sdk_keeper.go`
 - Modify: `tests/e2e/real_ibc_route_test.go`
 
-- [ ] **Step 1: Write failing extension tests**
+- [x] **Step 1: Write failing extension tests**
 
 Cover:
 - new route actions beyond swap
 - multi-hop path support if justified
 - asset-specific route constraints
 
-- [ ] **Step 2: Run focused route-extension tests**
+- [x] **Step 2: Run focused route-extension tests**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRouteExtensions'`
 
 Expected: FAIL because the new route actions are not implemented yet.
 
-- [ ] **Step 3: Implement the smallest useful extension set**
+- [x] **Step 3: Implement the smallest useful extension set**
 
 Keep this phase intentionally narrow.
 
-- [ ] **Step 4: Re-run focused route-extension tests**
+- [x] **Step 4: Re-run focused route-extension tests**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRouteExtensions'`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add relayer/internal/route chain/aegislink/x/ibcrouter tests/e2e
