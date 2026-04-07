@@ -596,6 +596,12 @@ func defaultMockTargetPools() []MockTargetPool {
 			ReserveIn:   "500000000",
 			ReserveOut:  "1000000000",
 		},
+		{
+			InputDenom:  "ibc/uethusdc",
+			OutputDenom: "uosmo",
+			ReserveIn:   "500000000",
+			ReserveOut:  "1000000000",
+		},
 	}
 }
 

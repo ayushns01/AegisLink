@@ -235,6 +235,10 @@ func (k *Keeper) persist() error {
 	return k.stateStore.Save(k.ExportState())
 }
 
+func (k *Keeper) Flush() error {
+	return k.persist()
+}
+
 func (k *Keeper) newWithdrawalRecord(assetID, assetAddress string, amount *big.Int, recipient string, deadline uint64, signature []byte) WithdrawalRecord {
 	nonce := k.nextWithdrawalNonce
 	k.nextWithdrawalNonce++

@@ -229,14 +229,25 @@ func TestMockTargetPersistsReceivedPacketAndSwapIntent(t *testing.T) {
 	if state.Swaps[0].OutputAmount != "47619047" {
 		t.Fatalf("expected output amount 47619047, got %q", state.Swaps[0].OutputAmount)
 	}
-	if len(state.Pools) != 1 {
-		t.Fatalf("expected one pool record, got %d", len(state.Pools))
+	if len(state.Pools) != 2 {
+		t.Fatalf("expected two pool records, got %d", len(state.Pools))
 	}
-	if state.Pools[0].ReserveIn != "525000000" {
-		t.Fatalf("expected input reserve 525000000, got %q", state.Pools[0].ReserveIn)
+	var matched bool
+	for _, pool := range state.Pools {
+		if pool.InputDenom != "ibc/uatom-usdc" || pool.OutputDenom != "uosmo" {
+			continue
+		}
+		matched = true
+		if pool.ReserveIn != "525000000" {
+			t.Fatalf("expected input reserve 525000000, got %q", pool.ReserveIn)
+		}
+		if pool.ReserveOut != "952380953" {
+			t.Fatalf("expected output reserve 952380953, got %q", pool.ReserveOut)
+		}
+		break
 	}
-	if state.Pools[0].ReserveOut != "952380953" {
-		t.Fatalf("expected output reserve 952380953, got %q", state.Pools[0].ReserveOut)
+	if !matched {
+		t.Fatalf("expected default ibc/uatom-usdc -> uosmo pool in %+v", state.Pools)
 	}
 	if len(state.Balances) != 1 {
 		t.Fatalf("expected one balance record, got %d", len(state.Balances))
@@ -284,7 +295,7 @@ func TestMockTargetExposesPoolsBalancesAndSwapsEndpoints(t *testing.T) {
 
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/packets", 1)
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/executions", 1)
-	assertEndpointJSONCount(t, target.client, target.baseURL+"/pools", 1)
+	assertEndpointJSONCount(t, target.client, target.baseURL+"/pools", 2)
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/balances", 1)
 	assertEndpointJSONCount(t, target.client, target.baseURL+"/swaps", 1)
 }
@@ -345,7 +356,7 @@ func TestMockTargetExposesStatusEndpoint(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if status.Packets != 1 || status.Receipts != 1 || status.Executions != 0 || status.Pools != 1 || status.Balances != 0 || status.Swaps != 0 {
+	if status.Packets != 1 || status.Receipts != 1 || status.Executions != 0 || status.Pools != 2 || status.Balances != 0 || status.Swaps != 0 {
 		t.Fatalf("unexpected status counts: %+v", status)
 	}
 	if status.ReceivedPackets != 1 || status.ExecutedPackets != 0 {

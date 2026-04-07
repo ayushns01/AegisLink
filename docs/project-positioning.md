@@ -22,12 +22,13 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - Routed transfers produce packet state, execution receipts, balances, pool updates, swap records, and later acknowledgements on the destination side.
 - The end-to-end local flow is exercised in tests and exposed through `make demo` and `make inspect-demo`.
 - The repo now also proves a single-node real-chain flow through `make test-real-chain`.
+- The repo now also proves a dual-runtime local route flow through `make test-real-ibc`, where `route-relayer` moves a transfer from an AegisLink home into a dedicated `osmo-locald` home.
 
 ## What is still a local harness
 
 - AegisLink is now a store-backed single-node runtime, but it is still not a full networked CometBFT or ABCI chain.
 - State is persisted in Cosmos KV stores, but the repo still does not claim live consensus, IAVL-backed network operation, or real IBC today.
-- The destination side is an `osmosis-lite` harness, not a live IBC-connected Osmosis node.
+- The destination side is now a bootstrapped local runtime with its own config and state, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
 - The route target is realistic enough to exercise packet lifecycle and destination execution, but it is still a controlled local environment.
 
 ## Why this still matters
@@ -42,7 +43,7 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
-- `The roadmap from here is deeper chain realism, then fuller IBC realism and verifier hardening.`
+- `The roadmap from here is deeper networked chain realism, then fuller IBC-Go or Hermes realism and verifier hardening.`
 
 Avoid phrasing like:
 
@@ -54,9 +55,9 @@ Avoid phrasing like:
 
 The next realism steps are:
 
-1. Push AegisLink closer to a real chain daemon and operator runtime.
-2. Add stronger structured logs, summaries, and runbook coverage.
-3. Replace more of the local harness boundary with fuller Cosmos and IBC realism.
+1. Push AegisLink from the current single-node runtime toward a real networked chain daemon.
+2. Replace the current dual-runtime route bridge with fuller IBC-Go or Hermes-backed networking.
+3. Add stronger metrics, dashboards, and operator recovery surfaces.
 4. Only after that, spend time on optional verifier and production-style hardening.
 
 ## Hardening now present

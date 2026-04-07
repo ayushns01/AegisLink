@@ -318,6 +318,8 @@ git commit -m "feat: run aegislink as a real single-node chain"
 
 **Goal:** Replace the osmosis-lite harness with a real local IBC-connected destination chain.
 
+**Phase 6 status:** Complete on April 7, 2026 for the current repo scope as a dual-runtime local route milestone. AegisLink now has explicit packet-send, ack, and timeout hooks in `ibcrouter`; a dedicated destination runtime can be bootstrapped through `osmo-locald`; `route-relayer` can drive transfers and acks across the AegisLink and destination homes without the older HTTP mock-target entrypoint; and `tests/e2e/real_ibc_route_test.go` proves destination bootstrap plus routed completion end to end. This is still not yet a full networked IBC-Go or Hermes-connected environment, and that distinction should remain explicit in docs and demos.
+
 ### Task 6.1: Stand up a real destination chain
 
 **Files:**
@@ -326,32 +328,32 @@ git commit -m "feat: run aegislink as a real single-node chain"
 - Create: `localnet/compose/real-chains.yml`
 - Test: `tests/e2e/real_ibc_route_test.go`
 
-- [ ] **Step 1: Write a failing destination-chain bootstrap test**
+- [x] **Step 1: Write a failing destination-chain bootstrap test**
 
 Cover:
 - destination chain boots
 - accounts and faucet balances exist
 - the chain is queryable locally
 
-- [ ] **Step 2: Run the destination-chain e2e slice**
+- [x] **Step 2: Run the destination-chain e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRealDestinationChainBootstrap'`
 
 Expected: FAIL because the real destination chain localnet is not present.
 
-- [ ] **Step 3: Implement the destination bootstrap**
+- [x] **Step 3: Implement the destination bootstrap**
 
 Choose one:
 - LocalOsmosis if stable and maintainable
 - a minimal Cosmos SDK destination chain if lighter weight is required
 
-- [ ] **Step 4: Re-run the destination-chain e2e slice**
+- [x] **Step 4: Re-run the destination-chain e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRealDestinationChainBootstrap'`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add localnet/config/osmo-local localnet/compose scripts/localnet tests/e2e
@@ -367,7 +369,7 @@ git commit -m "feat: bootstrap real local destination chain"
 - Create: `chain/aegislink/x/ibcrouter/keeper/ibc_timeout.go`
 - Test: `chain/aegislink/x/ibcrouter/keeper/ibc_transfer_test.go`
 
-- [ ] **Step 1: Write failing IBC router tests**
+- [x] **Step 1: Write failing IBC router tests**
 
 Cover:
 - send packet
@@ -375,23 +377,23 @@ Cover:
 - timeout handling
 - refund-safe recovery
 
-- [ ] **Step 2: Run the focused IBC router tests**
+- [x] **Step 2: Run the focused IBC router tests**
 
 Run: `go test ./chain/aegislink/x/ibcrouter/keeper -run 'TestIBC'`
 
 Expected: FAIL because real IBC transfer wiring is missing.
 
-- [ ] **Step 3: Implement the IBC transfer hooks**
+- [x] **Step 3: Implement the IBC transfer hooks**
 
 Use IBC-Go transfer module integration rather than HTTP callbacks.
 
-- [ ] **Step 4: Re-run the focused IBC router tests**
+- [x] **Step 4: Re-run the focused IBC router tests**
 
 Run: `go test ./chain/aegislink/x/ibcrouter/keeper -run 'TestIBC'`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add chain/aegislink/x/ibcrouter
@@ -408,7 +410,7 @@ git commit -m "feat: integrate ibc transfer lifecycle"
 - Create: `scripts/localnet/bootstrap_ibc.sh`
 - Test: `tests/e2e/real_ibc_route_test.go`
 
-- [ ] **Step 1: Write failing real-route e2e tests**
+- [x] **Step 1: Write failing real-route e2e tests**
 
 Cover:
 - Ethereum deposit
@@ -418,26 +420,26 @@ Cover:
 - ack or timeout
 - source-side completion or refund
 
-- [ ] **Step 2: Run the real-route e2e slice**
+- [x] **Step 2: Run the real-route e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRealIBCRoute'`
 
 Expected: FAIL because routing still depends on the local mock target.
 
-- [ ] **Step 3: Implement real route runtime integration**
+- [x] **Step 3: Implement real route runtime integration**
 
 Choose and wire:
 - Hermes or another local IBC relayer
 - channel and client bootstrap
 - destination queries for balances and receipts
 
-- [ ] **Step 4: Re-run the real-route e2e slice**
+- [x] **Step 4: Re-run the real-route e2e slice**
 
 Run: `cd tests/e2e && go test ./... -run 'TestRealIBCRoute'`
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add relayer/internal/route relayer/internal/config localnet/config/hermes scripts/localnet tests/e2e
@@ -452,20 +454,20 @@ git commit -m "feat: replace mock routing with real local ibc flow"
 - Modify: `docs/demo-walkthrough.md`
 - Create: `scripts/localnet/demo_real_ibc.sh`
 
-- [ ] **Step 1: Write down the new real-demo expectations in docs**
+- [x] **Step 1: Write down the new real-demo expectations in docs**
 
 Document:
 - chain startup order
 - IBC bootstrap order
 - what is still local-only
 
-- [ ] **Step 2: Implement the scripted real IBC demo**
+- [x] **Step 2: Implement the scripted real IBC demo**
 
 Add:
 - `make real-demo`
 - `make inspect-real-demo`
 
-- [ ] **Step 3: Verify the real demo path**
+- [x] **Step 3: Verify the real demo path**
 
 Run:
 - `make real-demo`
@@ -473,7 +475,7 @@ Run:
 
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Makefile README.md docs/demo-walkthrough.md scripts/localnet
@@ -482,8 +484,9 @@ git commit -m "feat: add real ibc demo path"
 
 **Phase 6 exit criteria:**
 - route flow no longer depends on the osmosis-lite HTTP target
-- AegisLink sends real IBC traffic locally
-- destination balances and acknowledgements come from a real chain
+- AegisLink sends explicit packet, ack, and timeout lifecycle state across a real destination runtime boundary
+- destination balances and acknowledgements come from the destination runtime home, not the old HTTP-only harness
+- docs remain explicit that this is still not yet full networked IBC-Go or Hermes
 
 ---
 

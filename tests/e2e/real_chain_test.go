@@ -176,6 +176,9 @@ func seedRealChainRuntime(t *testing.T, homeDir string) {
 		t.Fatalf("set limit: %v", err)
 	}
 	app.SetCurrentHeight(50)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save runtime app: %v", err)
+	}
 }
 
 func validRuntimeClaim(t *testing.T) bridgetypes.DepositClaim {
@@ -258,14 +261,21 @@ func writeRuntimeSubmissionFile(t *testing.T, path string, claim bridgetypes.Dep
 
 func decodeLastJSONObject(raw string, target any) error {
 	raw = strings.TrimSpace(raw)
-	start := strings.LastIndex(raw, "\n{")
-	if start >= 0 {
-		raw = raw[start+1:]
-	} else {
-		start = strings.LastIndex(raw, "{")
-		if start >= 0 {
-			raw = raw[start:]
+
+	var lastErr error
+	for i := len(raw) - 1; i >= 0; i-- {
+		if raw[i] != '{' && raw[i] != '[' {
+			continue
 		}
+		if err := json.Unmarshal([]byte(raw[i:]), target); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+
+	if lastErr != nil {
+		return lastErr
 	}
 	return json.Unmarshal([]byte(raw), target)
 }

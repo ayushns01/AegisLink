@@ -22,16 +22,40 @@ func main() {
 func run(ctx context.Context, stderr io.Writer) error {
 	cfg := config.LoadRouteFromEnv()
 
+	sourceLocator := route.RuntimeLocator{
+		Home:        cfg.AegisLinkHome,
+		StatePath:   cfg.AegisLinkStatePath,
+		RuntimeMode: cfg.AegisLinkRuntimeMode,
+	}
+	targetLocator := route.RuntimeLocator{
+		Home:        cfg.DestinationHome,
+		StatePath:   cfg.DestinationStatePath,
+		RuntimeMode: cfg.DestinationRuntimeMode,
+	}
+
+	var target route.Target
+	if cfg.DestinationCommand != "" {
+		target = route.NewCommandIBCTarget(cfg.DestinationCommand, cfg.DestinationCommandArgs, targetLocator)
+	} else {
+		target = route.NewHTTPTarget(cfg.TargetURL, cfg.TargetTimeout)
+	}
+
 	relayer := route.NewRelayer(
-		route.NewCommandTransferSource(cfg.AegisLinkCommand, cfg.AegisLinkCommandArgs, cfg.AegisLinkStatePath),
-		route.NewCommandAckSink(cfg.AegisLinkCommand, cfg.AegisLinkCommandArgs, cfg.AegisLinkStatePath),
-		route.NewHTTPTarget(cfg.TargetURL, cfg.TargetTimeout),
+		route.NewCommandTransferSource(cfg.AegisLinkCommand, cfg.AegisLinkCommandArgs, sourceLocator),
+		route.NewCommandAckSink(cfg.AegisLinkCommand, cfg.AegisLinkCommandArgs, sourceLocator),
+		target,
 	)
 
 	_ = opslog.Write(stderr, "info", "route-relayer", "run_start", "route relayer run started", map[string]any{
-		"target_url":      cfg.TargetURL,
-		"target_timeout":  cfg.TargetTimeout.String(),
-		"aegislink_state": cfg.AegisLinkStatePath,
+		"target_url":             cfg.TargetURL,
+		"target_timeout":         cfg.TargetTimeout.String(),
+		"aegislink_home":         cfg.AegisLinkHome,
+		"aegislink_state":        cfg.AegisLinkStatePath,
+		"aegislink_runtime_mode": cfg.AegisLinkRuntimeMode,
+		"destination_home":       cfg.DestinationHome,
+		"destination_state":      cfg.DestinationStatePath,
+		"destination_runtime_mode": cfg.DestinationRuntimeMode,
+		"destination_command":    cfg.DestinationCommand,
 	})
 
 	summary, err := relayer.RunOnceWithSummary(ctx)

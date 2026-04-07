@@ -683,3 +683,33 @@ func runGoCommand(t *testing.T, dir string, extraEnv map[string]string, args ...
 	}
 	return string(output)
 }
+
+func runShellScript(t *testing.T, dir string, script string, args ...string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmdArgs := append([]string{script}, args...)
+	cmd := exec.CommandContext(ctx, "bash", cmdArgs...)
+	cmd.Dir = dir
+	cmd.Env = append([]string{}, os.Environ()...)
+
+	cacheRoot := filepath.Join(os.TempDir(), "aegislink-e2e-go-cache")
+	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
+		t.Fatalf("create e2e go cache root: %v", err)
+	}
+	cmd.Env = append(cmd.Env,
+		"GOCACHE="+filepath.Join(cacheRoot, "gocache"),
+		"GOMODCACHE="+filepath.Join(cacheRoot, "gomodcache"),
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("script timed out: bash %s\n%s", strings.Join(cmdArgs, " "), output)
+		}
+		t.Fatalf("script failed: bash %s\n%s", strings.Join(cmdArgs, " "), output)
+	}
+	return string(output)
+}

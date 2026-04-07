@@ -104,6 +104,10 @@ func (k *Keeper) persist() error {
 	return k.stateStore.Save(k.ExportPausedFlows())
 }
 
+func (k *Keeper) Flush() error {
+	return k.persist()
+}
+
 func flowKey(flow string) (string, error) {
 	key := strings.TrimSpace(flow)
 	if key == "" {

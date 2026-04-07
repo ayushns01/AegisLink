@@ -301,6 +301,10 @@ func (k *Keeper) persist() error {
 	return k.stateStore.Save(k.ExportState())
 }
 
+func (k *Keeper) Flush() error {
+	return k.persist()
+}
+
 func (k *Keeper) pendingTransfer(transferID string) (TransferRecord, error) {
 	record, ok := k.transfers[strings.TrimSpace(transferID)]
 	if !ok {

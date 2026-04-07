@@ -16,10 +16,21 @@ For the inspection-oriented path:
 make inspect-demo
 ```
 
+For the newer dual-runtime route path:
+
+```bash
+make real-demo
+make inspect-real-demo
+```
+
 The demo runs two proof paths:
 
 1. A live local Ethereum deposit that is observed over RPC, relayed into AegisLink, and routed onward through the Osmosis-style target.
 2. A configurable alternate-pool route that proves the destination side is not hardcoded to one swap output.
+
+The real-route demo adds a third proof path:
+
+3. A dual-runtime route where AegisLink and `osmo-locald` each boot from their own home directories and `route-relayer` moves a transfer across that boundary through command-backed packet and acknowledgement handling.
 
 For the visual version of this flow, use [Current flow diagrams](architecture/03-current-flow-diagrams.md).
 
@@ -30,6 +41,7 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
 - Outbound routing is not just a status flip. The destination target persists packet receipt, executes pool-backed swaps, and later produces an acknowledgement.
 - The destination side is queryable through `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`.
 - Route intent is richer than a single happy-path swap. The target can honor `min_out`, recipient override, and path metadata, and it can fail cleanly on unsupported actions.
+- The repo now also proves a real destination-runtime path through `make real-demo`, where the route no longer depends on the old HTTP target entrypoint.
 
 ## Short demo transcript
 
@@ -41,6 +53,8 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
    Say: `The route target stores receipt, execution, and later acknowledgement as separate states.`
 4. Point at the pool and balance surfaces.
    Say: `The destination side is not a stub. It tracks balances, pools, swap outputs, and failure reasons.`
+5. Run `make real-demo`.
+   Say: `Now I am proving the route against a separate destination runtime home, not just the earlier HTTP harness path.`
 
 ## Route lifecycle to point at
 
@@ -70,6 +84,7 @@ Those states are what make the local harness feel closer to real interchain deli
 - `The relayer carries evidence into AegisLink.`
 - `AegisLink mints and routes according to policy.`
 - `The mock Osmosis target persists the packet, executes the destination-side swap, and exposes both packet and execution state.`
+- `The Phase 6 path uses the dedicated osmo-locald runtime and route-relayer command path instead of the earlier HTTP-only target.`
 - `The route can also fail for execution reasons like missing pool or min_out, not only transport reasons.`
 - `The route timeout path is recoverable on AegisLink, so the demo covers both success and refund-safe failure.`
 
@@ -79,7 +94,7 @@ This is still a strong local prototype, not a production bridge:
 
 - Ethereum observation and release are live locally.
 - AegisLink is a persistent runtime, not yet a full networked Cosmos node.
-- The Osmosis side is an `osmosis-lite` harness, not a full real IBC-connected Osmosis node.
+- The destination side now has its own bootstrapped runtime home, but it is still not a full IBC-Go or Hermes-connected Osmosis node.
 
 That honesty makes the project stronger, not weaker.
 

@@ -211,6 +211,78 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	}
 }
 
+func TestSDKHomeRuntimePreservesIBCRouteAcrossReload(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "sdk-home")
+	if _, err := InitHome(Config{
+		HomeDir:     homeDir,
+		RuntimeMode: RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init sdk home: %v", err)
+	}
+
+	app, err := LoadWithConfig(Config{
+		HomeDir:     homeDir,
+		RuntimeMode: RuntimeModeSDKStore,
+	})
+	if err != nil {
+		t.Fatalf("load sdk home runtime: %v", err)
+	}
+
+	asset := registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "11155111",
+		SourceContract: "0xasset",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "USDC",
+		Enabled:        true,
+	}
+	if err := app.RegisterAsset(asset); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       asset.AssetID,
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount(t, "1000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            asset.AssetID,
+		DestinationChainID: "osmo-local-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uethusdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set route: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save sdk home runtime: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close sdk home runtime: %v", err)
+	}
+
+	reloaded, err := LoadWithConfig(Config{
+		HomeDir:     homeDir,
+		RuntimeMode: RuntimeModeSDKStore,
+	})
+	if err != nil {
+		t.Fatalf("reload sdk home runtime: %v", err)
+	}
+	defer reloaded.Close()
+
+	routes := reloaded.IBCRouterKeeper.ExportRoutes()
+	if len(routes) != 1 {
+		t.Fatalf("expected one route after sdk-home reload, got %d", len(routes))
+	}
+	if routes[0].DestinationChainID != "osmo-local-1" {
+		t.Fatalf("expected osmo-local-1 route, got %+v", routes[0])
+	}
+}
+
 func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	t.Parallel()
 

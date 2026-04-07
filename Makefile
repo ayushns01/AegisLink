@@ -1,6 +1,7 @@
-.PHONY: format test test-e2e test-route-e2e test-real-chain demo inspect-demo devnet compose-devnet
+.PHONY: format test test-e2e test-route-e2e test-real-chain test-real-ibc demo inspect-demo real-demo inspect-real-demo devnet compose-devnet
 
-GO_TEST_ENV = GOCACHE=/tmp/aegislink-gocache GOMODCACHE=/tmp/aegislink-gomodcache
+GO_CACHE_ROOT ?= /tmp/aegislink-e2e-go-cache
+GO_TEST_ENV = GOCACHE=$(GO_CACHE_ROOT)/gocache GOMODCACHE=$(GO_CACHE_ROOT)/gomodcache
 
 format:
 	@gofmt -w chain/aegislink relayer tests/e2e
@@ -19,6 +20,9 @@ test-route-e2e:
 test-real-chain:
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRealAegisLinkChain'
 
+test-real-ibc:
+	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRealDestinationChainBootstrap|TestRealIBCRoute'
+
 demo:
 	@echo "Running the live local AegisLink demo flow..."
 	@echo "Proof path: Ethereum deposit -> AegisLink settlement -> routed packet -> destination execution -> async acknowledgement"
@@ -28,6 +32,14 @@ inspect-demo:
 	@echo "Inspecting the live local demo surfaces..."
 	@echo "Inspection surfaces: /status /packets /executions /pools /balances /swaps"
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
+
+real-demo:
+	@echo "Running the real dual-runtime route demo..."
+	@bash scripts/localnet/demo_real_ibc.sh demo
+
+inspect-real-demo:
+	@echo "Inspecting the real dual-runtime route path..."
+	@bash scripts/localnet/demo_real_ibc.sh inspect
 
 devnet:
 	@echo "AegisLink shell:"

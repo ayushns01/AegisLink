@@ -102,6 +102,10 @@ func (k *Keeper) persist() error {
 	return k.stateStore.Save(k.ExportLimits())
 }
 
+func (k *Keeper) Flush() error {
+	return k.persist()
+}
+
 func limitKey(assetID string) string {
 	return strings.TrimSpace(assetID)
 }

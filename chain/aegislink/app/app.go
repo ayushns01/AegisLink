@@ -222,6 +222,10 @@ func (a *App) Routes() []ibcrouterkeeper.Route {
 	return a.IBCRouterKeeper.ExportRoutes()
 }
 
+func (a *App) SetRoute(route ibcrouterkeeper.Route) error {
+	return a.IBCRouterKeeper.SetRoute(route)
+}
+
 func (a *App) Transfers() []ibcrouterkeeper.TransferRecord {
 	return a.IBCRouterKeeper.ExportTransfers()
 }
@@ -248,6 +252,17 @@ func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferReco
 
 func (a *App) Save() error {
 	if a.Config.RuntimeMode == RuntimeModeSDKStore {
+		for _, flush := range []func() error{
+			a.RegistryKeeper.Flush,
+			a.LimitsKeeper.Flush,
+			a.PauserKeeper.Flush,
+			a.BridgeKeeper.Flush,
+			a.IBCRouterKeeper.Flush,
+		} {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	return persistRuntimeState(a.Config.StatePath, runtimeState{

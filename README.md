@@ -19,13 +19,14 @@ This repository is meant to show:
 - Ethereum deposit observation and release execution run through the live local Anvil path.
 - AegisLink owns bridge, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, and `query status`.
 - The bridge-relayer and route-relayer are real services with replay persistence and route lifecycle handling.
+- The Phase 6 route path now boots a dedicated destination runtime through `osmo-locald`, and `route-relayer` can move a transfer from an AegisLink home into that destination home without the old HTTP mock-target entrypoint.
 - Routed transfers go through packet-shaped delivery, destination-side execution, later acknowledgement, and explicit completion, failure, timeout, or refund handling.
 - The destination target tracks packets, execution receipts, balances, pools, swaps, and acknowledgement state through public inspection endpoints.
 
 ## What is a local harness today
 
 - AegisLink is a persistent Cosmos-inspired runtime, not yet a full networked CometBFT or ABCI chain.
-- The Osmosis side is an `osmosis-lite` receiver, not a live IBC-connected Osmosis node.
+- The Osmosis side is now a dedicated local destination runtime with its own home, config, and state, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
 - The verifier model is still a v1 verifiable-relayer plus threshold-attestation path, not a light client.
 
 ## Why this project is not a toy
@@ -109,6 +110,13 @@ If you want the inspection-focused path that exercises the public target surface
 make inspect-demo
 ```
 
+If you want the newer dual-runtime route path that boots both AegisLink and the destination runtime through their own homes:
+
+```bash
+make real-demo
+make inspect-real-demo
+```
+
 That demo exercises:
 
 - a live local Ethereum deposit
@@ -116,6 +124,13 @@ That demo exercises:
 - outbound routing into the Osmosis-style target
 - destination-side packet receipt, execution, and swap lifecycle
 - public target queries for packets, executions, pools, balances, and swaps
+
+The real Phase 6 route demo exercises:
+
+- destination runtime bootstrap through `scripts/localnet/bootstrap_destination_chain.sh`
+- command-backed route delivery into `osmo-locald`
+- destination-side balance and packet inspection from the destination home
+- source-side completion on the AegisLink SDK-store runtime
 
 For the full walkthrough, use [Demo walkthrough](docs/demo-walkthrough.md).
 For the honest reviewer framing, use [Project positioning](docs/project-positioning.md).
@@ -129,6 +144,7 @@ go run ./chain/aegislink/cmd/aegislinkd init --home /tmp/aegislink-home --chain-
 go run ./chain/aegislink/cmd/aegislinkd start --home /tmp/aegislink-home
 go run ./chain/aegislink/cmd/aegislinkd query status --home /tmp/aegislink-home
 make test-real-chain
+make test-real-ibc
 ```
 
 That flow creates and uses:
@@ -140,15 +156,16 @@ That flow creates and uses:
 
 ## Current checkpoint
 
-As of April 6, 2026:
+As of April 7, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
 - Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
+- Phase 6 is now complete for the current repo scope as a dual-runtime local route milestone: a destination runtime can be bootstrapped through `osmo-locald`, AegisLink can initiate routed transfers through the `ibcrouter` packet lifecycle, and `route-relayer` can drive acknowledgement completion against the destination home without the old HTTP target
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is deeper chain realism beyond the SDK-store runtime, not basic bridge invention
+- the next roadmap focus is deeper networked chain realism and fuller IBC-Go or Hermes integration, not basic bridge invention
 
 The current repo shape is:
 
@@ -163,4 +180,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The local route-harness, operator-surface, and SDK-store runtime phases are now in place. The next active roadmap work is the deeper realism layer after that milestone: moving from the current single-node runtime into a more networked Cosmos experience and then deeper verifier hardening.
+The local route-harness, operator-surface, SDK-store runtime, and dual-runtime route milestones are now in place. The next active roadmap work is the deeper realism layer after that milestone: moving from the current single-node runtimes into a more networked Cosmos and IBC experience and then deeper verifier hardening.
