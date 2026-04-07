@@ -30,7 +30,7 @@ demo:
 
 inspect-demo:
 	@echo "Inspecting the live local demo surfaces..."
-	@echo "Inspection surfaces: /status /packets /executions /pools /balances /swaps"
+	@echo "Inspection surfaces: /status /metrics /packets /executions /pools /balances /swaps"
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
 
 real-demo:

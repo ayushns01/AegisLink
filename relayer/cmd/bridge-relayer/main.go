@@ -4,18 +4,20 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/ayushns01/aegislink/relayer/internal/attestations"
 	"github.com/ayushns01/aegislink/relayer/internal/config"
 	"github.com/ayushns01/aegislink/relayer/internal/cosmos"
 	"github.com/ayushns01/aegislink/relayer/internal/evm"
+	relayermetrics "github.com/ayushns01/aegislink/relayer/internal/metrics"
 	"github.com/ayushns01/aegislink/relayer/internal/opslog"
 	"github.com/ayushns01/aegislink/relayer/internal/pipeline"
 	"github.com/ayushns01/aegislink/relayer/internal/replay"
 )
 
 func main() {
-	if err := run(context.Background(), os.Stderr); err != nil {
+	if err := run(context.Background(), os.Stdout, os.Stderr); err != nil {
 		_ = opslog.Write(os.Stderr, "error", "bridge-relayer", "run_failed", "bridge relayer run failed", map[string]any{
 			"error": err.Error(),
 		})
@@ -23,7 +25,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, stderr io.Writer) error {
+func run(ctx context.Context, stdout, stderr io.Writer) error {
 	cfg := config.LoadFromEnv()
 
 	evmSource := evm.NewFileLogSource(cfg.EVMStatePath)
@@ -89,7 +91,7 @@ func run(ctx context.Context, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return opslog.Write(stderr, "info", "bridge-relayer", "run_complete", "bridge relayer run completed", map[string]any{
+	if err := opslog.Write(stderr, "info", "bridge-relayer", "run_complete", "bridge relayer run completed", map[string]any{
 		"deposits_observed":           summary.DepositsObserved,
 		"duplicate_deposits":          summary.DuplicateDeposits,
 		"deposits_submitted":          summary.DepositsSubmitted,
@@ -100,7 +102,21 @@ func run(ctx context.Context, stderr io.Writer) error {
 		"withdrawal_release_attempts": summary.WithdrawalReleaseAttempts,
 		"deposit_next_cursor":         summary.DepositNextCursor,
 		"withdrawal_next_cursor":      summary.WithdrawalNextCursor,
-	})
+	}); err != nil {
+		return err
+	}
+
+	if metricsOutputEnabled() {
+		_, _ = io.WriteString(stdout, relayermetrics.FormatBridgeRunSnapshot(relayermetrics.BridgeRunSnapshot{
+			DepositsObserved:      summary.DepositsObserved,
+			DepositsSubmitted:     summary.DepositsSubmitted,
+			DepositSubmitAttempts: summary.DepositSubmitAttempts,
+			WithdrawalsObserved:   summary.WithdrawalsObserved,
+			WithdrawalsReleased:   summary.WithdrawalsReleased,
+		}))
+	}
+
+	return nil
 }
 
 func evmSourceMode(cfg config.Config) string {
@@ -115,4 +131,9 @@ func cosmosRuntimeMode(cfg config.Config) string {
 		return "command"
 	}
 	return "file"
+}
+
+func metricsOutputEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("AEGISLINK_PRINT_METRICS"))
+	return value == "1" || strings.EqualFold(value, "true")
 }

@@ -621,6 +621,8 @@ git commit -m "docs: add verifier evolution roadmap"
 
 **Goal:** Give operators real metrics, dashboards, and recovery workflows instead of only demo inspection surfaces.
 
+**Phase 8 status:** In progress on April 7, 2026. The repo now has shared Prometheus-text metric formatting, `aegislinkd query metrics`, a destination-side `/metrics` endpoint on the mock target, and opt-in one-shot metric snapshots from the relayers through `AEGISLINK_PRINT_METRICS=1`. Dashboards, scrape config, and recovery-drill coverage are still ahead.
+
 ### Task 8.1: Add Prometheus-style metrics to the binaries
 
 **Files:**
@@ -632,7 +634,7 @@ git commit -m "docs: add verifier evolution roadmap"
 - Modify: `relayer/cmd/mock-osmosis-target/main.go`
 - Test: `relayer/internal/metrics/metrics_test.go`
 
-- [ ] **Step 1: Write failing metrics tests**
+- [x] **Step 1: Write failing metrics tests**
 
 Cover counters and gauges for:
 - processed claims
@@ -641,17 +643,17 @@ Cover counters and gauges for:
 - timed-out transfers
 - destination swap failures
 
-- [ ] **Step 2: Run the focused metrics tests**
+- [x] **Step 2: Run the focused metrics tests**
 
 Run: `go test ./relayer/... ./chain/aegislink/... -run 'TestMetrics'`
 
 Expected: FAIL because metrics exporters do not exist yet.
 
-- [ ] **Step 3: Implement minimal Prometheus surfaces**
+- [x] **Step 3: Implement minimal Prometheus surfaces**
 
 Expose `/metrics` where appropriate.
 
-- [ ] **Step 4: Re-run the focused metrics tests**
+- [x] **Step 4: Re-run the focused metrics tests**
 
 Run: `go test ./relayer/... ./chain/aegislink/... -run 'TestMetrics'`
 

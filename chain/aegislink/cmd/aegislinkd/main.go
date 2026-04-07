@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/app"
+	appmetrics "github.com/ayushns01/aegislink/chain/aegislink/internal/metrics"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/opslog"
 	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
@@ -68,6 +69,8 @@ func runQuery(args []string, stdout, stderr io.Writer) error {
 		return querySummary(args[1:], stdout)
 	case "claim":
 		return queryClaim(args[1:], stdout)
+	case "metrics":
+		return queryMetrics(args[1:], stdout)
 	case "signer-set":
 		return querySignerSet(args[1:], stdout)
 	case "signer-sets":
@@ -264,6 +267,33 @@ func queryClaim(args []string, stdout io.Writer) error {
 	}
 
 	return fmt.Errorf("claim %q not found", *messageID)
+}
+
+func queryMetrics(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("metrics", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+
+	status := a.Status()
+	_, err = io.WriteString(stdout, appmetrics.FormatRuntimeSnapshot(appmetrics.RuntimeSnapshot{
+		AppName:           status.AppName,
+		ChainID:           status.ChainID,
+		ProcessedClaims:   uint64(status.ProcessedClaims),
+		FailedClaims:      status.FailedClaims,
+		PendingTransfers:  status.PendingTransfers,
+		TimedOutTransfers: status.TimedOutTransfers,
+	}))
+	return err
 }
 
 func querySignerSet(args []string, stdout io.Writer) error {

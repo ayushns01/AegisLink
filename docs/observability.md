@@ -53,6 +53,17 @@ Bridge infrastructure fails badly when operators cannot tell the difference betw
 - `aegislink_ibc_route_failures_total`
 - mock target `/status` summary plus `/packets` and `/executions` for local demo and inspection runs
 
+## Metrics surfaces available now
+
+The repo now has the first real Prometheus-style inspection surfaces:
+
+- `aegislinkd query metrics`
+  Exposes processed claims, failed claims, pending transfers, and timed-out transfers from the runtime snapshot.
+- mock target `/metrics`
+  Exposes destination packet, execution, ready-ack, and swap-failure counts as Prometheus text.
+- `bridge-relayer` and `route-relayer` with `AEGISLINK_PRINT_METRICS=1`
+  Emit a one-shot Prometheus text snapshot after a run so operators can capture worker metrics during local testing or scripts.
+
 ## Structured logs available now
 
 The current repo now emits structured JSON logs for the main operator surfaces:

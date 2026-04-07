@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	relayermetrics "github.com/ayushns01/aegislink/relayer/internal/metrics"
 )
 
 type MockTargetMode string
@@ -146,6 +148,7 @@ func NewMockTargetHandlerWithConfig(cfg MockTargetConfig) http.Handler {
 	mux.HandleFunc("/balances", target.handleBalances)
 	mux.HandleFunc("/swaps", target.handleSwaps)
 	mux.HandleFunc("/status", target.handleStatus)
+	mux.HandleFunc("/metrics", target.handleMetrics)
 	return mux
 }
 
@@ -299,6 +302,25 @@ func (t *MockTarget) handleStatus(w http.ResponseWriter, r *http.Request) {
 	defer t.mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(t.statusLocked())
+}
+
+func (t *MockTarget) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.mu.Lock()
+	status := t.statusLocked()
+	t.mu.Unlock()
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	_, _ = w.Write([]byte(relayermetrics.FormatTargetSnapshot(relayermetrics.TargetSnapshot{
+		Packets:      status.Packets,
+		Executions:   status.Executions,
+		SwapFailures: status.SwapFailures,
+		ReadyAcks:    status.ReadyAcks,
+	})))
 }
 
 func (t *MockTarget) handleAckControl(w http.ResponseWriter, r *http.Request) {

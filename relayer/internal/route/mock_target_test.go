@@ -3,10 +3,12 @@ package route
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -1138,6 +1140,56 @@ func TestMockTargetCanResolveReadyAckAndMarkItConfirmed(t *testing.T) {
 	}
 	if state.Receipts[0].AckState != "completed" {
 		t.Fatalf("expected completed ack state, got %q", state.Receipts[0].AckState)
+	}
+}
+
+func TestMetricsMockTargetEndpointExposesPrometheusSnapshot(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "mock-osmosis-state.json")
+	handler := NewMockTargetHandler("manual", statePath, 0)
+
+	post := httptest.NewRequest(http.MethodPost, "/transfers", strings.NewReader(`{
+		"transfer":{"transfer_id":"ibc/eth.usdc/1","asset_id":"eth.usdc","amount":"25000000","receiver":"osmo1recipient","destination_chain_id":"osmosis-1","channel_id":"channel-0","destination_denom":"ibc/uatom-usdc","timeout_height":140,"memo":"swap:uosmo:min_out=999999999"},
+		"packet":{"sequence":1,"source_port":"transfer","source_channel":"channel-0","destination_port":"transfer","destination_channel":"channel-0","timeout_height":140,"data":{"denom":"eth.usdc","amount":"25000000","sender":"aegis1sender","receiver":"osmo1recipient","memo":"swap:uosmo:min_out=999999999"}},
+		"denom_trace":{"path":"transfer/channel-0","base_denom":"uethusdc","ibc_denom":"ibc/uatom-usdc"},
+		"action":{"type":"swap","target_denom":"uosmo","min_out":"999999999"}
+	}`))
+	post.Header.Set("Content-Type", "application/json")
+	postRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /transfers, got %d", postRecorder.Code)
+	}
+
+	ackPoll := httptest.NewRequest(http.MethodGet, "/acks", nil)
+	ackRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(ackRecorder, ackPoll)
+	if ackRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /acks, got %d", ackRecorder.Code)
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRecorder, metricsReq)
+	if metricsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /metrics, got %d", metricsRecorder.Code)
+	}
+
+	body, err := io.ReadAll(metricsRecorder.Result().Body)
+	if err != nil {
+		t.Fatalf("read metrics response: %v", err)
+	}
+	output := string(body)
+	for _, expected := range []string{
+		"aegislink_destination_packets",
+		"aegislink_destination_executions",
+		"aegislink_destination_swap_failures_total",
+		"aegislink_destination_ready_acks",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected metrics output to contain %q\n%s", expected, output)
+		}
 	}
 }
 

@@ -146,6 +146,7 @@ For the honest reviewer framing, use [Project positioning](docs/project-position
 go run ./chain/aegislink/cmd/aegislinkd init --home /tmp/aegislink-home --chain-id aegislink-devnet-1 --runtime-mode sdk-store-runtime
 go run ./chain/aegislink/cmd/aegislinkd start --home /tmp/aegislink-home
 go run ./chain/aegislink/cmd/aegislinkd query status --home /tmp/aegislink-home
+go run ./chain/aegislink/cmd/aegislinkd query metrics --home /tmp/aegislink-home
 go run ./chain/aegislink/cmd/aegislinkd query signer-set --home /tmp/aegislink-home
 go run ./chain/aegislink/cmd/aegislinkd query signer-sets --home /tmp/aegislink-home
 make test-real-chain
@@ -168,11 +169,12 @@ As of April 7, 2026:
 - Phase 6 is now complete for the current repo scope as a dual-runtime local route milestone: a destination runtime can be bootstrapped through `osmo-locald`, AegisLink can initiate routed transfers through the `ibcrouter` packet lifecycle, and `route-relayer` can drive acknowledgement completion against the destination home without the old HTTP target
 - Phase 7 is now complete for the current repo scope: the Ethereum side has a real threshold-verifier path with signer rotation, AegisLink attestations bind to versioned signer sets with activation and expiry rules, and the runtime exposes `query signer-set`, `query signer-sets`, and signer-set status summaries
 - the verifier evolution path is now documented explicitly, so the trust-model story is inspectable instead of buried in keeper logic or contract code
+- Phase 8 is now in progress: `aegislinkd` exposes a Prometheus-style `query metrics` snapshot, the destination target now serves `/metrics`, and the one-shot relayers can emit Prometheus text snapshots when `AEGISLINK_PRINT_METRICS=1`
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is Phase 8 operator metrics and dashboards, with deeper networked chain realism and fuller IBC-Go or Hermes integration still ahead beyond the current local-runtime scope
+- the next roadmap focus is finishing Task 8.1 metrics wiring and then adding the local monitoring stack, dashboards, and recovery drills
 
 The current repo shape is:
 

@@ -4,14 +4,16 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/ayushns01/aegislink/relayer/internal/config"
+	relayermetrics "github.com/ayushns01/aegislink/relayer/internal/metrics"
 	"github.com/ayushns01/aegislink/relayer/internal/opslog"
 	"github.com/ayushns01/aegislink/relayer/internal/route"
 )
 
 func main() {
-	if err := run(context.Background(), os.Stderr); err != nil {
+	if err := run(context.Background(), os.Stdout, os.Stderr); err != nil {
 		_ = opslog.Write(os.Stderr, "error", "route-relayer", "run_failed", "route relayer run failed", map[string]any{
 			"error": err.Error(),
 		})
@@ -19,7 +21,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, stderr io.Writer) error {
+func run(ctx context.Context, stdout, stderr io.Writer) error {
 	cfg := config.LoadRouteFromEnv()
 
 	sourceLocator := route.RuntimeLocator{
@@ -47,22 +49,22 @@ func run(ctx context.Context, stderr io.Writer) error {
 	)
 
 	_ = opslog.Write(stderr, "info", "route-relayer", "run_start", "route relayer run started", map[string]any{
-		"target_url":             cfg.TargetURL,
-		"target_timeout":         cfg.TargetTimeout.String(),
-		"aegislink_home":         cfg.AegisLinkHome,
-		"aegislink_state":        cfg.AegisLinkStatePath,
-		"aegislink_runtime_mode": cfg.AegisLinkRuntimeMode,
-		"destination_home":       cfg.DestinationHome,
-		"destination_state":      cfg.DestinationStatePath,
+		"target_url":               cfg.TargetURL,
+		"target_timeout":           cfg.TargetTimeout.String(),
+		"aegislink_home":           cfg.AegisLinkHome,
+		"aegislink_state":          cfg.AegisLinkStatePath,
+		"aegislink_runtime_mode":   cfg.AegisLinkRuntimeMode,
+		"destination_home":         cfg.DestinationHome,
+		"destination_state":        cfg.DestinationStatePath,
 		"destination_runtime_mode": cfg.DestinationRuntimeMode,
-		"destination_command":    cfg.DestinationCommand,
+		"destination_command":      cfg.DestinationCommand,
 	})
 
 	summary, err := relayer.RunOnceWithSummary(ctx)
 	if err != nil {
 		return err
 	}
-	return opslog.Write(stderr, "info", "route-relayer", "run_complete", "route relayer run completed", map[string]any{
+	if err := opslog.Write(stderr, "info", "route-relayer", "run_complete", "route relayer run completed", map[string]any{
 		"ready_acks":          summary.ReadyAcks,
 		"completed_acks":      summary.CompletedAcks,
 		"failed_acks":         summary.FailedAcks,
@@ -70,5 +72,23 @@ func run(ctx context.Context, stderr io.Writer) error {
 		"transfers_observed":  summary.TransfersObserved,
 		"transfers_delivered": summary.TransfersDelivered,
 		"received_deliveries": summary.ReceivedDeliveries,
-	})
+	}); err != nil {
+		return err
+	}
+
+	if metricsOutputEnabled() {
+		_, _ = io.WriteString(stdout, relayermetrics.FormatRouteRunSnapshot(relayermetrics.RouteRunSnapshot{
+			PendingTransfers:   summary.TransfersObserved,
+			TransfersDelivered: summary.TransfersDelivered,
+			TimedOutAcks:       summary.TimedOutAcks,
+			FailedAcks:         summary.FailedAcks,
+		}))
+	}
+
+	return nil
+}
+
+func metricsOutputEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("AEGISLINK_PRINT_METRICS"))
+	return value == "1" || strings.EqualFold(value, "true")
 }

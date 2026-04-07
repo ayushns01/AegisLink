@@ -338,6 +338,44 @@ func TestRunQuerySignerSetsListsHistory(t *testing.T) {
 	}
 }
 
+func TestMetricsRunQueryMetricsPrintsPrometheusSnapshot(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	app.SetCurrentHeight(75)
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if _, err := app.InitiateIBCTransfer("eth.usdc", mustAmount(t, "25000000"), "osmo1receiver", 120, "swap:uosmo"); err != nil {
+		t.Fatalf("initiate ibc transfer: %v", err)
+	}
+	if _, err := app.TimeoutIBCTransfer("ibc/eth.usdc/1"); err != nil {
+		t.Fatalf("timeout ibc transfer: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := run([]string{"query", "metrics", "--state-path", statePath}, &stdout, io.Discard); err != nil {
+		t.Fatalf("run query metrics: %v", err)
+	}
+
+	output := stdout.String()
+	for _, expected := range []string{
+		"aegislink_runtime_processed_claims_total",
+		"aegislink_runtime_failed_claims_total",
+		"aegislink_runtime_pending_transfers",
+		"aegislink_runtime_timed_out_transfers_total",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected metrics output to contain %q\n%s", expected, output)
+		}
+	}
+}
+
 func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	t.Parallel()
 
