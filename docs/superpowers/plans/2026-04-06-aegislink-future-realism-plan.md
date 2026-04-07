@@ -753,6 +753,8 @@ git commit -m "docs: add recovery drill coverage"
 
 **Goal:** Add extensibility only after runtime, IBC, security, and ops are credible.
 
+**Phase 9 status:** In progress on April 7, 2026. Task 9.1 is now complete for the current repo scope: `ibcrouter` supports first-class destination route profiles with route-level asset allowlists and memo-policy guardrails, while the older single-route path remains intact for backwards compatibility. Governance-driven policy updates and richer route actions are still ahead.
+
 ### Task 9.1: Generalize destination route registry
 
 **Files:**
@@ -760,22 +762,22 @@ git commit -m "docs: add recovery drill coverage"
 - Create: `chain/aegislink/x/ibcrouter/types/route_profile.go`
 - Test: `chain/aegislink/x/ibcrouter/keeper/route_profile_test.go`
 
-- [ ] **Step 1: Write failing route-profile tests**
+- [x] **Step 1: Write failing route-profile tests**
 
 Cover:
 - multiple destinations
 - per-route policy
 - asset allowlists by route
 
-- [ ] **Step 2: Run focused route-profile tests**
+- [x] **Step 2: Run focused route-profile tests**
 
 Run: `go test ./chain/aegislink/x/ibcrouter/keeper -run 'TestRouteProfile'`
 
 Expected: FAIL because route profiles do not exist yet.
 
-- [ ] **Step 3: Implement minimal route profiles**
+- [x] **Step 3: Implement minimal route profiles**
 
-- [ ] **Step 4: Re-run focused route-profile tests**
+- [x] **Step 4: Re-run focused route-profile tests**
 
 Run: `go test ./chain/aegislink/x/ibcrouter/keeper -run 'TestRouteProfile'`
 

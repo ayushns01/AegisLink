@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/testutil"
+	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 )
 
 func TestSDKKeeperPersistsTransfersAcrossReload(t *testing.T) {
@@ -49,5 +50,49 @@ func TestSDKKeeperPersistsTransfersAcrossReload(t *testing.T) {
 	}
 	if transfers[0].TransferID != record.TransferID {
 		t.Fatalf("expected transfer id %q, got %q", record.TransferID, transfers[0].TransferID)
+	}
+}
+
+func TestSDKKeeperPersistsRouteProfilesAcrossReload(t *testing.T) {
+	store, keys := testutil.NewInMemoryCommitMultiStore(t, "ibcrouter")
+
+	keeper, err := NewStoreKeeper(store, keys["ibcrouter"])
+	if err != nil {
+		t.Fatalf("expected store-backed keeper to initialize, got %v", err)
+	}
+
+	if err := keeper.SetRouteProfile(ibcroutertypes.RouteProfile{
+		RouteID:            "osmosis-fast",
+		DestinationChainID: "osmosis-local-1",
+		ChannelID:          "channel-0",
+		Enabled:            true,
+		Assets: []ibcroutertypes.AssetRoute{
+			{AssetID: "eth.usdc", DestinationDenom: "ibc/uethusdc"},
+			{AssetID: "eth.weth", DestinationDenom: "ibc/uethweth"},
+		},
+		Policy: ibcroutertypes.RoutePolicy{
+			AllowedMemoPrefixes: []string{"swap:"},
+		},
+	}); err != nil {
+		t.Fatalf("expected route profile registration to succeed, got %v", err)
+	}
+
+	reloaded, err := NewStoreKeeper(store, keys["ibcrouter"])
+	if err != nil {
+		t.Fatalf("expected store-backed keeper reload to succeed, got %v", err)
+	}
+
+	profile, ok := reloaded.GetRouteProfile("osmosis-fast")
+	if !ok {
+		t.Fatalf("expected route profile after reload")
+	}
+	if profile.DestinationChainID != "osmosis-local-1" {
+		t.Fatalf("expected persisted destination chain, got %q", profile.DestinationChainID)
+	}
+	if len(profile.Assets) != 2 {
+		t.Fatalf("expected 2 persisted route-profile assets, got %d", len(profile.Assets))
+	}
+	if len(profile.Policy.AllowedMemoPrefixes) != 1 || profile.Policy.AllowedMemoPrefixes[0] != "swap:" {
+		t.Fatalf("expected persisted memo policy, got %#v", profile.Policy.AllowedMemoPrefixes)
 	}
 }

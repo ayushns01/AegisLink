@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
+	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	storetypes "cosmossdk.io/store/types"
 )
 
@@ -18,6 +19,10 @@ var (
 	ErrTransferNotFound       = errors.New("ibc transfer not found")
 	ErrTransferNotPending     = errors.New("ibc transfer not pending")
 	ErrTransferNotRecoverable = errors.New("ibc transfer not recoverable")
+	ErrRouteProfileNotFound   = errors.New("ibc route profile not found")
+	ErrRouteProfileDisabled   = errors.New("ibc route profile disabled")
+	ErrRouteProfileAssetNotAllowed = errors.New("ibc route profile asset not allowed")
+	ErrRouteProfilePolicyViolation = errors.New("ibc route profile policy violation")
 )
 
 type TransferStatus string
@@ -71,6 +76,7 @@ type TransferRecord struct {
 type StateSnapshot struct {
 	NextSequence uint64                   `json:"next_sequence"`
 	Routes       []Route                  `json:"routes"`
+	RouteProfiles []ibcroutertypes.RouteProfile `json:"route_profiles"`
 	Transfers    []TransferRecordSnapshot `json:"transfers"`
 }
 
@@ -90,6 +96,7 @@ type TransferRecordSnapshot struct {
 
 type Keeper struct {
 	routes       map[string]Route
+	routeProfiles map[string]ibcroutertypes.RouteProfile
 	transfers    map[string]TransferRecord
 	nextSequence uint64
 	stateStore   *sdkstore.JSONStateStore
@@ -98,6 +105,7 @@ type Keeper struct {
 func NewKeeper() *Keeper {
 	return &Keeper{
 		routes:       make(map[string]Route),
+		routeProfiles: make(map[string]ibcroutertypes.RouteProfile),
 		transfers:    make(map[string]TransferRecord),
 		nextSequence: 1,
 	}
@@ -132,9 +140,23 @@ func (k *Keeper) SetRoute(route Route) error {
 	return k.persist()
 }
 
+func (k *Keeper) SetRouteProfile(profile ibcroutertypes.RouteProfile) error {
+	if err := profile.ValidateBasic(); err != nil {
+		return err
+	}
+	stored := profile.Canonical()
+	k.routeProfiles[routeProfileKey(stored.RouteID)] = stored
+	return k.persist()
+}
+
 func (k *Keeper) GetRoute(assetID string) (Route, bool) {
 	route, ok := k.routes[routeKey(assetID)]
 	return route, ok
+}
+
+func (k *Keeper) GetRouteProfile(routeID string) (ibcroutertypes.RouteProfile, bool) {
+	profile, ok := k.routeProfiles[routeProfileKey(routeID)]
+	return profile, ok
 }
 
 func (k *Keeper) InitiateTransfer(assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (TransferRecord, error) {
@@ -145,6 +167,29 @@ func (k *Keeper) InitiateTransfer(assetID string, amount *big.Int, receiver stri
 	if !route.Enabled {
 		return TransferRecord{}, ErrRouteDisabled
 	}
+	return k.initiateTransfer(assetID, amount, receiver, timeoutHeight, memo, route.DestinationChainID, route.ChannelID, route.DestinationDenom)
+}
+
+func (k *Keeper) InitiateTransferWithProfile(routeID, assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (TransferRecord, error) {
+	profile, ok := k.GetRouteProfile(routeID)
+	if !ok {
+		return TransferRecord{}, ErrRouteProfileNotFound
+	}
+	if !profile.Enabled {
+		return TransferRecord{}, ErrRouteProfileDisabled
+	}
+
+	assetRoute, ok := profile.AssetRoute(assetID)
+	if !ok {
+		return TransferRecord{}, ErrRouteProfileAssetNotAllowed
+	}
+	if !profile.Policy.AllowsMemo(memo) {
+		return TransferRecord{}, ErrRouteProfilePolicyViolation
+	}
+	return k.initiateTransfer(assetID, amount, receiver, timeoutHeight, memo, profile.DestinationChainID, profile.ChannelID, assetRoute.DestinationDenom)
+}
+
+func (k *Keeper) initiateTransfer(assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo, destinationChainID, channelID, destinationDenom string) (TransferRecord, error) {
 	if amount == nil || amount.Sign() <= 0 {
 		return TransferRecord{}, fmt.Errorf("%w: amount must be positive", ErrInvalidTransfer)
 	}
@@ -158,13 +203,13 @@ func (k *Keeper) InitiateTransfer(assetID string, amount *big.Int, receiver stri
 	sequence := k.nextSequence
 	k.nextSequence++
 	record := TransferRecord{
-		TransferID:         fmt.Sprintf("ibc/%s/%d", route.AssetID, sequence),
-		AssetID:            route.AssetID,
+		TransferID:         fmt.Sprintf("ibc/%s/%d", strings.TrimSpace(assetID), sequence),
+		AssetID:            strings.TrimSpace(assetID),
 		Amount:             cloneAmount(amount),
 		Receiver:           strings.TrimSpace(receiver),
-		DestinationChainID: route.DestinationChainID,
-		ChannelID:          route.ChannelID,
-		DestinationDenom:   route.DestinationDenom,
+		DestinationChainID: strings.TrimSpace(destinationChainID),
+		ChannelID:          strings.TrimSpace(channelID),
+		DestinationDenom:   strings.TrimSpace(destinationDenom),
 		TimeoutHeight:      timeoutHeight,
 		Memo:               strings.TrimSpace(memo),
 		Status:             TransferStatusPending,
@@ -226,6 +271,14 @@ func (k *Keeper) ExportRoutes() []Route {
 	return routes
 }
 
+func (k *Keeper) ExportRouteProfiles() []ibcroutertypes.RouteProfile {
+	profiles := make([]ibcroutertypes.RouteProfile, 0, len(k.routeProfiles))
+	for _, profile := range k.routeProfiles {
+		profiles = append(profiles, profile.Canonical())
+	}
+	return profiles
+}
+
 func (k *Keeper) ExportTransfers() []TransferRecord {
 	transfers := make([]TransferRecord, 0, len(k.transfers))
 	for _, transfer := range k.transfers {
@@ -238,6 +291,7 @@ func (k *Keeper) ExportState() StateSnapshot {
 	state := StateSnapshot{
 		NextSequence: k.nextSequence,
 		Routes:       k.ExportRoutes(),
+		RouteProfiles: k.ExportRouteProfiles(),
 		Transfers:    make([]TransferRecordSnapshot, 0, len(k.transfers)),
 	}
 	for _, transfer := range k.transfers {
@@ -262,6 +316,13 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 	k.routes = make(map[string]Route, len(state.Routes))
 	for _, route := range state.Routes {
 		if err := k.SetRoute(route); err != nil {
+			return err
+		}
+	}
+
+	k.routeProfiles = make(map[string]ibcroutertypes.RouteProfile, len(state.RouteProfiles))
+	for _, profile := range state.RouteProfiles {
+		if err := k.SetRouteProfile(profile); err != nil {
 			return err
 		}
 	}
@@ -318,6 +379,10 @@ func (k *Keeper) pendingTransfer(transferID string) (TransferRecord, error) {
 
 func routeKey(assetID string) string {
 	return strings.TrimSpace(assetID)
+}
+
+func routeProfileKey(routeID string) string {
+	return strings.TrimSpace(routeID)
 }
 
 func canonicalRoute(route Route) Route {
