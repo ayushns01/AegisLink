@@ -4,17 +4,17 @@ This document describes both the current technology choices already implemented 
 
 ## Current Checkpoint
 
-As of April 5, 2026, the repo has already implemented:
+As of April 7, 2026, the repo has already implemented:
 
-- the AegisLink persistent runtime and bridge-domain modules in Go
-- the Ethereum gateway and verifier contracts in Solidity with Foundry tests
-- the Go relayer pipeline with watchers, attestation collection, replay persistence, command-backed AegisLink integration, and RPC-backed Ethereum source and release paths
-- the `ibcrouter` routing module with runtime query and tx surfaces for initiation, completion, failure, timeout, and refund handling
-- a dedicated route-relayer plus mock target service for local routed-transfer handoff
-- packet-shaped route delivery, asynchronous acknowledgement handling, and destination-side receive state with configurable multi-pool, fee-aware swap execution on the mock Osmosis target
-- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed routed transfer record on AegisLink through that handoff
+- the AegisLink store-backed runtime and bridge-domain modules in Go
+- the Ethereum gateway, narrow verifier boundary, and threshold-verifier path in Solidity with Foundry tests
+- the Go relayer pipeline with replay persistence, command-backed AegisLink integration, and RPC-backed Ethereum source and release paths
+- the `ibcrouter` routing module with route profiles, governed policy changes, and runtime query or tx surfaces
+- a dedicated `route-relayer` plus a separate `osmo-locald` destination runtime for the higher-fidelity routed path
+- packet-shaped route delivery, asynchronous acknowledgement handling, and destination-side execution state with balances, pools, swaps, stakes, and explicit receipts
+- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed dual-runtime transfer record
 
-The main things still pending in this stack are a fuller Cosmos node runtime and a live local IBC or Osmosis environment beyond the current local target harness.
+The main things still pending in this stack are a fuller networked AegisLink node, fuller IBC-Go or Hermes-backed networking, and Docker-backed monitoring validation on a machine with Docker installed.
 
 ## Recommended Stack
 
@@ -49,9 +49,9 @@ Why this stack:
 ### Relayer and services
 
 - Language: Go
-- Current runtime: hybrid local runtime with RPC-backed Ethereum observation and release execution, command-backed AegisLink integration, and standard-library JSON fallbacks for fixture-driven paths
+- Current runtime: hybrid local runtime with RPC-backed Ethereum observation and release execution, command-backed AegisLink integration, a dual-runtime destination path, and standard-library JSON fallbacks for targeted fixture-driven paths
 - Current config: environment-variable loader in Go
-- Current route handoff: a dedicated Go route-relayer plus a lightweight HTTP target used to drive routed transfers during local dev and e2e tests
+- Current route handoff: a dedicated Go `route-relayer` plus the separate `osmo-locald` destination runtime for the higher-fidelity path, with the older HTTP target kept only for focused local tests
 - Planned upgrade: `go-ethereum` for richer Ethereum client ergonomics beyond the current stdlib JSON-RPC path
 - Planned upgrade: Cosmos client libraries or a fuller node interface for submitting bridge transactions directly into the chain
 - Planned upgrade: richer config loading once the runtime moves beyond local fixtures
@@ -72,20 +72,21 @@ Why this stack:
 
 ## Local Development Setup
 
-The target local setup should boot three things:
+The target local setup should boot four things:
 
 1. A local Ethereum devnet.
-2. an AegisLink local node.
-3. The relayer connected to both.
+2. an AegisLink local node or runtime home.
+3. a destination runtime home.
+4. The relayers connected across those surfaces.
 
-The current checkpoint is already past the first local integration target:
+The current checkpoint is already past the original local integration target:
 
-- the relayer can run against the persistent AegisLink runtime
+- the relayer can run against the store-backed AegisLink runtime
 - the relayer can observe live Ethereum deposits and execute live Ethereum releases against Anvil
-- the contracts, runtime logic, relayer, and e2e loop all have passing test suites
-- the route lifecycle to an Osmosis-style destination is now implemented on the AegisLink runtime side
-- a local route-relayer and mock target can drive routed-transfer completion and recovery
-- the next milestones are fuller Cosmos runtime realism and a live local IBC or Osmosis routing environment
+- the contracts, runtime logic, relayers, and e2e loops all have passing test suites
+- the route lifecycle now has a dual-runtime path through `osmo-locald`
+- the route layer supports route profiles, governed policy changes, and multiple routed actions
+- the next realism milestones are fuller networked chain behavior and fuller IBC-Go or Hermes-style networking
 
 Recommended developer workflow:
 

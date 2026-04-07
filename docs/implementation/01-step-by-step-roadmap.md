@@ -4,22 +4,25 @@ AegisLink is an Ethereum-to-Cosmos interoperability layer. Phase 1 builds a cust
 
 ## Current Checkpoint
 
-As of April 5, 2026, the repository has already completed the foundation through the latest route-execution milestone:
+As of April 7, 2026, this roadmap is best read as the historical build-order that got the repository from zero to a finished local-scope bridge system.
 
-- repo bootstrap and shared message model
-- chain safety modules for registry, limits, and pause control
-- bridge verification and accounting state machine on the Cosmos side
-- Ethereum gateway and verifier contracts
-- relayer pipeline with durable replay state, command-backed AegisLink integration, and RPC-backed Ethereum observation and release execution
-- end-to-end proof of deposit, mint, burn, and release across the local bridge loop
-- `ibcrouter` route management on the AegisLink side
-- runtime query and tx surfaces for route initiation, completion, failure, timeout, and refund
-- a dedicated `route-relayer` and `mock-osmosis-target` service pair for local routed-transfer handoff
-- packetized local route delivery with asynchronous acknowledgement handling
-- destination-side packet receipts, denom-trace-style metadata, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven failure handling on the mock Osmosis target
-- route-focused end-to-end tests, including a live Ethereum deposit that becomes a completed Osmosis-style transfer record through that local target
+The repository now already includes:
 
-The next roadmap milestone stays inside `Phase 5: Route Assets To Osmosis`, but now the focus is deeper realism again: move from the current local route target into a fuller local IBC or Osmosis harness. A parallel hardening milestone is still recommended before or alongside that work: deepen the AegisLink runtime from a persistent shell into a fuller Cosmos node experience.
+- the shared message model, safety modules, and bridge accounting state machine
+- live local Ethereum observation and release execution
+- a store-backed AegisLink runtime with `init`, `start`, `tx`, and `query` flows
+- a dual-runtime destination path through `osmo-locald` and `route-relayer`
+- threshold-verifier and signer-set lifecycle support
+- monitoring surfaces, recovery drills, and operator docs
+- destination route profiles, governance-style policy changes, and richer routed actions like `swap` and `stake`
+
+For the current repo status and the realism work that came after this roadmap, use:
+
+- [README](../../README.md)
+- [Project positioning](../project-positioning.md)
+- [Future realism plan](../superpowers/plans/2026-04-06-aegislink-future-realism-plan.md)
+
+The phase checklist below remains useful as the original build-order narrative, but it is no longer the active status tracker for the repository.
 
 ## How The System Fits Together
 

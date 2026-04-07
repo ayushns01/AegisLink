@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Cosmos SDK, CometBFT, IBC-Go, Protobuf, buf, Solidity, Foundry, OpenZeppelin, Docker Compose, Anvil, GitHub Actions.
 
-**Current checkpoint:** As of April 5, 2026, Tasks 1 through 8 and the next Task 9 routing slices have been implemented in the repository. That includes the persistent AegisLink runtime, live Ethereum RPC deposit observation, live Ethereum release execution in the local end-to-end loop, the `ibcrouter` module, route CLI surfaces, a dedicated `route-relayer`, a lightweight `mock-osmosis-target`, packet-shaped routed delivery, asynchronous acknowledgement handling, and destination-side receive state with balances, configurable multi-pool fee-aware swap execution, and execution-driven acknowledgement failures. The next active roadmap target is still Task 9, but the remaining work is to deepen the route milestone into a fuller local IBC or Osmosis environment while fuller Cosmos node realism remains a worthwhile hardening track.
+**Current checkpoint:** As of April 7, 2026, this plan is historical rather than the live status tracker. Tasks 1 through 9 are now complete for the current local repo scope, including the store-backed AegisLink runtime, dual-runtime destination flow through `osmo-locald`, threshold-verifier and signer-set support, monitoring and recovery surfaces, route profiles, governance-style policy changes, and richer routed actions like `swap` and `stake`. For the current status and later realism work, use [README](../../README.md) and [2026-04-06-aegislink-future-realism-plan.md](2026-04-06-aegislink-future-realism-plan.md).
 
 ---
 

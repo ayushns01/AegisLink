@@ -35,7 +35,7 @@ The bridge zone is the accounting and policy boundary. It is not just a message 
 
 Current implementation note:
 
-- As of April 5, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, command-backed AegisLink runtime integration, RPC-backed Ethereum observation and release execution, plus a separate local route-relayer for Osmosis-style handoff.
+- As of April 7, 2026, the repository implements the relayer as a real pipeline with replay persistence, forward and reverse-path processing, command-backed AegisLink runtime integration, RPC-backed Ethereum observation and release execution, plus a separate local route-relayer for destination-runtime handoff.
 - File-backed adapters still exist as local fallbacks, but they are no longer the highest-fidelity execution path in the repository.
 
 ### Bridge zone on Cosmos-SDK
@@ -51,8 +51,8 @@ Current implementation note:
 - The bridge zone is the source chain for phase 2 IBC transfers.
 - Assets move from bridge-zone denominations into Osmosis through a predefined IBC channel.
 - Osmosis receives them as standard IBC assets and can route them into swaps or liquidity pools.
-- In the current repository checkpoint, the route lifecycle is implemented and queryable through the AegisLink runtime CLI, and a separate local route-relayer can drive those transfers against a lightweight target service.
-- That target now persists packet receipts, denom-trace-style metadata, asynchronous acknowledgements, recipient balances, configurable multi-pool swap execution records, fee-aware pricing, and execution-driven acknowledgement failures derived from routed packets.
+- In the current repository checkpoint, the route lifecycle is implemented and queryable through the AegisLink runtime CLI, and a separate local route-relayer can drive those transfers into a dedicated destination runtime through `osmo-locald`.
+- That destination runtime now persists packet receipts, denom-trace-style metadata, asynchronous acknowledgements, recipient balances, configurable multi-pool swap execution records, stake execution records, fee-aware pricing, and execution-driven acknowledgement failures derived from routed packets.
 - The full live IBC channel or local Osmosis stack is still a later extension.
 
 ## Message Interfaces
