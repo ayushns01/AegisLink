@@ -331,14 +331,15 @@ func (x *WithdrawalClaim) GetDeadline() uint64 {
 }
 
 type Attestation struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MessageId     string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	PayloadHash   string                 `protobuf:"bytes,2,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
-	Signers       []string               `protobuf:"bytes,3,rep,name=signers,proto3" json:"signers,omitempty"`
-	Threshold     uint32                 `protobuf:"varint,4,opt,name=threshold,proto3" json:"threshold,omitempty"`
-	Expiry        uint64                 `protobuf:"varint,5,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MessageId        string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	PayloadHash      string                 `protobuf:"bytes,2,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	Signers          []string               `protobuf:"bytes,3,rep,name=signers,proto3" json:"signers,omitempty"`
+	Threshold        uint32                 `protobuf:"varint,4,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	Expiry           uint64                 `protobuf:"varint,5,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	SignerSetVersion uint64                 `protobuf:"varint,6,opt,name=signer_set_version,json=signerSetVersion,proto3" json:"signer_set_version,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Attestation) Reset() {
@@ -406,6 +407,13 @@ func (x *Attestation) GetExpiry() uint64 {
 	return 0
 }
 
+func (x *Attestation) GetSignerSetVersion() uint64 {
+	if x != nil {
+		return x.SignerSetVersion
+	}
+	return 0
+}
+
 var File_aegislink_bridge_v1_bridge_proto protoreflect.FileDescriptor
 
 const file_aegislink_bridge_v1_bridge_proto_rawDesc = "" +
@@ -433,14 +441,15 @@ const file_aegislink_bridge_v1_bridge_proto_rawDesc = "" +
 	"\basset_id\x18\x03 \x01(\tR\aassetId\x12\x16\n" +
 	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x1c\n" +
 	"\trecipient\x18\x05 \x01(\tR\trecipient\x12\x1a\n" +
-	"\bdeadline\x18\x06 \x01(\x04R\bdeadline\"\x9f\x01\n" +
+	"\bdeadline\x18\x06 \x01(\x04R\bdeadline\"\xcd\x01\n" +
 	"\vAttestation\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12!\n" +
 	"\fpayload_hash\x18\x02 \x01(\tR\vpayloadHash\x12\x18\n" +
 	"\asigners\x18\x03 \x03(\tR\asigners\x12\x1c\n" +
 	"\tthreshold\x18\x04 \x01(\rR\tthreshold\x12\x16\n" +
-	"\x06expiry\x18\x05 \x01(\x04R\x06expiry*Z\n" +
+	"\x06expiry\x18\x05 \x01(\x04R\x06expiry\x12,\n" +
+	"\x12signer_set_version\x18\x06 \x01(\x04R\x10signerSetVersion*Z\n" +
 	"\tClaimKind\x12\x1a\n" +
 	"\x16CLAIM_KIND_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12CLAIM_KIND_DEPOSIT\x10\x01\x12\x19\n" +

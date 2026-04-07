@@ -17,7 +17,7 @@ func TestCollectorCollectBuildsThresholdAttestationDeterministically(t *testing.
 			{Signer: "signer-3", Expiry: 150},
 		},
 	}
-	collector := NewCollector(source, 2)
+	collector := NewCollector(source, 2, 1)
 
 	attestation, err := collector.Collect(context.Background(), "message-1", "payload-1")
 	if err != nil {
@@ -40,6 +40,9 @@ func TestCollectorCollectBuildsThresholdAttestationDeterministically(t *testing.
 	if attestation.Expiry != 140 {
 		t.Fatalf("expected expiry to use the strongest threshold quorum, got %d", attestation.Expiry)
 	}
+	if attestation.SignerSetVersion != 1 {
+		t.Fatalf("expected signer set version 1, got %d", attestation.SignerSetVersion)
+	}
 
 	wantSigners := []string{"signer-1", "signer-3"}
 	if len(attestation.Signers) != len(wantSigners) {
@@ -60,7 +63,7 @@ func TestCollectorCollectRejectsWhenThresholdNotMet(t *testing.T) {
 			{Signer: "signer-1", Expiry: 100},
 		},
 	}
-	collector := NewCollector(source, 2)
+	collector := NewCollector(source, 2, 1)
 
 	_, err := collector.Collect(context.Background(), "message-1", "payload-1")
 	if !errors.Is(err, ErrThresholdNotMet) {

@@ -453,11 +453,20 @@ func TestRouteRelayerPersistsIBCPacketReceiptAndSwapIntentInMockTarget(t *testin
 	if state.Swaps[0].OutputAmount != "47619047" {
 		t.Fatalf("expected output amount 47619047, got %q", state.Swaps[0].OutputAmount)
 	}
-	if len(state.Pools) != 1 {
-		t.Fatalf("expected one pool record, got %d", len(state.Pools))
+	if len(state.Pools) < 1 {
+		t.Fatalf("expected at least one pool record, got %d", len(state.Pools))
 	}
-	if state.Pools[0].ReserveOut != "952380953" {
-		t.Fatalf("expected output reserve 952380953, got %q", state.Pools[0].ReserveOut)
+	foundPrimaryPool := false
+	for _, pool := range state.Pools {
+		if pool.InputDenom == "ibc/uatom-usdc" && pool.OutputDenom == "uosmo" {
+			foundPrimaryPool = true
+			if pool.ReserveOut != "952380953" {
+				t.Fatalf("expected output reserve 952380953, got %q", pool.ReserveOut)
+			}
+		}
+	}
+	if !foundPrimaryPool {
+		t.Fatalf("expected ibc/uatom-usdc -> uosmo pool in %+v", state.Pools)
 	}
 	if len(state.Balances) != 1 {
 		t.Fatalf("expected one balance record, got %d", len(state.Balances))

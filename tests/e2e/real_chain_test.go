@@ -223,11 +223,12 @@ func writeRuntimeSubmissionFile(t *testing.T, path string, claim bridgetypes.Dep
 			Deadline           uint64 `json:"deadline"`
 		} `json:"claim"`
 		Attestation struct {
-			MessageID   string   `json:"message_id"`
-			PayloadHash string   `json:"payload_hash"`
-			Signers     []string `json:"signers"`
-			Threshold   uint32   `json:"threshold"`
-			Expiry      uint64   `json:"expiry"`
+			MessageID        string   `json:"message_id"`
+			PayloadHash      string   `json:"payload_hash"`
+			Signers          []string `json:"signers"`
+			Threshold        uint32   `json:"threshold"`
+			Expiry           uint64   `json:"expiry"`
+			SignerSetVersion uint64   `json:"signer_set_version"`
 		} `json:"attestation"`
 	}{}
 
@@ -249,6 +250,7 @@ func writeRuntimeSubmissionFile(t *testing.T, path string, claim bridgetypes.Dep
 	payload.Attestation.Signers = []string{"relayer-1", "relayer-2"}
 	payload.Attestation.Threshold = 2
 	payload.Attestation.Expiry = 120
+	payload.Attestation.SignerSetVersion = 1
 
 	encoded, err := json.Marshal(payload)
 	if err != nil {

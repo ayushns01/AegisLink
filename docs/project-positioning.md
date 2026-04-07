@@ -9,7 +9,9 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 ## Security model
 
 - AegisLink v1 is a `verifiable-relayer bridge with threshold attestations`.
+- The repository now includes both the original narrow verifier and a threshold-verifier path with signer-set rotation on Ethereum.
 - Ethereum is the canonical source of deposit and release events.
+- AegisLink attestations are now tied to explicit signer-set versions, and bridge verification checks activation, expiry, and version mismatch.
 - AegisLink enforces replay protection, registry policy, rate limits, pause controls, and route state transitions.
 - The project does not currently claim a light-client verifier or a trustless Ethereum proof system.
 
@@ -23,6 +25,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The end-to-end local flow is exercised in tests and exposed through `make demo` and `make inspect-demo`.
 - The repo now also proves a single-node real-chain flow through `make test-real-chain`.
 - The repo now also proves a dual-runtime local route flow through `make test-real-ibc`, where `route-relayer` moves a transfer from an AegisLink home into a dedicated `osmo-locald` home.
+- The repo now also proves a threshold-verifier path in Foundry tests and versioned signer-set enforcement on the AegisLink side.
 
 ## What is still a local harness
 
@@ -43,7 +46,7 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
-- `The roadmap from here is deeper networked chain realism, then fuller IBC-Go or Hermes realism and verifier hardening.`
+- `The roadmap from here is finishing the verifier-evolution documentation, then deeper networked chain realism and fuller IBC-Go or Hermes realism.`
 
 Avoid phrasing like:
 

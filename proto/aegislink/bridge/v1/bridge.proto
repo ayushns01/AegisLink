@@ -44,4 +44,5 @@ message Attestation {
   repeated string signers = 3;
   uint32 threshold = 4;
   uint64 expiry = 5;
+  uint64 signer_set_version = 6;
 }

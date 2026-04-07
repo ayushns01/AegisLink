@@ -7,12 +7,12 @@ import (
 	"math/big"
 	"strings"
 
+	storetypes "cosmossdk.io/store/types"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
 	registrykeeper "github.com/ayushns01/aegislink/chain/aegislink/x/registry/keeper"
-	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -22,6 +22,8 @@ var (
 	ErrAttestationExpired            = errors.New("attestation expired")
 	ErrMessageIDMismatch             = errors.New("message id mismatch")
 	ErrPayloadHashMismatch           = errors.New("payload hash mismatch")
+	ErrSignerSetVersionMismatch      = errors.New("signer set version mismatch")
+	ErrSignerSetInactive             = errors.New("signer set inactive")
 	ErrUnknownAsset                  = errors.New("unknown asset")
 	ErrAssetDisabled                 = errors.New("asset disabled")
 	ErrAssetPaused                   = errors.New("asset paused")
@@ -51,9 +53,8 @@ type Keeper struct {
 	limitsKeeper   *limitskeeper.Keeper
 	pauserKeeper   *pauserkeeper.Keeper
 
-	allowedSigners    map[string]struct{}
-	requiredThreshold uint32
-	currentHeight     uint64
+	signerSets    map[uint64]SignerSet
+	currentHeight uint64
 
 	processedClaims map[string]ClaimRecord
 	rejectedClaims  uint64
@@ -69,21 +70,22 @@ func NewKeeper(registry *registrykeeper.Keeper, limits *limitskeeper.Keeper, pau
 		requiredThreshold = 1
 	}
 
-	signerSet := make(map[string]struct{}, len(allowedSigners))
-	for _, signer := range allowedSigners {
-		signerSet[signer] = struct{}{}
-	}
-
-	return &Keeper{
+	keeper := &Keeper{
 		registryKeeper:      registry,
 		limitsKeeper:        limits,
 		pauserKeeper:        pauser,
-		allowedSigners:      signerSet,
-		requiredThreshold:   requiredThreshold,
+		signerSets:          make(map[uint64]SignerSet, 1),
 		processedClaims:     make(map[string]ClaimRecord),
 		supplyByDenom:       make(map[string]*big.Int),
 		nextWithdrawalNonce: 1,
 	}
+	keeper.signerSets[1] = normalizeSignerSet(SignerSet{
+		Version:     1,
+		Signers:     append([]string(nil), allowedSigners...),
+		Threshold:   requiredThreshold,
+		ActivatedAt: 0,
+	})
+	return keeper
 }
 
 func NewStoreKeeper(

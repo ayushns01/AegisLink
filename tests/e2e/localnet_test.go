@@ -87,11 +87,12 @@ type persistedDepositClaim struct {
 }
 
 type persistedAttestation struct {
-	MessageID   string   `json:"message_id"`
-	PayloadHash string   `json:"payload_hash"`
-	Signers     []string `json:"signers"`
-	Threshold   uint32   `json:"threshold"`
-	Expiry      uint64   `json:"expiry"`
+	MessageID        string   `json:"message_id"`
+	PayloadHash      string   `json:"payload_hash"`
+	Signers          []string `json:"signers"`
+	Threshold        uint32   `json:"threshold"`
+	Expiry           uint64   `json:"expiry"`
+	SignerSetVersion uint64   `json:"signer_set_version"`
 }
 
 type persistedWithdrawalState struct {
@@ -365,11 +366,12 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	}
 	claim := depositClaimFromEvent(t, deposit)
 	attestation := bridgetypes.Attestation{
-		MessageID:   claim.Identity.MessageID,
-		PayloadHash: claim.Digest(),
-		Signers:     []string{"relayer-1", "relayer-2"},
-		Threshold:   2,
-		Expiry:      120,
+		MessageID:        claim.Identity.MessageID,
+		PayloadHash:      claim.Digest(),
+		Signers:          []string{"relayer-1", "relayer-2"},
+		Threshold:        2,
+		Expiry:           120,
+		SignerSetVersion: 1,
 	}
 
 	app.SetCurrentHeight(50)
@@ -604,11 +606,12 @@ func decodeSubmission(t *testing.T, submission persistedClaimSubmission) (bridge
 		Deadline:           submission.Claim.Deadline,
 	}
 	attestation := bridgetypes.Attestation{
-		MessageID:   submission.Attestation.MessageID,
-		PayloadHash: submission.Attestation.PayloadHash,
-		Signers:     append([]string(nil), submission.Attestation.Signers...),
-		Threshold:   submission.Attestation.Threshold,
-		Expiry:      submission.Attestation.Expiry,
+		MessageID:        submission.Attestation.MessageID,
+		PayloadHash:      submission.Attestation.PayloadHash,
+		Signers:          append([]string(nil), submission.Attestation.Signers...),
+		Threshold:        submission.Attestation.Threshold,
+		Expiry:           submission.Attestation.Expiry,
+		SignerSetVersion: submission.Attestation.SignerSetVersion,
 	}
 	return claim, attestation
 }

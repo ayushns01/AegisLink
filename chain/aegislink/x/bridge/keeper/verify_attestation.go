@@ -18,23 +18,35 @@ func (k *Keeper) verifyDepositClaim(claim bridgetypes.DepositClaim, attestation 
 	if k.currentHeight > attestation.Expiry {
 		return ErrAttestationExpired
 	}
-	if attestation.Threshold < k.requiredThreshold {
+
+	activeSignerSet, err := k.ActiveSignerSet()
+	if err != nil {
+		return err
+	}
+	if attestation.SignerSetVersion != activeSignerSet.Version {
+		return ErrSignerSetVersionMismatch
+	}
+	if attestation.Threshold < activeSignerSet.Threshold {
 		return ErrInsufficientAttestationQuorum
 	}
 
 	verifiedSigners := uint32(0)
 	seen := make(map[string]struct{}, len(attestation.Signers))
+	allowed := make(map[string]struct{}, len(activeSignerSet.Signers))
+	for _, signer := range activeSignerSet.Signers {
+		allowed[signer] = struct{}{}
+	}
 	for _, signer := range attestation.Signers {
 		if _, exists := seen[signer]; exists {
 			continue
 		}
 		seen[signer] = struct{}{}
 
-		if _, allowed := k.allowedSigners[signer]; allowed {
+		if _, ok := allowed[signer]; ok {
 			verifiedSigners++
 		}
 	}
-	if verifiedSigners < k.requiredThreshold {
+	if verifiedSigners < activeSignerSet.Threshold {
 		return ErrInsufficientAttestationQuorum
 	}
 

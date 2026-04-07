@@ -9,11 +9,11 @@ import (
 func TestReplayKeyIsDeterministicAndCanonical(t *testing.T) {
 	base := ClaimIdentity{
 		Kind:           ClaimKindDeposit,
-		SourceChainID:   "ethereum-1",
-		SourceContract:  "0xabc|123",
-		SourceTxHash:    "0xdeadbeef",
-		SourceLogIndex:  17,
-		Nonce:           42,
+		SourceChainID:  "ethereum-1",
+		SourceContract: "0xabc|123",
+		SourceTxHash:   "0xdeadbeef",
+		SourceLogIndex: 17,
+		Nonce:          42,
 	}
 
 	first := base.ReplayKey()
@@ -28,11 +28,11 @@ func TestReplayKeyIsDeterministicAndCanonical(t *testing.T) {
 
 	whitespaceVariant := ClaimIdentity{
 		Kind:           ClaimKindDeposit,
-		SourceChainID:   "  ethereum-1  ",
-		SourceContract:  "\n0xabc|123\t",
-		SourceTxHash:    " 0xdeadbeef ",
-		SourceLogIndex:  17,
-		Nonce:           42,
+		SourceChainID:  "  ethereum-1  ",
+		SourceContract: "\n0xabc|123\t",
+		SourceTxHash:   " 0xdeadbeef ",
+		SourceLogIndex: 17,
+		Nonce:          42,
 	}
 	if first != whitespaceVariant.ReplayKey() {
 		t.Fatalf("expected whitespace variants to normalize to the same replay key, got %q and %q", first, whitespaceVariant.ReplayKey())
@@ -40,11 +40,11 @@ func TestReplayKeyIsDeterministicAndCanonical(t *testing.T) {
 
 	delimiterCollision := ClaimIdentity{
 		Kind:           ClaimKindDeposit,
-		SourceChainID:   "ethereum-1|extra",
-		SourceContract:  "0xabc123",
-		SourceTxHash:    "0xdeadbeef",
-		SourceLogIndex:  17,
-		Nonce:           42,
+		SourceChainID:  "ethereum-1|extra",
+		SourceContract: "0xabc123",
+		SourceTxHash:   "0xdeadbeef",
+		SourceLogIndex: 17,
+		Nonce:          42,
 	}
 	if first == delimiterCollision.ReplayKey() {
 		t.Fatal("expected canonical encoding to avoid separator collisions")
@@ -104,10 +104,10 @@ func TestDepositClaimValidateBasic(t *testing.T) {
 
 	tests := map[string]func(*DepositClaim){
 		"missing destination chain id": func(c *DepositClaim) { c.DestinationChainID = "" },
-		"missing asset id":            func(c *DepositClaim) { c.AssetID = "" },
-		"missing amount":              func(c *DepositClaim) { c.Amount = nil },
-		"missing recipient":           func(c *DepositClaim) { c.Recipient = "" },
-		"missing deadline":            func(c *DepositClaim) { c.Deadline = 0 },
+		"missing asset id":             func(c *DepositClaim) { c.AssetID = "" },
+		"missing amount":               func(c *DepositClaim) { c.Amount = nil },
+		"missing recipient":            func(c *DepositClaim) { c.Recipient = "" },
+		"missing deadline":             func(c *DepositClaim) { c.Deadline = 0 },
 		"missing message id": func(c *DepositClaim) {
 			c.Identity.MessageID = ""
 		},
@@ -188,11 +188,12 @@ func TestWithdrawalClaimValidateBasic(t *testing.T) {
 
 func TestAttestationValidateBasic(t *testing.T) {
 	attestation := Attestation{
-		MessageID:   validClaimIdentity(ClaimKindDeposit).MessageID,
-		PayloadHash: validDepositClaim().Digest(),
-		Signers:     []string{"signer-1", "signer-2", "signer-3"},
-		Threshold:   2,
-		Expiry:      123,
+		MessageID:        validClaimIdentity(ClaimKindDeposit).MessageID,
+		PayloadHash:      validDepositClaim().Digest(),
+		Signers:          []string{"signer-1", "signer-2", "signer-3"},
+		Threshold:        2,
+		Expiry:           123,
+		SignerSetVersion: 1,
 	}
 
 	if err := attestation.ValidateBasic(); err != nil {
@@ -200,13 +201,14 @@ func TestAttestationValidateBasic(t *testing.T) {
 	}
 
 	cases := map[string]func(*Attestation){
-		"missing message id":   func(a *Attestation) { a.MessageID = "" },
-		"missing payload hash": func(a *Attestation) { a.PayloadHash = "" },
-		"missing signers":      func(a *Attestation) { a.Signers = nil },
-		"missing threshold":    func(a *Attestation) { a.Threshold = 0 },
-		"missing expiry":       func(a *Attestation) { a.Expiry = 0 },
-		"threshold overflow":   func(a *Attestation) { a.Threshold = 4 },
-		"duplicate signer":     func(a *Attestation) { a.Signers = []string{"signer-1", "signer-1"} },
+		"missing message id":         func(a *Attestation) { a.MessageID = "" },
+		"missing payload hash":       func(a *Attestation) { a.PayloadHash = "" },
+		"missing signers":            func(a *Attestation) { a.Signers = nil },
+		"missing threshold":          func(a *Attestation) { a.Threshold = 0 },
+		"missing expiry":             func(a *Attestation) { a.Expiry = 0 },
+		"missing signer set version": func(a *Attestation) { a.SignerSetVersion = 0 },
+		"threshold overflow":         func(a *Attestation) { a.Threshold = 4 },
+		"duplicate signer":           func(a *Attestation) { a.Signers = []string{"signer-1", "signer-1"} },
 	}
 
 	for name, mutate := range cases {
@@ -223,11 +225,11 @@ func TestAttestationValidateBasic(t *testing.T) {
 func validClaimIdentity(kind ClaimKind) ClaimIdentity {
 	identity := ClaimIdentity{
 		Kind:           kind,
-		SourceChainID:   "ethereum-1",
-		SourceContract:  "0xabc123",
-		SourceTxHash:    "0xdeadbeef",
-		SourceLogIndex:  17,
-		Nonce:           42,
+		SourceChainID:  "ethereum-1",
+		SourceContract: "0xabc123",
+		SourceTxHash:   "0xdeadbeef",
+		SourceLogIndex: 17,
+		Nonce:          42,
 	}
 	identity.MessageID = identity.DerivedMessageID()
 	return identity

@@ -66,7 +66,11 @@ func run(ctx context.Context, stderr io.Writer) error {
 		cfg,
 		replay.NewStoreAt(cfg.ReplayStorePath),
 		evm.NewWatcher(evm.NewClient(logSource), cfg.EVMConfirmations),
-		attestations.NewCollector(attestations.NewFileVoteSource(cfg.AttestationStatePath), cfg.AttestationThreshold),
+		attestations.NewCollector(
+			attestations.NewFileVoteSource(cfg.AttestationStatePath),
+			cfg.AttestationThreshold,
+			cfg.AttestationSignerSetVersion,
+		),
 		cosmos.NewSubmitter(claimSink),
 		cosmos.NewWatcher(cosmos.NewClient(withdrawalSource), cfg.CosmosConfirmations),
 		evm.NewReleaser(releaseTarget),
@@ -75,6 +79,7 @@ func run(ctx context.Context, stderr io.Writer) error {
 	_ = opslog.Write(stderr, "info", "bridge-relayer", "run_start", "bridge relayer run started", map[string]any{
 		"cosmos_chain_id":        cfg.CosmosChainID,
 		"attestation_threshold":  cfg.AttestationThreshold,
+		"signer_set_version":     cfg.AttestationSignerSetVersion,
 		"submission_retry_limit": cfg.SubmissionRetryLimit,
 		"evm_source_mode":        evmSourceMode(cfg),
 		"cosmos_runtime_mode":    cosmosRuntimeMode(cfg),
@@ -85,16 +90,16 @@ func run(ctx context.Context, stderr io.Writer) error {
 		return err
 	}
 	return opslog.Write(stderr, "info", "bridge-relayer", "run_complete", "bridge relayer run completed", map[string]any{
-		"deposits_observed":            summary.DepositsObserved,
-		"duplicate_deposits":           summary.DuplicateDeposits,
-		"deposits_submitted":           summary.DepositsSubmitted,
-		"deposit_submit_attempts":      summary.DepositSubmitAttempts,
-		"withdrawals_observed":         summary.WithdrawalsObserved,
-		"duplicate_withdrawals":        summary.DuplicateWithdrawals,
-		"withdrawals_released":         summary.WithdrawalsReleased,
-		"withdrawal_release_attempts":  summary.WithdrawalReleaseAttempts,
-		"deposit_next_cursor":          summary.DepositNextCursor,
-		"withdrawal_next_cursor":       summary.WithdrawalNextCursor,
+		"deposits_observed":           summary.DepositsObserved,
+		"duplicate_deposits":          summary.DuplicateDeposits,
+		"deposits_submitted":          summary.DepositsSubmitted,
+		"deposit_submit_attempts":     summary.DepositSubmitAttempts,
+		"withdrawals_observed":        summary.WithdrawalsObserved,
+		"duplicate_withdrawals":       summary.DuplicateWithdrawals,
+		"withdrawals_released":        summary.WithdrawalsReleased,
+		"withdrawal_release_attempts": summary.WithdrawalReleaseAttempts,
+		"deposit_next_cursor":         summary.DepositNextCursor,
+		"withdrawal_next_cursor":      summary.WithdrawalNextCursor,
 	})
 }
 

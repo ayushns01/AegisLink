@@ -17,7 +17,9 @@ This repository is meant to show:
 ## What is real today
 
 - Ethereum deposit observation and release execution run through the live local Anvil path.
+- Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
 - AegisLink owns bridge, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, and `query status`.
+- AegisLink bridge attestations now bind to an explicit signer-set version, and the bridge keeper can activate, expire, and reject mismatched signer sets.
 - The bridge-relayer and route-relayer are real services with replay persistence and route lifecycle handling.
 - The Phase 6 route path now boots a dedicated destination runtime through `osmo-locald`, and `route-relayer` can move a transfer from an AegisLink home into that destination home without the old HTTP mock-target entrypoint.
 - Routed transfers go through packet-shaped delivery, destination-side execution, later acknowledgement, and explicit completion, failure, timeout, or refund handling.
@@ -161,11 +163,12 @@ As of April 7, 2026:
 - the live local Ethereum bridge loop is proven end to end
 - Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
 - Phase 6 is now complete for the current repo scope as a dual-runtime local route milestone: a destination runtime can be bootstrapped through `osmo-locald`, AegisLink can initiate routed transfers through the `ibcrouter` packet lifecycle, and `route-relayer` can drive acknowledgement completion against the destination home without the old HTTP target
+- Phase 7 is now in progress: the Ethereum side has a real threshold-verifier path with signer rotation, and AegisLink attestations now bind to versioned signer sets with activation and expiry rules
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is deeper networked chain realism and fuller IBC-Go or Hermes integration, not basic bridge invention
+- the next roadmap focus is finishing the verifier-evolution docs for Phase 7, then moving deeper into networked chain realism and fuller IBC-Go or Hermes integration
 
 The current repo shape is:
 

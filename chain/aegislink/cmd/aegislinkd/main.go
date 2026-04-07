@@ -597,11 +597,12 @@ type submissionFilePayload struct {
 		Deadline           uint64 `json:"deadline"`
 	} `json:"claim"`
 	Attestation struct {
-		MessageID   string   `json:"message_id"`
-		PayloadHash string   `json:"payload_hash"`
-		Signers     []string `json:"signers"`
-		Threshold   uint32   `json:"threshold"`
-		Expiry      uint64   `json:"expiry"`
+		MessageID        string   `json:"message_id"`
+		PayloadHash      string   `json:"payload_hash"`
+		Signers          []string `json:"signers"`
+		Threshold        uint32   `json:"threshold"`
+		Expiry           uint64   `json:"expiry"`
+		SignerSetVersion uint64   `json:"signer_set_version"`
 	} `json:"attestation"`
 }
 
@@ -637,11 +638,12 @@ func loadSubmission(path string) (bridgetypes.DepositClaim, bridgetypes.Attestat
 		Deadline:           payload.Claim.Deadline,
 	}
 	attestation := bridgetypes.Attestation{
-		MessageID:   payload.Attestation.MessageID,
-		PayloadHash: payload.Attestation.PayloadHash,
-		Signers:     append([]string(nil), payload.Attestation.Signers...),
-		Threshold:   payload.Attestation.Threshold,
-		Expiry:      payload.Attestation.Expiry,
+		MessageID:        payload.Attestation.MessageID,
+		PayloadHash:      payload.Attestation.PayloadHash,
+		Signers:          append([]string(nil), payload.Attestation.Signers...),
+		Threshold:        payload.Attestation.Threshold,
+		Expiry:           payload.Attestation.Expiry,
+		SignerSetVersion: payload.Attestation.SignerSetVersion,
 	}
 	return claim, attestation, nil
 }

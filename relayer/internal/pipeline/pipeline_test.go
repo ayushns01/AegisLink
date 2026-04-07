@@ -314,11 +314,12 @@ func (s *stubCollector) Collect(_ context.Context, messageID, payloadHash string
 		return bridgetypes.Attestation{}, s.err
 	}
 	return bridgetypes.Attestation{
-		MessageID:   messageID,
-		PayloadHash: payloadHash,
-		Signers:     []string{"signer-1", "signer-2"},
-		Threshold:   2,
-		Expiry:      200,
+		MessageID:        messageID,
+		PayloadHash:      payloadHash,
+		Signers:          []string{"signer-1", "signer-2"},
+		Threshold:        2,
+		Expiry:           200,
+		SignerSetVersion: 1,
 	}, nil
 }
 

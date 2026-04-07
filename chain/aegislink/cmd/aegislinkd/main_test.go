@@ -774,11 +774,12 @@ func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositCla
 			Deadline           uint64 `json:"deadline"`
 		} `json:"claim"`
 		Attestation struct {
-			MessageID   string   `json:"message_id"`
-			PayloadHash string   `json:"payload_hash"`
-			Signers     []string `json:"signers"`
-			Threshold   uint32   `json:"threshold"`
-			Expiry      uint64   `json:"expiry"`
+			MessageID        string   `json:"message_id"`
+			PayloadHash      string   `json:"payload_hash"`
+			Signers          []string `json:"signers"`
+			Threshold        uint32   `json:"threshold"`
+			Expiry           uint64   `json:"expiry"`
+			SignerSetVersion uint64   `json:"signer_set_version"`
 		} `json:"attestation"`
 	}{}
 
@@ -800,6 +801,7 @@ func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositCla
 	payload.Attestation.Signers = append([]string(nil), attestation.Signers...)
 	payload.Attestation.Threshold = attestation.Threshold
 	payload.Attestation.Expiry = attestation.Expiry
+	payload.Attestation.SignerSetVersion = attestation.SignerSetVersion
 
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -835,11 +837,12 @@ func validDepositClaim(t *testing.T) bridgetypes.DepositClaim {
 
 func validAttestationForClaim(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
 	return bridgetypes.Attestation{
-		MessageID:   claim.Identity.MessageID,
-		PayloadHash: claim.Digest(),
-		Signers:     []string{"relayer-1", "relayer-2"},
-		Threshold:   2,
-		Expiry:      120,
+		MessageID:        claim.Identity.MessageID,
+		PayloadHash:      claim.Digest(),
+		Signers:          []string{"relayer-1", "relayer-2"},
+		Threshold:        2,
+		Expiry:           120,
+		SignerSetVersion: 1,
 	}
 }
 

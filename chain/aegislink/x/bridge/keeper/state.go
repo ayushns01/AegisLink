@@ -11,9 +11,18 @@ type StateSnapshot struct {
 	CurrentHeight       uint64                     `json:"current_height"`
 	NextWithdrawalNonce uint64                     `json:"next_withdrawal_nonce"`
 	RejectedClaims      uint64                     `json:"rejected_claims"`
+	SignerSets          []SignerSetSnapshot        `json:"signer_sets"`
 	ProcessedClaims     []ClaimRecordSnapshot      `json:"processed_claims"`
 	SupplyByDenom       map[string]string          `json:"supply_by_denom"`
 	Withdrawals         []WithdrawalRecordSnapshot `json:"withdrawals"`
+}
+
+type SignerSetSnapshot struct {
+	Version     uint64   `json:"version"`
+	Signers     []string `json:"signers"`
+	Threshold   uint32   `json:"threshold"`
+	ActivatedAt uint64   `json:"activated_at"`
+	ExpiresAt   uint64   `json:"expires_at"`
 }
 
 type ClaimRecordSnapshot struct {
@@ -41,11 +50,21 @@ func (k *Keeper) ExportState() StateSnapshot {
 		CurrentHeight:       k.currentHeight,
 		NextWithdrawalNonce: k.nextWithdrawalNonce,
 		RejectedClaims:      k.rejectedClaims,
+		SignerSets:          make([]SignerSetSnapshot, 0, len(k.signerSets)),
 		ProcessedClaims:     make([]ClaimRecordSnapshot, 0, len(k.processedClaims)),
 		SupplyByDenom:       make(map[string]string, len(k.supplyByDenom)),
 		Withdrawals:         make([]WithdrawalRecordSnapshot, 0, len(k.withdrawals)),
 	}
 
+	for _, signerSet := range k.signerSets {
+		state.SignerSets = append(state.SignerSets, SignerSetSnapshot{
+			Version:     signerSet.Version,
+			Signers:     append([]string(nil), signerSet.Signers...),
+			Threshold:   signerSet.Threshold,
+			ActivatedAt: signerSet.ActivatedAt,
+			ExpiresAt:   signerSet.ExpiresAt,
+		})
+	}
 	for claimKey, record := range k.processedClaims {
 		state.ProcessedClaims = append(state.ProcessedClaims, ClaimRecordSnapshot{
 			ClaimKey:  claimKey,
@@ -81,6 +100,20 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 	k.rejectedClaims = state.RejectedClaims
 	if k.nextWithdrawalNonce == 0 {
 		k.nextWithdrawalNonce = 1
+	}
+
+	if len(state.SignerSets) > 0 {
+		k.signerSets = make(map[uint64]SignerSet, len(state.SignerSets))
+		for _, signerSet := range state.SignerSets {
+			set := normalizeSignerSet(SignerSet{
+				Version:     signerSet.Version,
+				Signers:     append([]string(nil), signerSet.Signers...),
+				Threshold:   signerSet.Threshold,
+				ActivatedAt: signerSet.ActivatedAt,
+				ExpiresAt:   signerSet.ExpiresAt,
+			})
+			k.signerSets[set.Version] = set
+		}
 	}
 
 	k.processedClaims = make(map[string]ClaimRecord, len(state.ProcessedClaims))

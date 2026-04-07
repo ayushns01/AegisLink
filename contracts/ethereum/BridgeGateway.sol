@@ -144,6 +144,10 @@ contract BridgeGateway {
         return keccak256(abi.encode(block.chainid, address(this), asset, recipient, amount, messageId, expiry));
     }
 
+    function activeVerifierSignerSetVersion() external view returns (uint64) {
+        return verifier.activeSignerSetVersion();
+    }
+
     function _transferIn(address asset, address from, uint256 amount) internal {
         bool ok = IERC20Minimal(asset).transferFrom(from, address(this), amount);
         if (!ok) revert TransferFailed();

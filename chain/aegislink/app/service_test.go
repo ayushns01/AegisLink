@@ -127,10 +127,11 @@ func sampleDepositClaim() bridgetypes.DepositClaim {
 
 func sampleAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
 	return bridgetypes.Attestation{
-		MessageID:   claim.Identity.MessageID,
-		PayloadHash: claim.Digest(),
-		Signers:     []string{"relayer-1", "relayer-2"},
-		Threshold:   2,
-		Expiry:      200,
+		MessageID:        claim.Identity.MessageID,
+		PayloadHash:      claim.Digest(),
+		Signers:          []string{"relayer-1", "relayer-2"},
+		Threshold:        2,
+		Expiry:           200,
+		SignerSetVersion: 1,
 	}
 }

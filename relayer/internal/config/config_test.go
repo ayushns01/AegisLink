@@ -13,6 +13,9 @@ func TestLoadFromEnvFallsBackOnNegativeNumericValues(t *testing.T) {
 	if cfg.AttestationThreshold != 2 {
 		t.Fatalf("expected attestation threshold fallback 2, got %d", cfg.AttestationThreshold)
 	}
+	if cfg.AttestationSignerSetVersion != 1 {
+		t.Fatalf("expected signer set version fallback 1, got %d", cfg.AttestationSignerSetVersion)
+	}
 	if cfg.SubmissionRetryLimit != 3 {
 		t.Fatalf("expected retry limit fallback 3, got %d", cfg.SubmissionRetryLimit)
 	}

@@ -394,6 +394,10 @@ contract MockVerifier is IBridgeVerifier {
         lastProof = proof;
         return signer;
     }
+
+    function activeSignerSetVersion() external pure override returns (uint64) {
+        return 1;
+    }
 }
 
 contract TestToken {

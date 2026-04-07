@@ -494,6 +494,8 @@ git commit -m "feat: add real ibc demo path"
 
 **Goal:** Make the security roadmap concrete enough that the system can evolve beyond a single-attester v1 verifier.
 
+**Phase 7 status:** In progress on April 7, 2026. The repository now has a real threshold-verifier path on Ethereum through `ThresholdBridgeVerifier.sol`, the gateway still depends on the narrow verifier interface, and AegisLink bridge attestations now bind to versioned signer sets with activation and expiry rules. The remaining Phase 7 work is the explicit verifier-evolution documentation and evaluation write-up.
+
 ### Task 7.1: Add threshold verifier support on Ethereum
 
 **Files:**
@@ -502,7 +504,7 @@ git commit -m "feat: add real ibc demo path"
 - Modify: `contracts/ethereum/BridgeGateway.sol`
 - Test: `contracts/ethereum/test/ThresholdBridgeVerifier.t.sol`
 
-- [ ] **Step 1: Write failing verifier tests**
+- [x] **Step 1: Write failing verifier tests**
 
 Cover:
 - threshold reached
@@ -510,19 +512,19 @@ Cover:
 - duplicate signer rejection
 - signer rotation compatibility
 
-- [ ] **Step 2: Run the focused Foundry verifier tests**
+- [x] **Step 2: Run the focused Foundry verifier tests**
 
 Run: `cd contracts/ethereum && forge test --offline --match-test 'testThreshold'`
 
 Expected: FAIL because threshold verification does not exist yet.
 
-- [ ] **Step 3: Implement the minimal threshold verifier**
+- [x] **Step 3: Implement the minimal threshold verifier**
 
 Keep:
 - `BridgeGateway` interface stable where possible
 - replay protection intact
 
-- [ ] **Step 4: Re-run the focused Foundry verifier tests**
+- [x] **Step 4: Re-run the focused Foundry verifier tests**
 
 Run: `cd contracts/ethereum && forge test --offline --match-test 'testThreshold'`
 
@@ -543,7 +545,7 @@ git commit -m "feat: add threshold bridge verifier"
 - Create: `chain/aegislink/x/bridge/keeper/signer_set.go`
 - Test: `chain/aegislink/x/bridge/keeper/signer_set_test.go`
 
-- [ ] **Step 1: Write failing signer-set tests**
+- [x] **Step 1: Write failing signer-set tests**
 
 Cover:
 - signer-set versioning
@@ -551,20 +553,20 @@ Cover:
 - expiry
 - mismatch rejection
 
-- [ ] **Step 2: Run the focused bridge signer tests**
+- [x] **Step 2: Run the focused bridge signer tests**
 
 Run: `go test ./chain/aegislink/x/bridge/keeper -run 'TestSignerSet'`
 
 Expected: FAIL because signer-set lifecycle state is missing.
 
-- [ ] **Step 3: Implement the minimal signer-set lifecycle**
+- [x] **Step 3: Implement the minimal signer-set lifecycle**
 
 Add:
 - versioned signer sets
 - active set lookup
 - attestation binding to a set version
 
-- [ ] **Step 4: Re-run the focused bridge signer tests**
+- [x] **Step 4: Re-run the focused bridge signer tests**
 
 Run: `go test ./chain/aegislink/x/bridge/keeper -run 'TestSignerSet'`
 

@@ -6,11 +6,12 @@ import (
 )
 
 type Attestation struct {
-	MessageID   string
-	PayloadHash string
-	Signers     []string
-	Threshold   uint32
-	Expiry      uint64
+	MessageID        string
+	PayloadHash      string
+	Signers          []string
+	Threshold        uint32
+	Expiry           uint64
+	SignerSetVersion uint64
 }
 
 func (a Attestation) ValidateBasic() error {
@@ -31,6 +32,9 @@ func (a Attestation) ValidateBasic() error {
 	}
 	if a.Expiry == 0 {
 		return fmt.Errorf("%w: missing expiry", ErrInvalidAttestation)
+	}
+	if a.SignerSetVersion == 0 {
+		return fmt.Errorf("%w: missing signer set version", ErrInvalidAttestation)
 	}
 	seen := make(map[string]struct{}, len(a.Signers))
 	for _, signer := range a.Signers {

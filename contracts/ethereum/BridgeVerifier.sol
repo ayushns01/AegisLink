@@ -65,6 +65,10 @@ contract BridgeVerifier is IBridgeVerifier {
         usedProofs[messageId] = true;
     }
 
+    function activeSignerSetVersion() external pure override returns (uint64) {
+        return 1;
+    }
+
     function _recover(bytes32 digest, bytes calldata signature) internal pure returns (address signer) {
         if (signature.length != 65) revert InvalidAttestation();
 

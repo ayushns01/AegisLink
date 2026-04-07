@@ -135,11 +135,12 @@ func (s *CommandClaimSink) SubmitDepositClaim(ctx context.Context, claim bridget
 			Deadline:           claim.Deadline,
 		},
 		Attestation: persistedAttestation{
-			MessageID:   attestation.MessageID,
-			PayloadHash: attestation.PayloadHash,
-			Signers:     append([]string(nil), attestation.Signers...),
-			Threshold:   attestation.Threshold,
-			Expiry:      attestation.Expiry,
+			MessageID:        attestation.MessageID,
+			PayloadHash:      attestation.PayloadHash,
+			Signers:          append([]string(nil), attestation.Signers...),
+			Threshold:        attestation.Threshold,
+			Expiry:           attestation.Expiry,
+			SignerSetVersion: attestation.SignerSetVersion,
 		},
 	}
 	encoded, err := json.Marshal(payload)
@@ -176,7 +177,11 @@ func decodePersistedWithdrawal(withdrawal persistedWithdrawal) (Withdrawal, erro
 	if !ok {
 		return Withdrawal{}, fmt.Errorf("invalid withdrawal amount %q", withdrawal.Amount)
 	}
-	signature, err := base64.StdEncoding.DecodeString(withdrawal.Signature)
+	signatureBase64 := withdrawal.Signature
+	if signatureBase64 == "" {
+		signatureBase64 = withdrawal.SignatureBase64
+	}
+	signature, err := base64.StdEncoding.DecodeString(signatureBase64)
 	if err != nil {
 		return Withdrawal{}, fmt.Errorf("decode withdrawal signature: %w", err)
 	}

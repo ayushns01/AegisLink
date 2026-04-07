@@ -21,12 +21,16 @@ type VoteSource interface {
 }
 
 type Collector struct {
-	source    VoteSource
-	threshold uint32
+	source           VoteSource
+	threshold        uint32
+	signerSetVersion uint64
 }
 
-func NewCollector(source VoteSource, threshold uint32) *Collector {
-	return &Collector{source: source, threshold: threshold}
+func NewCollector(source VoteSource, threshold uint32, signerSetVersion uint64) *Collector {
+	if signerSetVersion == 0 {
+		signerSetVersion = 1
+	}
+	return &Collector{source: source, threshold: threshold, signerSetVersion: signerSetVersion}
 }
 
 func (c *Collector) Collect(ctx context.Context, messageID, payloadHash string) (bridgetypes.Attestation, error) {
@@ -82,10 +86,11 @@ func (c *Collector) Collect(ctx context.Context, messageID, payloadHash string) 
 	sort.Strings(signers)
 
 	return bridgetypes.Attestation{
-		MessageID:   messageID,
-		PayloadHash: payloadHash,
-		Signers:     signers,
-		Threshold:   c.threshold,
-		Expiry:      expiry,
+		MessageID:        messageID,
+		PayloadHash:      payloadHash,
+		Signers:          signers,
+		Threshold:        c.threshold,
+		Expiry:           expiry,
+		SignerSetVersion: c.signerSetVersion,
 	}, nil
 }
