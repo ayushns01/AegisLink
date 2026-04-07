@@ -6,7 +6,7 @@ func TestNewAppRegistersBridgeAndSafetyModules(t *testing.T) {
 	app := New()
 
 	got := app.ModuleNames()
-	want := []string{"bridge", "registry", "limits", "pauser", "ibcrouter"}
+	want := []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"}
 
 	if len(got) != len(want) {
 		t.Fatalf("expected %d modules, got %d: %v", len(want), len(got), got)
@@ -23,7 +23,7 @@ func TestNewAppExposesStoreKeysForAllModules(t *testing.T) {
 	app := New()
 
 	storeKeys := app.StoreKeys()
-	want := []string{"bridge", "registry", "limits", "pauser", "ibcrouter"}
+	want := []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"}
 
 	if len(storeKeys) != len(want) {
 		t.Fatalf("expected %d store keys, got %d: %v", len(want), len(storeKeys), storeKeys)

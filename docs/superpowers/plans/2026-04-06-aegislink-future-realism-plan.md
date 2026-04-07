@@ -753,7 +753,7 @@ git commit -m "docs: add recovery drill coverage"
 
 **Goal:** Add extensibility only after runtime, IBC, security, and ops are credible.
 
-**Phase 9 status:** In progress on April 7, 2026. Task 9.1 is now complete for the current repo scope: `ibcrouter` supports first-class destination route profiles with route-level asset allowlists and memo-policy guardrails, while the older single-route path remains intact for backwards compatibility. Governance-driven policy updates and richer route actions are still ahead.
+**Phase 9 status:** In progress on April 7, 2026. Tasks 9.1 and 9.2 are now complete for the current repo scope: `ibcrouter` supports first-class destination route profiles with route-level asset allowlists and memo-policy guardrails, and the new governance module can apply asset, limit, and route-policy updates through a recorded proposal path. Richer route actions are still ahead.
 
 ### Task 9.1: Generalize destination route registry
 
@@ -798,22 +798,22 @@ git commit -m "feat: add destination route profiles"
 - Modify: `README.md`
 - Test: `chain/aegislink/x/governance/keeper/keeper_test.go`
 
-- [ ] **Step 1: Write failing governance tests**
+- [x] **Step 1: Write failing governance tests**
 
 Cover:
 - asset enable or disable proposal
 - limit update proposal
 - route policy update proposal
 
-- [ ] **Step 2: Run the governance tests**
+- [x] **Step 2: Run the governance tests**
 
 Run: `go test ./chain/aegislink/x/governance/...`
 
 Expected: FAIL because governance module does not exist yet.
 
-- [ ] **Step 3: Implement minimal policy-governance surfaces**
+- [x] **Step 3: Implement minimal policy-governance surfaces**
 
-- [ ] **Step 4: Re-run the governance tests**
+- [x] **Step 4: Re-run the governance tests**
 
 Run: `go test ./chain/aegislink/x/governance/...`
 

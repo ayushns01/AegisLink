@@ -66,13 +66,21 @@ func (k *Keeper) GetAsset(assetID string) (registrytypes.Asset, bool) {
 }
 
 func (k *Keeper) DisableAsset(assetID string) error {
+	return k.setAssetEnabled(assetID, false)
+}
+
+func (k *Keeper) EnableAsset(assetID string) error {
+	return k.setAssetEnabled(assetID, true)
+}
+
+func (k *Keeper) setAssetEnabled(assetID string, enabled bool) error {
 	key := assetKey(assetID)
 	asset, ok := k.assets[key]
 	if !ok {
 		return ErrAssetNotFound
 	}
 
-	asset.Enabled = false
+	asset.Enabled = enabled
 	k.assets[key] = asset
 	return k.persist()
 }

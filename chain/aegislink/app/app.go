@@ -4,6 +4,8 @@ import (
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	governancemodule "github.com/ayushns01/aegislink/chain/aegislink/x/governance"
+	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
@@ -27,6 +29,7 @@ type App struct {
 	RegistryKeeper  *registrykeeper.Keeper
 	LimitsKeeper    *limitskeeper.Keeper
 	PauserKeeper    *pauserkeeper.Keeper
+	GovernanceKeeper *governancekeeper.Keeper
 	encoding        EncodingConfig
 	storeKeys       map[string]string
 	storeRuntime    *storeRuntime
@@ -65,6 +68,7 @@ type Status struct {
 	FailedTransfers        int               `json:"failed_transfers"`
 	TimedOutTransfers      int               `json:"timed_out_transfers"`
 	RefundedTransfers      int               `json:"refunded_transfers"`
+	GovernanceProposals    int               `json:"governance_proposals"`
 	SupplyByDenom          map[string]string `json:"supply_by_denom"`
 }
 
@@ -86,9 +90,10 @@ func NewWithConfig(cfg Config) (*App, error) {
 	limitsKeeper := limitskeeper.NewKeeper()
 	pauserKeeper := pauserkeeper.NewKeeper()
 	ibcRouterKeeper := ibcrouterkeeper.NewKeeper()
+	governanceKeeper := governancekeeper.NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper)
 	bridgeKeeper := bridgekeeper.NewKeeper(registryKeeper, limitsKeeper, pauserKeeper, cfg.AllowedSigners, cfg.RequiredThreshold)
 
-	return newAppFromKeepers(cfg, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper), nil
+	return newAppFromKeepers(cfg, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper, governanceKeeper), nil
 }
 
 func newAppFromKeepers(
@@ -98,18 +103,21 @@ func newAppFromKeepers(
 	registryKeeper *registrykeeper.Keeper,
 	limitsKeeper *limitskeeper.Keeper,
 	pauserKeeper *pauserkeeper.Keeper,
+	governanceKeeper *governancekeeper.Keeper,
 ) *App {
 	bridgeAppModule := bridgemodule.NewAppModule(bridgeKeeper)
 	registryAppModule := registrymodule.NewAppModule(registryKeeper)
 	limitsAppModule := limitsmodule.NewAppModule(limitsKeeper)
 	pauserAppModule := pausermodule.NewAppModule(pauserKeeper)
 	ibcRouterAppModule := ibcroutermodule.NewAppModule(ibcRouterKeeper)
+	governanceAppModule := governancemodule.NewAppModule(governanceKeeper)
 	modules := []string{
 		bridgeAppModule.Name(),
 		registryAppModule.Name(),
 		limitsAppModule.Name(),
 		pauserAppModule.Name(),
 		ibcRouterAppModule.Name(),
+		governanceAppModule.Name(),
 	}
 
 	return &App{
@@ -119,6 +127,7 @@ func newAppFromKeepers(
 		RegistryKeeper:  registryKeeper,
 		LimitsKeeper:    limitsKeeper,
 		PauserKeeper:    pauserKeeper,
+		GovernanceKeeper: governanceKeeper,
 		encoding:        DefaultEncodingConfig(modules),
 		storeKeys:       defaultStoreKeys(modules),
 		modules:         modules,
@@ -162,6 +171,9 @@ func LoadWithConfig(cfg Config) (*App, error) {
 		return nil, err
 	}
 	if err := app.IBCRouterKeeper.ImportState(state.IBCRouter); err != nil {
+		return nil, err
+	}
+	if err := app.GovernanceKeeper.ImportState(state.Governance); err != nil {
 		return nil, err
 	}
 
@@ -262,6 +274,18 @@ func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferReco
 	return a.IBCRouterKeeper.MarkRefunded(transferID)
 }
 
+func (a *App) ApplyAssetStatusProposal(proposal governancekeeper.AssetStatusProposal) error {
+	return a.GovernanceKeeper.ApplyAssetStatusProposal(proposal)
+}
+
+func (a *App) ApplyLimitUpdateProposal(proposal governancekeeper.LimitUpdateProposal) error {
+	return a.GovernanceKeeper.ApplyLimitUpdateProposal(proposal)
+}
+
+func (a *App) ApplyRoutePolicyUpdateProposal(proposal governancekeeper.RoutePolicyUpdateProposal) error {
+	return a.GovernanceKeeper.ApplyRoutePolicyUpdateProposal(proposal)
+}
+
 func (a *App) Save() error {
 	if a.Config.RuntimeMode == RuntimeModeSDKStore {
 		for _, flush := range []func() error{
@@ -270,6 +294,7 @@ func (a *App) Save() error {
 			a.PauserKeeper.Flush,
 			a.BridgeKeeper.Flush,
 			a.IBCRouterKeeper.Flush,
+			a.GovernanceKeeper.Flush,
 		} {
 			if err := flush(); err != nil {
 				return err
@@ -283,6 +308,7 @@ func (a *App) Save() error {
 		PausedFlows: a.PauserKeeper.ExportPausedFlows(),
 		Bridge:      a.BridgeKeeper.ExportState(),
 		IBCRouter:   a.IBCRouterKeeper.ExportState(),
+		Governance:  a.GovernanceKeeper.ExportState(),
 	})
 }
 
@@ -321,6 +347,7 @@ func (a *App) Status() Status {
 		Withdrawals:       len(bridgeState.Withdrawals),
 		Routes:            len(a.IBCRouterKeeper.ExportRoutes()),
 		Transfers:         len(transfers),
+		GovernanceProposals: len(a.GovernanceKeeper.ExportState().AppliedProposals),
 		SupplyByDenom:     bridgeState.SupplyByDenom,
 	}
 

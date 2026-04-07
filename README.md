@@ -173,12 +173,12 @@ As of April 7, 2026:
 - the verifier evolution path is now documented explicitly, so the trust-model story is inspectable instead of buried in keeper logic or contract code
 - Phase 8 is now complete for the current repo scope: the binaries expose Prometheus-style metrics, the repo ships a local monitoring scaffold, and the main operator recovery drills are codified in runbooks and e2e coverage
 - the local monitoring scaffold now exists too: Prometheus scrape config, Grafana provisioning, an initial destination-ops dashboard, and `make monitor`
-- Phase 9 is now in progress: the `ibcrouter` can register multiple destination route profiles, each with its own allowed assets and memo-policy guardrails, without changing the older single-route path
+- Phase 9 is now in progress: the `ibcrouter` can register multiple destination route profiles, each with its own allowed assets and memo-policy guardrails, and the new governance module can apply asset, limit, and route-policy changes through a recorded proposal path
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus inside Phase 9 is governance-style route and policy changes, with live Docker-backed monitoring boot still worth validating on a machine that has Docker installed
+- the next roadmap focus inside Phase 9 is richer route actions and destination-specific constraints, with live Docker-backed monitoring boot still worth validating on a machine that has Docker installed
 
 The current repo shape is:
 
@@ -193,4 +193,4 @@ Fresh verification checkpoints that already pass in this repo:
 - `go test ./relayer/...`
 - `cd tests/e2e && go test ./...`
 
-The local route-harness, operator-surface, SDK-store runtime, dual-runtime route, threshold-verifier, and recovery-drill milestones are now in place. The current active roadmap work is protocol expansion on top of that base: route profiles first, then governed policy changes and richer route actions.
+The local route-harness, operator-surface, SDK-store runtime, dual-runtime route, threshold-verifier, and recovery-drill milestones are now in place. The current active roadmap work is protocol expansion on top of that base: route profiles and governed policy changes are in, and richer route actions are next.

@@ -21,7 +21,7 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
 	app, err := NewWithConfig(Config{
 		AppName:           AppName,
-		Modules:           []string{"bridge", "registry", "limits", "pauser"},
+		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
@@ -142,7 +142,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	app, err := NewWithConfig(Config{
 		AppName:           AppName,
 		RuntimeMode:       RuntimeModeSDKStore,
-		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
 		StatePath:         storePath,
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
@@ -193,7 +193,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	reloaded, err := LoadWithConfig(Config{
 		RuntimeMode: RuntimeModeSDKStore,
 		StatePath:   storePath,
-		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	})
 	if err != nil {
 		t.Fatalf("reload store runtime: %v", err)
@@ -291,7 +291,7 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 		HomeDir: homeDir,
 		ChainID: "aegislink-devnet-1",
 		AppName: AppName,
-		Modules: []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+		Modules: []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	}, false)
 	if err != nil {
 		t.Fatalf("init home: %v", err)
@@ -321,8 +321,8 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	if !status.Initialized {
 		t.Fatal("expected initialized runtime")
 	}
-	if status.Modules != 5 {
-		t.Fatalf("expected 5 modules, got %d", status.Modules)
+	if status.Modules != 6 {
+		t.Fatalf("expected 6 modules, got %d", status.Modules)
 	}
 	if status.FailedClaims != 0 {
 		t.Fatalf("expected zero failed claims on fresh runtime, got %d", status.FailedClaims)
@@ -338,7 +338,7 @@ func TestInitHomeCreatesSDKStoreRuntimeArtifacts(t *testing.T) {
 		ChainID:     "aegislink-sdk-1",
 		AppName:     AppName,
 		RuntimeMode: RuntimeModeSDKStore,
-		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter"},
+		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	}, false)
 	if err != nil {
 		t.Fatalf("init home: %v", err)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
+	governancemodule "github.com/ayushns01/aegislink/chain/aegislink/x/governance"
 	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
 	pausermodule "github.com/ayushns01/aegislink/chain/aegislink/x/pauser"
@@ -58,6 +59,7 @@ func DefaultConfig() Config {
 			limitsmodule.ModuleName,
 			pausermodule.ModuleName,
 			ibcroutermodule.ModuleName,
+			governancemodule.ModuleName,
 		},
 		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
 		RequiredThreshold: 2,
