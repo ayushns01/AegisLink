@@ -494,7 +494,7 @@ git commit -m "feat: add real ibc demo path"
 
 **Goal:** Make the security roadmap concrete enough that the system can evolve beyond a single-attester v1 verifier.
 
-**Phase 7 status:** In progress on April 7, 2026. The repository now has a real threshold-verifier path on Ethereum through `ThresholdBridgeVerifier.sol`, the gateway still depends on the narrow verifier interface, and AegisLink bridge attestations now bind to versioned signer sets with activation and expiry rules. The remaining Phase 7 work is the explicit verifier-evolution documentation and evaluation write-up.
+**Phase 7 status:** Complete on April 7, 2026 for the current repo scope. The repository now has a real threshold-verifier path on Ethereum through `ThresholdBridgeVerifier.sol`, the gateway still depends on the narrow verifier interface, AegisLink bridge attestations bind to versioned signer sets with activation and expiry rules, and the verifier-evolution documentation now explains what is built versus what remains future work.
 
 ### Task 7.1: Add threshold verifier support on Ethereum
 
@@ -586,20 +586,20 @@ git commit -m "feat: add bridge signer set lifecycle"
 - Modify: `docs/security-model.md`
 - Modify: `docs/project-positioning.md`
 
-- [ ] **Step 1: Document the current verifier boundary**
+- [x] **Step 1: Document the current verifier boundary**
 
 Describe:
 - what is replaceable today
 - what is still coupled
 
-- [ ] **Step 2: Add an evaluated roadmap**
+- [x] **Step 2: Add an evaluated roadmap**
 
 Compare:
 - threshold attestation
 - optimistic bridge
 - Ethereum light-client path
 
-- [ ] **Step 3: Review for honesty**
+- [x] **Step 3: Review for honesty**
 
 Check that the docs clearly state what is built versus researched.
 

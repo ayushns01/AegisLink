@@ -7,11 +7,11 @@ import (
 )
 
 type SignerSet struct {
-	Version     uint64
-	Signers     []string
-	Threshold   uint32
-	ActivatedAt uint64
-	ExpiresAt   uint64
+	Version     uint64   `json:"version"`
+	Signers     []string `json:"signers"`
+	Threshold   uint32   `json:"threshold"`
+	ActivatedAt uint64   `json:"activated_at"`
+	ExpiresAt   uint64   `json:"expires_at"`
 }
 
 func (s SignerSet) ValidateBasic() error {
@@ -95,4 +95,29 @@ func (k *Keeper) ActiveSignerSet() (SignerSet, error) {
 		return SignerSet{}, ErrSignerSetInactive
 	}
 	return active, nil
+}
+
+func (k *Keeper) SignerSet(version uint64) (SignerSet, bool) {
+	if version == 0 || k.signerSets == nil {
+		return SignerSet{}, false
+	}
+	set, ok := k.signerSets[version]
+	if !ok {
+		return SignerSet{}, false
+	}
+	return set, true
+}
+
+func (k *Keeper) ExportSignerSets() []SignerSet {
+	if len(k.signerSets) == 0 {
+		return nil
+	}
+	sets := make([]SignerSet, 0, len(k.signerSets))
+	for _, set := range k.signerSets {
+		sets = append(sets, normalizeSignerSet(set))
+	}
+	sort.Slice(sets, func(i, j int) bool {
+		return sets[i].Version < sets[j].Version
+	})
+	return sets
 }

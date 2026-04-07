@@ -68,6 +68,10 @@ func runQuery(args []string, stdout, stderr io.Writer) error {
 		return querySummary(args[1:], stdout)
 	case "claim":
 		return queryClaim(args[1:], stdout)
+	case "signer-set":
+		return querySignerSet(args[1:], stdout)
+	case "signer-sets":
+		return querySignerSets(args[1:], stdout)
 	case "routes":
 		return queryRoutes(args[1:], stdout)
 	case "transfers":
@@ -138,12 +142,14 @@ func runStart(args []string, stdout, stderr io.Writer) error {
 	}
 	status := a.Status()
 	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_start", "runtime started", map[string]any{
-		"chain_id":           status.ChainID,
-		"home_dir":           status.HomeDir,
-		"module_count":       status.Modules,
-		"configured_signers": len(status.AllowedSigners),
-		"enabled_route_ids":  status.EnabledRouteIDs,
-		"current_height":     status.CurrentHeight,
+		"chain_id":                  status.ChainID,
+		"home_dir":                  status.HomeDir,
+		"module_count":              status.Modules,
+		"configured_signers":        len(status.AllowedSigners),
+		"active_signer_set_version": status.ActiveSignerSetVersion,
+		"signer_set_count":          status.SignerSetCount,
+		"enabled_route_ids":         status.EnabledRouteIDs,
+		"current_height":            status.CurrentHeight,
 	})
 	return writeJSON(stdout, statusEnvelope("started", status))
 }
@@ -159,12 +165,14 @@ func queryStatus(args []string, stdout, stderr io.Writer) error {
 	}
 	status := a.Status()
 	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_status", "runtime status queried", map[string]any{
-		"chain_id":          status.ChainID,
-		"home_dir":          status.HomeDir,
-		"module_count":      status.Modules,
-		"enabled_route_ids": status.EnabledRouteIDs,
-		"transfers":         status.Transfers,
-		"processed_claims":  status.ProcessedClaims,
+		"chain_id":                  status.ChainID,
+		"home_dir":                  status.HomeDir,
+		"module_count":              status.Modules,
+		"active_signer_set_version": status.ActiveSignerSetVersion,
+		"signer_set_count":          status.SignerSetCount,
+		"enabled_route_ids":         status.EnabledRouteIDs,
+		"transfers":                 status.Transfers,
+		"processed_claims":          status.ProcessedClaims,
 	})
 	return writeJSON(stdout, status)
 }
@@ -256,6 +264,56 @@ func queryClaim(args []string, stdout io.Writer) error {
 	}
 
 	return fmt.Errorf("claim %q not found", *messageID)
+}
+
+func querySignerSet(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("signer-set", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	version := flags.Uint64("version", 0, "signer set version, defaults to active")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+	service := app.NewBridgeQueryService(a)
+
+	if *version == 0 {
+		signerSet, err := service.ActiveSignerSet()
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, signerSet)
+	}
+
+	signerSet, ok := service.GetSignerSet(*version)
+	if !ok {
+		return fmt.Errorf("signer set version %d not found", *version)
+	}
+	return writeJSON(stdout, signerSet)
+}
+
+func querySignerSets(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("signer-sets", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+	service := app.NewBridgeQueryService(a)
+	return writeJSON(stdout, service.ListSignerSets())
 }
 
 func queryWithdrawals(args []string, stdout io.Writer) error {
@@ -765,33 +823,37 @@ func closeApp(a *app.App) {
 
 func statusEnvelope(kind string, status app.Status) map[string]any {
 	return map[string]any{
-		"status":              kind,
-		"app_name":            status.AppName,
-		"chain_id":            status.ChainID,
-		"runtime_mode":        status.RuntimeMode,
-		"home_dir":            status.HomeDir,
-		"config_path":         status.ConfigPath,
-		"genesis_path":        status.GenesisPath,
-		"state_path":          status.StatePath,
-		"initialized":         status.Initialized,
-		"modules":             status.Modules,
-		"module_names":        status.ModuleNames,
-		"allowed_signers":     status.AllowedSigners,
-		"required_threshold":  status.RequiredThreshold,
-		"current_height":      status.CurrentHeight,
-		"assets":              status.Assets,
-		"limits":              status.Limits,
-		"paused_flows":        status.PausedFlows,
-		"processed_claims":    status.ProcessedClaims,
-		"failed_claims":       status.FailedClaims,
-		"withdrawals":         status.Withdrawals,
-		"routes":              status.Routes,
-		"transfers":           status.Transfers,
-		"pending_transfers":   status.PendingTransfers,
-		"completed_transfers": status.CompletedTransfers,
-		"failed_transfers":    status.FailedTransfers,
-		"timed_out_transfers": status.TimedOutTransfers,
-		"refunded_transfers":  status.RefundedTransfers,
-		"supply_by_denom":     status.SupplyByDenom,
+		"status":                    kind,
+		"app_name":                  status.AppName,
+		"chain_id":                  status.ChainID,
+		"runtime_mode":              status.RuntimeMode,
+		"home_dir":                  status.HomeDir,
+		"config_path":               status.ConfigPath,
+		"genesis_path":              status.GenesisPath,
+		"state_path":                status.StatePath,
+		"initialized":               status.Initialized,
+		"modules":                   status.Modules,
+		"module_names":              status.ModuleNames,
+		"allowed_signers":           status.AllowedSigners,
+		"active_signer_set_version": status.ActiveSignerSetVersion,
+		"active_signer_threshold":   status.ActiveSignerThreshold,
+		"signer_set_count":          status.SignerSetCount,
+		"signer_set_versions":       status.SignerSetVersions,
+		"required_threshold":        status.RequiredThreshold,
+		"current_height":            status.CurrentHeight,
+		"assets":                    status.Assets,
+		"limits":                    status.Limits,
+		"paused_flows":              status.PausedFlows,
+		"processed_claims":          status.ProcessedClaims,
+		"failed_claims":             status.FailedClaims,
+		"withdrawals":               status.Withdrawals,
+		"routes":                    status.Routes,
+		"transfers":                 status.Transfers,
+		"pending_transfers":         status.PendingTransfers,
+		"completed_transfers":       status.CompletedTransfers,
+		"failed_transfers":          status.FailedTransfers,
+		"timed_out_transfers":       status.TimedOutTransfers,
+		"refunded_transfers":        status.RefundedTransfers,
+		"supply_by_denom":           status.SupplyByDenom,
 	}
 }

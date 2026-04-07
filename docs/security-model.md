@@ -11,7 +11,8 @@ That means:
 - Ethereum is the source of canonical deposit and withdrawal events
 - relayers provide evidence, not absolute truth
 - the bridge zone enforces replay protection, rate limits, asset policy, and pause controls
-- the system depends on the configured attester threshold being honest and available
+- the system depends on the configured attester threshold and active signer set being honest and available
+- the current repo now supports explicit signer-set versioning and rotation instead of assuming one fixed attester shape forever
 
 ## Security invariants
 
@@ -45,6 +46,8 @@ Do not claim:
   Prevents double execution.
 - `attester set management`
   Controls which signatures are valid evidence.
+- `signer-set versioning`
+  Makes attestations rejectable when they target an inactive, expired, or mismatched signer set.
 
 ## Launch questions
 
@@ -52,6 +55,7 @@ Before any external testnet or public review, the team should be able to answer:
 
 - what is the finality threshold for the active Ethereum network
 - which attester quorum is required
+- which signer-set version is active
 - which assets are enabled
 - which routes to Osmosis are enabled
 - what happens when Osmosis is unavailable
@@ -61,6 +65,7 @@ Before any external testnet or public review, the team should be able to answer:
 
 - [System architecture](architecture/01-system-architecture.md)
 - [Security and trust model](architecture/02-security-and-trust-model.md)
+- [Verifier evolution](architecture/04-verifier-evolution.md)
 - [Observability plan](observability.md)
 - [Pause and recovery runbook](runbooks/pause-and-recovery.md)
 - [Upgrade and rollback runbook](runbooks/upgrade-and-rollback.md)

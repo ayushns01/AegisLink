@@ -16,7 +16,8 @@ This document states what AegisLink v1 does and does not trust. The goal is to b
 
 - Relayers are not trusted individually.
 - A claim is accepted only after the required threshold of attestations is present and valid.
-- The attesting set is assumed to be configured correctly and to maintain the operational threshold expected by the protocol.
+- The attesting set is assumed to be configured correctly, versioned correctly, and to maintain the operational threshold expected by the protocol.
+- The current repo now models signer-set activation, expiry, and version mismatch explicitly instead of treating the attester set as an invisible constant.
 - If the attestation quorum is compromised, the system can be forced to accept invalid claims. That is a core v1 trust assumption, not a hidden guarantee.
 
 ### Cosmos-SDK bridge zone
@@ -76,6 +77,7 @@ Mitigation:
 - verify the threshold signature or aggregate proof against an allowlisted attester set
 - version attestation keys and rotate them by governance or protocol upgrade
 - reject claims that do not satisfy the quorum and freshness checks
+- reject claims that target a signer-set version that is inactive, expired, or no longer current
 
 ### 4. Unauthorized mint or unlock
 
@@ -159,5 +161,9 @@ Use the following phrasing in external-facing materials:
 - "AegisLink v1 is a verifiable-relayer bridge with threshold attestations."
 - "AegisLink enforces replay protection, asset registration, rate limits, and pause controls."
 - "AegisLink v2 is planned to replace relayer trust with an Ethereum light client verification path."
+
+For the concrete verifier path now present in the repo, also use:
+
+- "The repository includes both a narrow verifier boundary and a threshold-verifier path with signer-set rotation."
 
 Avoid claiming that v1 is trustless or fully light-client verified. That would overstate the design.

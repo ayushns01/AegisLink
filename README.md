@@ -68,6 +68,7 @@ Read these for the protocol design:
 - [System architecture](docs/architecture/01-system-architecture.md)
 - [Current flow diagrams](docs/architecture/03-current-flow-diagrams.md)
 - [Security and trust model](docs/architecture/02-security-and-trust-model.md)
+- [Verifier evolution](docs/architecture/04-verifier-evolution.md)
 - [Project positioning](docs/project-positioning.md)
 - [Architecture spec](docs/superpowers/specs/2026-03-28-eth-cosmos-aegislink-design.md)
 
@@ -145,6 +146,8 @@ For the honest reviewer framing, use [Project positioning](docs/project-position
 go run ./chain/aegislink/cmd/aegislinkd init --home /tmp/aegislink-home --chain-id aegislink-devnet-1 --runtime-mode sdk-store-runtime
 go run ./chain/aegislink/cmd/aegislinkd start --home /tmp/aegislink-home
 go run ./chain/aegislink/cmd/aegislinkd query status --home /tmp/aegislink-home
+go run ./chain/aegislink/cmd/aegislinkd query signer-set --home /tmp/aegislink-home
+go run ./chain/aegislink/cmd/aegislinkd query signer-sets --home /tmp/aegislink-home
 make test-real-chain
 make test-real-ibc
 ```
@@ -163,12 +166,13 @@ As of April 7, 2026:
 - the live local Ethereum bridge loop is proven end to end
 - Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
 - Phase 6 is now complete for the current repo scope as a dual-runtime local route milestone: a destination runtime can be bootstrapped through `osmo-locald`, AegisLink can initiate routed transfers through the `ibcrouter` packet lifecycle, and `route-relayer` can drive acknowledgement completion against the destination home without the old HTTP target
-- Phase 7 is now in progress: the Ethereum side has a real threshold-verifier path with signer rotation, and AegisLink attestations now bind to versioned signer sets with activation and expiry rules
+- Phase 7 is now complete for the current repo scope: the Ethereum side has a real threshold-verifier path with signer rotation, AegisLink attestations bind to versioned signer sets with activation and expiry rules, and the runtime exposes `query signer-set`, `query signer-sets`, and signer-set status summaries
+- the verifier evolution path is now documented explicitly, so the trust-model story is inspectable instead of buried in keeper logic or contract code
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is finishing the verifier-evolution docs for Phase 7, then moving deeper into networked chain realism and fuller IBC-Go or Hermes integration
+- the next roadmap focus is Phase 8 operator metrics and dashboards, with deeper networked chain realism and fuller IBC-Go or Hermes integration still ahead beyond the current local-runtime scope
 
 The current repo shape is:
 

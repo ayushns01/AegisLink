@@ -26,6 +26,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now also proves a single-node real-chain flow through `make test-real-chain`.
 - The repo now also proves a dual-runtime local route flow through `make test-real-ibc`, where `route-relayer` moves a transfer from an AegisLink home into a dedicated `osmo-locald` home.
 - The repo now also proves a threshold-verifier path in Foundry tests and versioned signer-set enforcement on the AegisLink side.
+- The runtime and CLI already expose active signer-set state and signer-set history, so the trust model is inspectable instead of buried in code.
 
 ## What is still a local harness
 
@@ -46,7 +47,7 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
-- `The roadmap from here is finishing the verifier-evolution documentation, then deeper networked chain realism and fuller IBC-Go or Hermes realism.`
+- `The roadmap from here is deeper networked chain realism and fuller IBC-Go or Hermes realism, with the verifier boundary now documented explicitly.`
 
 Avoid phrasing like:
 
@@ -68,4 +69,5 @@ The next realism steps are:
 - The bridge keeper now has stronger replay and supply-conservation invariant coverage.
 - The route keeper now has explicit recoverable-refund state-machine coverage.
 - The Ethereum gateway now depends on a narrow verifier interface, so the current v1 verifier can be swapped more cleanly for future threshold or light-client implementations.
+- The bridge keeper now tracks versioned signer sets with activation and expiry, so attestation trust assumptions are explicit and queryable.
 - Demo-facing status summaries now expose failed claims and destination swap failures instead of only happy-path counts.

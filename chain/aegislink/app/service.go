@@ -36,6 +36,18 @@ func (s *BridgeQueryService) ListWithdrawals(fromHeight, toHeight uint64) []brid
 	return s.app.Withdrawals(fromHeight, toHeight)
 }
 
+func (s *BridgeQueryService) ActiveSignerSet() (bridgekeeper.SignerSet, error) {
+	return s.app.ActiveSignerSet()
+}
+
+func (s *BridgeQueryService) GetSignerSet(version uint64) (bridgekeeper.SignerSet, bool) {
+	return s.app.BridgeKeeper.SignerSet(version)
+}
+
+func (s *BridgeQueryService) ListSignerSets() []bridgekeeper.SignerSet {
+	return s.app.SignerSets()
+}
+
 type BridgeTxService struct {
 	app *App
 }

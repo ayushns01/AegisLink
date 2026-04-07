@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -67,6 +68,38 @@ func TestIBCRouterQueryServiceListsRoutesAndTransfers(t *testing.T) {
 	}
 	if transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
 		t.Fatalf("expected pending transfer, got %q", transfers[0].Status)
+	}
+}
+
+func TestBridgeQueryServiceReturnsActiveSignerSetAndHistory(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+	app.SetCurrentHeight(90)
+
+	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
+		Version:     2,
+		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Threshold:   2,
+		ActivatedAt: 80,
+	}); err != nil {
+		t.Fatalf("upsert signer set: %v", err)
+	}
+
+	service := NewBridgeQueryService(app)
+	active, err := service.ActiveSignerSet()
+	if err != nil {
+		t.Fatalf("active signer set: %v", err)
+	}
+	if active.Version != 2 {
+		t.Fatalf("expected active signer set version 2, got %d", active.Version)
+	}
+
+	sets := service.ListSignerSets()
+	if len(sets) != 2 {
+		t.Fatalf("expected two signer sets, got %d", len(sets))
+	}
+	if sets[0].Version != 1 || sets[1].Version != 2 {
+		t.Fatalf("expected signer set history [1 2], got %+v", sets)
 	}
 }
 

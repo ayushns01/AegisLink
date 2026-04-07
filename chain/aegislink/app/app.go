@@ -34,34 +34,38 @@ type App struct {
 }
 
 type Status struct {
-	AppName            string            `json:"app_name"`
-	ChainID            string            `json:"chain_id"`
-	RuntimeMode        string            `json:"runtime_mode"`
-	HomeDir            string            `json:"home_dir"`
-	ConfigPath         string            `json:"config_path"`
-	GenesisPath        string            `json:"genesis_path"`
-	StatePath          string            `json:"state_path"`
-	Initialized        bool              `json:"initialized"`
-	ModuleNames        []string          `json:"module_names"`
-	Modules            int               `json:"modules"`
-	AllowedSigners     []string          `json:"allowed_signers"`
-	EnabledRouteIDs    []string          `json:"enabled_route_ids"`
-	RequiredThreshold  uint32            `json:"required_threshold"`
-	CurrentHeight      uint64            `json:"current_height"`
-	Assets             int               `json:"assets"`
-	Limits             int               `json:"limits"`
-	PausedFlows        int               `json:"paused_flows"`
-	ProcessedClaims    int               `json:"processed_claims"`
-	FailedClaims       uint64            `json:"failed_claims"`
-	Withdrawals        int               `json:"withdrawals"`
-	Routes             int               `json:"routes"`
-	Transfers          int               `json:"transfers"`
-	PendingTransfers   int               `json:"pending_transfers"`
-	CompletedTransfers int               `json:"completed_transfers"`
-	FailedTransfers    int               `json:"failed_transfers"`
-	TimedOutTransfers  int               `json:"timed_out_transfers"`
-	RefundedTransfers  int               `json:"refunded_transfers"`
-	SupplyByDenom      map[string]string `json:"supply_by_denom"`
+	AppName                string            `json:"app_name"`
+	ChainID                string            `json:"chain_id"`
+	RuntimeMode            string            `json:"runtime_mode"`
+	HomeDir                string            `json:"home_dir"`
+	ConfigPath             string            `json:"config_path"`
+	GenesisPath            string            `json:"genesis_path"`
+	StatePath              string            `json:"state_path"`
+	Initialized            bool              `json:"initialized"`
+	ModuleNames            []string          `json:"module_names"`
+	Modules                int               `json:"modules"`
+	AllowedSigners         []string          `json:"allowed_signers"`
+	ActiveSignerSetVersion uint64            `json:"active_signer_set_version"`
+	ActiveSignerThreshold  uint32            `json:"active_signer_threshold"`
+	SignerSetCount         int               `json:"signer_set_count"`
+	SignerSetVersions      []uint64          `json:"signer_set_versions"`
+	EnabledRouteIDs        []string          `json:"enabled_route_ids"`
+	RequiredThreshold      uint32            `json:"required_threshold"`
+	CurrentHeight          uint64            `json:"current_height"`
+	Assets                 int               `json:"assets"`
+	Limits                 int               `json:"limits"`
+	PausedFlows            int               `json:"paused_flows"`
+	ProcessedClaims        int               `json:"processed_claims"`
+	FailedClaims           uint64            `json:"failed_claims"`
+	Withdrawals            int               `json:"withdrawals"`
+	Routes                 int               `json:"routes"`
+	Transfers              int               `json:"transfers"`
+	PendingTransfers       int               `json:"pending_transfers"`
+	CompletedTransfers     int               `json:"completed_transfers"`
+	FailedTransfers        int               `json:"failed_transfers"`
+	TimedOutTransfers      int               `json:"timed_out_transfers"`
+	RefundedTransfers      int               `json:"refunded_transfers"`
+	SupplyByDenom          map[string]string `json:"supply_by_denom"`
 }
 
 func New() *App {
@@ -218,6 +222,14 @@ func (a *App) Withdrawals(fromHeight, toHeight uint64) []bridgekeeper.Withdrawal
 	return a.BridgeKeeper.Withdrawals(fromHeight, toHeight)
 }
 
+func (a *App) ActiveSignerSet() (bridgekeeper.SignerSet, error) {
+	return a.BridgeKeeper.ActiveSignerSet()
+}
+
+func (a *App) SignerSets() []bridgekeeper.SignerSet {
+	return a.BridgeKeeper.ExportSignerSets()
+}
+
 func (a *App) Routes() []ibcrouterkeeper.Route {
 	return a.IBCRouterKeeper.ExportRoutes()
 }
@@ -310,6 +322,17 @@ func (a *App) Status() Status {
 		Routes:            len(a.IBCRouterKeeper.ExportRoutes()),
 		Transfers:         len(transfers),
 		SupplyByDenom:     bridgeState.SupplyByDenom,
+	}
+
+	signerSets := a.BridgeKeeper.ExportSignerSets()
+	status.SignerSetCount = len(signerSets)
+	status.SignerSetVersions = make([]uint64, 0, len(signerSets))
+	for _, signerSet := range signerSets {
+		status.SignerSetVersions = append(status.SignerSetVersions, signerSet.Version)
+	}
+	if activeSignerSet, err := a.BridgeKeeper.ActiveSignerSet(); err == nil {
+		status.ActiveSignerSetVersion = activeSignerSet.Version
+		status.ActiveSignerThreshold = activeSignerSet.Threshold
 	}
 
 	for _, transfer := range transfers {

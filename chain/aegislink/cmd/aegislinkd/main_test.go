@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
+	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -110,6 +112,15 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 		t.Fatalf("init home: %v", err)
 	}
 	app := seededRuntimeAppWithIBCRoute(t, cfg.StatePath)
+	app.SetCurrentHeight(90)
+	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
+		Version:     2,
+		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Threshold:   2,
+		ActivatedAt: 80,
+	}); err != nil {
+		t.Fatalf("upsert signer set: %v", err)
+	}
 	if err := app.Save(); err != nil {
 		t.Fatalf("save seeded state: %v", err)
 	}
@@ -124,17 +135,20 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	}
 
 	var status struct {
-		AppName          string   `json:"app_name"`
-		ChainID          string   `json:"chain_id"`
-		Initialized      bool     `json:"initialized"`
-		Assets           int      `json:"assets"`
-		Routes           int      `json:"routes"`
-		EnabledRouteIDs  []string `json:"enabled_route_ids"`
-		FailedClaims     int      `json:"failed_claims"`
-		Transfers        int      `json:"transfers"`
-		PendingTransfers int      `json:"pending_transfers"`
-		HomeDir          string   `json:"home_dir"`
-		StatePath        string   `json:"state_path"`
+		AppName                string   `json:"app_name"`
+		ChainID                string   `json:"chain_id"`
+		Initialized            bool     `json:"initialized"`
+		Assets                 int      `json:"assets"`
+		Routes                 int      `json:"routes"`
+		EnabledRouteIDs        []string `json:"enabled_route_ids"`
+		ActiveSignerSetVersion uint64   `json:"active_signer_set_version"`
+		SignerSetCount         int      `json:"signer_set_count"`
+		SignerSetVersions      []uint64 `json:"signer_set_versions"`
+		FailedClaims           int      `json:"failed_claims"`
+		Transfers              int      `json:"transfers"`
+		PendingTransfers       int      `json:"pending_transfers"`
+		HomeDir                string   `json:"home_dir"`
+		StatePath              string   `json:"state_path"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
 		t.Fatalf("decode status output: %v\n%s", err, stdout.String())
@@ -153,6 +167,15 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	}
 	if len(status.EnabledRouteIDs) != 1 || status.EnabledRouteIDs[0] != "eth.usdc@osmosis-1:channel-0" {
 		t.Fatalf("expected enabled route id eth.usdc@osmosis-1:channel-0, got %+v", status.EnabledRouteIDs)
+	}
+	if status.ActiveSignerSetVersion != 2 {
+		t.Fatalf("expected active signer set version 2, got %d", status.ActiveSignerSetVersion)
+	}
+	if status.SignerSetCount != 2 {
+		t.Fatalf("expected signer set count 2, got %d", status.SignerSetCount)
+	}
+	if len(status.SignerSetVersions) != 2 || status.SignerSetVersions[0] != 1 || status.SignerSetVersions[1] != 2 {
+		t.Fatalf("expected signer set versions [1 2], got %+v", status.SignerSetVersions)
 	}
 	if status.FailedClaims != 0 {
 		t.Fatalf("expected zero failed claims in seeded runtime, got %d", status.FailedClaims)
@@ -180,6 +203,15 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 		t.Fatalf("init home: %v", err)
 	}
 	app := seededRuntimeAppWithIBCRoute(t, cfg.StatePath)
+	app.SetCurrentHeight(90)
+	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
+		Version:     2,
+		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Threshold:   2,
+		ActivatedAt: 80,
+	}); err != nil {
+		t.Fatalf("upsert signer set: %v", err)
+	}
 	if err := app.Save(); err != nil {
 		t.Fatalf("save seeded state: %v", err)
 	}
@@ -217,6 +249,92 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 	enabled, ok := last["enabled_route_ids"].([]any)
 	if !ok || len(enabled) != 1 || enabled[0] != "eth.usdc@osmosis-1:channel-0" {
 		t.Fatalf("expected enabled route ids to include eth.usdc@osmosis-1:channel-0, got %+v", last["enabled_route_ids"])
+	}
+	if last["active_signer_set_version"] != float64(2) {
+		t.Fatalf("expected active signer set version 2, got %+v", last["active_signer_set_version"])
+	}
+	if last["signer_set_count"] != float64(2) {
+		t.Fatalf("expected signer set count 2, got %+v", last["signer_set_count"])
+	}
+}
+
+func TestRunQuerySignerSetReturnsActiveSignerSet(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	app.SetCurrentHeight(90)
+	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
+		Version:     2,
+		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Threshold:   2,
+		ActivatedAt: 80,
+	}); err != nil {
+		t.Fatalf("upsert signer set: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := run([]string{"query", "signer-set", "--state-path", statePath}, &stdout, io.Discard); err != nil {
+		t.Fatalf("run query signer-set: %v", err)
+	}
+
+	var set struct {
+		Version     uint64   `json:"version"`
+		Signers     []string `json:"signers"`
+		Threshold   uint32   `json:"threshold"`
+		ActivatedAt uint64   `json:"activated_at"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &set); err != nil {
+		t.Fatalf("decode signer set output: %v\n%s", err, stdout.String())
+	}
+	if set.Version != 2 {
+		t.Fatalf("expected active signer set version 2, got %d", set.Version)
+	}
+	if set.ActivatedAt != 80 {
+		t.Fatalf("expected activated_at 80, got %d", set.ActivatedAt)
+	}
+	if len(set.Signers) != 3 {
+		t.Fatalf("expected three signers, got %+v", set.Signers)
+	}
+}
+
+func TestRunQuerySignerSetsListsHistory(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCRoute(t, statePath)
+	app.SetCurrentHeight(90)
+	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
+		Version:     2,
+		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Threshold:   2,
+		ActivatedAt: 80,
+	}); err != nil {
+		t.Fatalf("upsert signer set: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := run([]string{"query", "signer-sets", "--state-path", statePath}, &stdout, io.Discard); err != nil {
+		t.Fatalf("run query signer-sets: %v", err)
+	}
+
+	var sets []struct {
+		Version uint64 `json:"version"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &sets); err != nil {
+		t.Fatalf("decode signer set history output: %v\n%s", err, stdout.String())
+	}
+	if len(sets) != 2 {
+		t.Fatalf("expected two signer sets, got %d", len(sets))
+	}
+	if sets[0].Version != 1 || sets[1].Version != 2 {
+		t.Fatalf("expected versions [1 2], got %+v", sets)
 	}
 }
 
