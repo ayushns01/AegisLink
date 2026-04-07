@@ -151,6 +151,7 @@ go run ./chain/aegislink/cmd/aegislinkd query signer-set --home /tmp/aegislink-h
 go run ./chain/aegislink/cmd/aegislinkd query signer-sets --home /tmp/aegislink-home
 make test-real-chain
 make test-real-ibc
+make monitor
 ```
 
 That flow creates and uses:
@@ -170,11 +171,12 @@ As of April 7, 2026:
 - Phase 7 is now complete for the current repo scope: the Ethereum side has a real threshold-verifier path with signer rotation, AegisLink attestations bind to versioned signer sets with activation and expiry rules, and the runtime exposes `query signer-set`, `query signer-sets`, and signer-set status summaries
 - the verifier evolution path is now documented explicitly, so the trust-model story is inspectable instead of buried in keeper logic or contract code
 - Phase 8 is now in progress: `aegislinkd` exposes a Prometheus-style `query metrics` snapshot, the destination target now serves `/metrics`, and the one-shot relayers can emit Prometheus text snapshots when `AEGISLINK_PRINT_METRICS=1`
+- the local monitoring scaffold now exists too: Prometheus scrape config, Grafana provisioning, an initial destination-ops dashboard, and `make monitor`
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
-- the next roadmap focus is finishing Task 8.1 metrics wiring and then adding the local monitoring stack, dashboards, and recovery drills
+- the next roadmap focus is finishing live Docker-backed validation of the monitoring stack and then moving into the recovery-drill slice
 
 The current repo shape is:
 

@@ -621,7 +621,7 @@ git commit -m "docs: add verifier evolution roadmap"
 
 **Goal:** Give operators real metrics, dashboards, and recovery workflows instead of only demo inspection surfaces.
 
-**Phase 8 status:** In progress on April 7, 2026. The repo now has shared Prometheus-text metric formatting, `aegislinkd query metrics`, a destination-side `/metrics` endpoint on the mock target, and opt-in one-shot metric snapshots from the relayers through `AEGISLINK_PRINT_METRICS=1`. Dashboards, scrape config, and recovery-drill coverage are still ahead.
+**Phase 8 status:** In progress on April 7, 2026. The repo now has shared Prometheus-text metric formatting, `aegislinkd query metrics`, a destination-side `/metrics` endpoint on the mock target, opt-in one-shot metric snapshots from the relayers through `AEGISLINK_PRINT_METRICS=1`, and the first Prometheus or Grafana monitoring assets. Live compose boot verification and recovery-drill coverage are still ahead.
 
 ### Task 8.1: Add Prometheus-style metrics to the binaries
 
@@ -675,7 +675,7 @@ git commit -m "feat: add prometheus metrics surfaces"
 - Modify: `docker-compose.yml`
 - Modify: `docs/observability.md`
 
-- [ ] **Step 1: Define dashboard panels**
+- [x] **Step 1: Define dashboard panels**
 
 Include:
 - claim acceptance and rejection
@@ -683,7 +683,7 @@ Include:
 - destination execution failures
 - relayer loop health
 
-- [ ] **Step 2: Add monitoring stack config**
+- [x] **Step 2: Add monitoring stack config**
 
 Wire Prometheus and Grafana into local compose.
 
@@ -692,6 +692,7 @@ Wire Prometheus and Grafana into local compose.
 Run: `docker compose -f docker-compose.yml up prometheus grafana`
 
 Expected: PASS with scrape targets healthy.
+Current note: the config and dashboard assets are present, but this exact compose boot still needs to be run on a machine with Docker installed.
 
 - [ ] **Step 4: Commit**
 

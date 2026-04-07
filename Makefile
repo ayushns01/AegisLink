@@ -1,4 +1,4 @@
-.PHONY: format test test-e2e test-route-e2e test-real-chain test-real-ibc demo inspect-demo real-demo inspect-real-demo devnet compose-devnet
+.PHONY: format test test-e2e test-route-e2e test-real-chain test-real-ibc demo inspect-demo real-demo inspect-real-demo devnet compose-devnet monitor
 
 GO_CACHE_ROOT ?= /tmp/aegislink-e2e-go-cache
 GO_TEST_ENV = GOCACHE=$(GO_CACHE_ROOT)/gocache GOMODCACHE=$(GO_CACHE_ROOT)/gomodcache
@@ -51,3 +51,6 @@ devnet:
 
 compose-devnet:
 	@docker compose --profile devnet up
+
+monitor:
+	@docker compose --profile monitoring up prometheus grafana mock-osmosis-target

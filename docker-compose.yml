@@ -49,7 +49,7 @@ services:
       - .:/workspace
     ports:
       - "9191:9191"
-    profiles: ["devnet"]
+    profiles: ["devnet", "monitoring"]
 
   route-relayer:
     image: golang:1.23
@@ -66,3 +66,33 @@ services:
     depends_on:
       - mock-osmosis-target
     profiles: ["devnet"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - mock-osmosis-target
+    profiles: ["monitoring"]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards/json:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    profiles: ["monitoring"]
