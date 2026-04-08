@@ -11,8 +11,9 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - AegisLink v1 is a `verifiable-relayer bridge with threshold attestations`.
 - The repository now includes both the original narrow verifier and a threshold-verifier path with signer-set rotation on Ethereum.
 - Ethereum is the canonical source of deposit and release events.
-- AegisLink attestations are now tied to explicit signer-set versions, and bridge verification checks activation, expiry, and version mismatch.
+- AegisLink attestations are now tied to explicit signer-set versions, carry cryptographic signer proofs, and bridge verification checks activation, expiry, version mismatch, and signature validity.
 - AegisLink enforces replay protection, registry policy, rate limits, pause controls, and route state transitions.
+- Governance policy changes now require a configured authority and persist who applied each change.
 - The project does not currently claim a light-client verifier or a trustless Ethereum proof system.
 
 ## What is real today
@@ -29,7 +30,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The runtime and CLI already expose active signer-set state and signer-set history, so the trust model is inspectable instead of buried in code.
 - The repo now includes Prometheus-style metrics, a local monitoring scaffold, and codified recovery drills, so operators can inspect and rehearse failure paths instead of only reading happy-path docs.
 - The `ibcrouter` now supports destination route profiles, so multiple destinations, route-specific asset allowlists, and memo-policy guardrails can be modeled without rewriting the core bridge lifecycle.
-- The repo now also includes a minimal governance module, so asset enablement, rate-limit updates, and route-policy updates can flow through a recorded proposal path instead of direct keeper edits.
+- The repo now also includes a minimal governance module, so asset enablement, rate-limit updates, and route-policy updates can flow through an authority-gated recorded proposal path instead of direct keeper edits.
 - The route layer now supports a second concrete action beyond swaps: profile-constrained `stake` actions can execute on the dual-runtime path with recipient and validator-path hints, while unsupported actions still fail through explicit destination receipts.
 
 ## What is still a local harness

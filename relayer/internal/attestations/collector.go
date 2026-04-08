@@ -24,13 +24,22 @@ type Collector struct {
 	source           VoteSource
 	threshold        uint32
 	signerSetVersion uint64
+	signerKeys       map[string]string
 }
 
-func NewCollector(source VoteSource, threshold uint32, signerSetVersion uint64) *Collector {
+func NewCollector(source VoteSource, threshold uint32, signerSetVersion uint64, signerKeys []string) *Collector {
 	if signerSetVersion == 0 {
 		signerSetVersion = 1
 	}
-	return &Collector{source: source, threshold: threshold, signerSetVersion: signerSetVersion}
+	keyLookup := make(map[string]string, len(signerKeys))
+	for _, privateKeyHex := range signerKeys {
+		address, err := bridgetypes.SignerAddressFromPrivateKeyHex(privateKeyHex)
+		if err != nil {
+			continue
+		}
+		keyLookup[address] = privateKeyHex
+	}
+	return &Collector{source: source, threshold: threshold, signerSetVersion: signerSetVersion, signerKeys: keyLookup}
 }
 
 func (c *Collector) Collect(ctx context.Context, messageID, payloadHash string) (bridgetypes.Attestation, error) {
@@ -76,21 +85,39 @@ func (c *Collector) Collect(ctx context.Context, messageID, payloadHash string) 
 	})
 
 	signers := make([]string, 0, c.threshold)
+	proofs := make([]bridgetypes.AttestationProof, 0, c.threshold)
 	var expiry uint64
 	for _, vote := range ranked[:c.threshold] {
-		signers = append(signers, vote.signer)
+		signer := bridgetypes.NormalizeSignerAddress(vote.signer)
+		_, ok := c.signerKeys[signer]
+		if !ok {
+			return bridgetypes.Attestation{}, ErrThresholdNotMet
+		}
+		signers = append(signers, signer)
 		if expiry == 0 || vote.expiry < expiry {
 			expiry = vote.expiry
 		}
+		proofs = append(proofs, bridgetypes.AttestationProof{Signer: signer})
 	}
 	sort.Strings(signers)
 
-	return bridgetypes.Attestation{
+	attestation := bridgetypes.Attestation{
 		MessageID:        messageID,
 		PayloadHash:      payloadHash,
 		Signers:          signers,
+		Proofs:           proofs,
 		Threshold:        c.threshold,
 		Expiry:           expiry,
 		SignerSetVersion: c.signerSetVersion,
-	}, nil
+	}
+	for i, signer := range signers {
+		privateKeyHex := c.signerKeys[signer]
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, privateKeyHex)
+		if err != nil {
+			return bridgetypes.Attestation{}, err
+		}
+		proofs[i] = proof
+	}
+	attestation.Proofs = proofs
+	return attestation, nil
 }

@@ -48,7 +48,7 @@ func TestExecuteDepositClaimRejectsDuplicateClaim(t *testing.T) {
 
 func TestExecuteDepositClaimRejectsInsufficientAttesterQuorum(t *testing.T) {
 	keeper, claim, attestation, _, _, _ := newKeeperFixture(t)
-	attestation.Signers = []string{"relayer-1"}
+	attestation.Proofs = signAttestationForTests(t, attestation, 0)
 	attestation.Threshold = 1
 
 	_, err := keeper.ExecuteDepositClaim(claim, attestation)
@@ -101,6 +101,7 @@ func TestExecuteDepositClaimRejectsUnknownAsset(t *testing.T) {
 	keeper, claim, attestation, _, _, _ := newKeeperFixture(t)
 	claim.AssetID = "eth.unknown"
 	attestation.PayloadHash = claim.Digest()
+	attestation.Proofs = signAttestationForTestsFromHelpers(attestation, 0, 1)
 
 	_, err := keeper.ExecuteDepositClaim(claim, attestation)
 	if !errors.Is(err, ErrUnknownAsset) {
@@ -297,7 +298,7 @@ func newKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgety
 		t.Fatalf("expected rate limit registration to succeed, got %v", err)
 	}
 
-	keeper := NewKeeper(registry, limits, pauser, []string{"relayer-1", "relayer-2", "relayer-3"}, 2)
+	keeper := NewKeeper(registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
 	keeper.SetCurrentHeight(50)
 
 	claim := validDepositClaim()
@@ -328,14 +329,29 @@ func validDepositClaim() bridgetypes.DepositClaim {
 }
 
 func validAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
-	return bridgetypes.Attestation{
+	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          []string{"relayer-1", "relayer-2"},
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           100,
 		SignerSetVersion: 1,
 	}
+	attestation.Proofs = signAttestationForTestsFromHelpers(attestation, 0, 1)
+	return attestation
+}
+
+func signAttestationForTestsFromHelpers(attestation bridgetypes.Attestation, signerIndexes ...int) []bridgetypes.AttestationProof {
+	signers := bridgetypes.DefaultHarnessAttestationSigners()
+	proofs := make([]bridgetypes.AttestationProof, 0, len(signerIndexes))
+	for _, idx := range signerIndexes {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, signers[idx].PrivateKeyHex)
+		if err != nil {
+			panic(err)
+		}
+		proofs = append(proofs, proof)
+	}
+	return proofs
 }
 
 func mustAmount(value string) *big.Int {

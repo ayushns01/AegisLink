@@ -23,17 +23,17 @@ import (
 )
 
 type App struct {
-	Config          Config
-	BridgeKeeper    *bridgekeeper.Keeper
-	IBCRouterKeeper *ibcrouterkeeper.Keeper
-	RegistryKeeper  *registrykeeper.Keeper
-	LimitsKeeper    *limitskeeper.Keeper
-	PauserKeeper    *pauserkeeper.Keeper
+	Config           Config
+	BridgeKeeper     *bridgekeeper.Keeper
+	IBCRouterKeeper  *ibcrouterkeeper.Keeper
+	RegistryKeeper   *registrykeeper.Keeper
+	LimitsKeeper     *limitskeeper.Keeper
+	PauserKeeper     *pauserkeeper.Keeper
 	GovernanceKeeper *governancekeeper.Keeper
-	encoding        EncodingConfig
-	storeKeys       map[string]string
-	storeRuntime    *storeRuntime
-	modules         []string
+	encoding         EncodingConfig
+	storeKeys        map[string]string
+	storeRuntime     *storeRuntime
+	modules          []string
 }
 
 type Status struct {
@@ -48,6 +48,7 @@ type Status struct {
 	ModuleNames            []string          `json:"module_names"`
 	Modules                int               `json:"modules"`
 	AllowedSigners         []string          `json:"allowed_signers"`
+	GovernanceAuthorities  []string          `json:"governance_authorities"`
 	ActiveSignerSetVersion uint64            `json:"active_signer_set_version"`
 	ActiveSignerThreshold  uint32            `json:"active_signer_threshold"`
 	SignerSetCount         int               `json:"signer_set_count"`
@@ -90,7 +91,7 @@ func NewWithConfig(cfg Config) (*App, error) {
 	limitsKeeper := limitskeeper.NewKeeper()
 	pauserKeeper := pauserkeeper.NewKeeper()
 	ibcRouterKeeper := ibcrouterkeeper.NewKeeper()
-	governanceKeeper := governancekeeper.NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper)
+	governanceKeeper := governancekeeper.NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper, cfg.GovernanceAuthorities)
 	bridgeKeeper := bridgekeeper.NewKeeper(registryKeeper, limitsKeeper, pauserKeeper, cfg.AllowedSigners, cfg.RequiredThreshold)
 
 	return newAppFromKeepers(cfg, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper, governanceKeeper), nil
@@ -121,16 +122,16 @@ func newAppFromKeepers(
 	}
 
 	return &App{
-		Config:          cfg,
-		BridgeKeeper:    bridgeKeeper,
-		IBCRouterKeeper: ibcRouterKeeper,
-		RegistryKeeper:  registryKeeper,
-		LimitsKeeper:    limitsKeeper,
-		PauserKeeper:    pauserKeeper,
+		Config:           cfg,
+		BridgeKeeper:     bridgeKeeper,
+		IBCRouterKeeper:  ibcRouterKeeper,
+		RegistryKeeper:   registryKeeper,
+		LimitsKeeper:     limitsKeeper,
+		PauserKeeper:     pauserKeeper,
 		GovernanceKeeper: governanceKeeper,
-		encoding:        DefaultEncodingConfig(modules),
-		storeKeys:       defaultStoreKeys(modules),
-		modules:         modules,
+		encoding:         DefaultEncodingConfig(modules),
+		storeKeys:        defaultStoreKeys(modules),
+		modules:          modules,
 	}
 }
 
@@ -274,16 +275,16 @@ func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferReco
 	return a.IBCRouterKeeper.MarkRefunded(transferID)
 }
 
-func (a *App) ApplyAssetStatusProposal(proposal governancekeeper.AssetStatusProposal) error {
-	return a.GovernanceKeeper.ApplyAssetStatusProposal(proposal)
+func (a *App) ApplyAssetStatusProposal(authority string, proposal governancekeeper.AssetStatusProposal) error {
+	return a.GovernanceKeeper.ApplyAssetStatusProposal(authority, proposal)
 }
 
-func (a *App) ApplyLimitUpdateProposal(proposal governancekeeper.LimitUpdateProposal) error {
-	return a.GovernanceKeeper.ApplyLimitUpdateProposal(proposal)
+func (a *App) ApplyLimitUpdateProposal(authority string, proposal governancekeeper.LimitUpdateProposal) error {
+	return a.GovernanceKeeper.ApplyLimitUpdateProposal(authority, proposal)
 }
 
-func (a *App) ApplyRoutePolicyUpdateProposal(proposal governancekeeper.RoutePolicyUpdateProposal) error {
-	return a.GovernanceKeeper.ApplyRoutePolicyUpdateProposal(proposal)
+func (a *App) ApplyRoutePolicyUpdateProposal(authority string, proposal governancekeeper.RoutePolicyUpdateProposal) error {
+	return a.GovernanceKeeper.ApplyRoutePolicyUpdateProposal(authority, proposal)
 }
 
 func (a *App) Save() error {
@@ -325,30 +326,31 @@ func (a *App) Status() Status {
 	routes := a.IBCRouterKeeper.ExportRoutes()
 
 	status := Status{
-		AppName:           a.Config.AppName,
-		ChainID:           a.Config.ChainID,
-		RuntimeMode:       a.Config.RuntimeMode,
-		HomeDir:           a.Config.HomeDir,
-		ConfigPath:        a.Config.ConfigPath,
-		GenesisPath:       a.Config.GenesisPath,
-		StatePath:         a.Config.StatePath,
-		Initialized:       runtimeInitialized(a.Config),
-		ModuleNames:       a.ModuleNames(),
-		Modules:           len(a.modules),
-		AllowedSigners:    append([]string(nil), a.Config.AllowedSigners...),
-		EnabledRouteIDs:   enabledRouteIDs(routes),
-		RequiredThreshold: a.Config.RequiredThreshold,
-		CurrentHeight:     bridgeState.CurrentHeight,
-		Assets:            len(a.RegistryKeeper.ExportAssets()),
-		Limits:            len(a.LimitsKeeper.ExportLimits()),
-		PausedFlows:       len(a.PauserKeeper.ExportPausedFlows()),
-		ProcessedClaims:   len(bridgeState.ProcessedClaims),
-		FailedClaims:      a.BridgeKeeper.RejectedClaims(),
-		Withdrawals:       len(bridgeState.Withdrawals),
-		Routes:            len(a.IBCRouterKeeper.ExportRoutes()),
-		Transfers:         len(transfers),
-		GovernanceProposals: len(a.GovernanceKeeper.ExportState().AppliedProposals),
-		SupplyByDenom:     bridgeState.SupplyByDenom,
+		AppName:               a.Config.AppName,
+		ChainID:               a.Config.ChainID,
+		RuntimeMode:           a.Config.RuntimeMode,
+		HomeDir:               a.Config.HomeDir,
+		ConfigPath:            a.Config.ConfigPath,
+		GenesisPath:           a.Config.GenesisPath,
+		StatePath:             a.Config.StatePath,
+		Initialized:           runtimeInitialized(a.Config),
+		ModuleNames:           a.ModuleNames(),
+		Modules:               len(a.modules),
+		AllowedSigners:        append([]string(nil), a.Config.AllowedSigners...),
+		GovernanceAuthorities: append([]string(nil), a.Config.GovernanceAuthorities...),
+		EnabledRouteIDs:       enabledRouteIDs(routes),
+		RequiredThreshold:     a.Config.RequiredThreshold,
+		CurrentHeight:         bridgeState.CurrentHeight,
+		Assets:                len(a.RegistryKeeper.ExportAssets()),
+		Limits:                len(a.LimitsKeeper.ExportLimits()),
+		PausedFlows:           len(a.PauserKeeper.ExportPausedFlows()),
+		ProcessedClaims:       len(bridgeState.ProcessedClaims),
+		FailedClaims:          a.BridgeKeeper.RejectedClaims(),
+		Withdrawals:           len(bridgeState.Withdrawals),
+		Routes:                len(a.IBCRouterKeeper.ExportRoutes()),
+		Transfers:             len(transfers),
+		GovernanceProposals:   len(a.GovernanceKeeper.ExportState().AppliedProposals),
+		SupplyByDenom:         bridgeState.SupplyByDenom,
 	}
 
 	signerSets := a.BridgeKeeper.ExportSignerSets()
@@ -436,6 +438,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if len(cfg.AllowedSigners) == 0 {
 		cfg.AllowedSigners = append([]string(nil), defaults.AllowedSigners...)
+	}
+	if len(cfg.GovernanceAuthorities) == 0 {
+		cfg.GovernanceAuthorities = append([]string(nil), defaults.GovernanceAuthorities...)
 	}
 	if cfg.RequiredThreshold == 0 {
 		cfg.RequiredThreshold = defaults.RequiredThreshold

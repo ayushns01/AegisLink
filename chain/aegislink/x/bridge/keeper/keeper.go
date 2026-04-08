@@ -24,6 +24,7 @@ var (
 	ErrPayloadHashMismatch           = errors.New("payload hash mismatch")
 	ErrSignerSetVersionMismatch      = errors.New("signer set version mismatch")
 	ErrSignerSetInactive             = errors.New("signer set inactive")
+	ErrInvalidAttestationSignature   = errors.New("invalid attestation signature")
 	ErrUnknownAsset                  = errors.New("unknown asset")
 	ErrAssetDisabled                 = errors.New("asset disabled")
 	ErrAssetPaused                   = errors.New("asset paused")

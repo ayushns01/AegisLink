@@ -223,12 +223,13 @@ func writeRuntimeSubmissionFile(t *testing.T, path string, claim bridgetypes.Dep
 			Deadline           uint64 `json:"deadline"`
 		} `json:"claim"`
 		Attestation struct {
-			MessageID        string   `json:"message_id"`
-			PayloadHash      string   `json:"payload_hash"`
-			Signers          []string `json:"signers"`
-			Threshold        uint32   `json:"threshold"`
-			Expiry           uint64   `json:"expiry"`
-			SignerSetVersion uint64   `json:"signer_set_version"`
+			MessageID        string                       `json:"message_id"`
+			PayloadHash      string                       `json:"payload_hash"`
+			Signers          []string                     `json:"signers"`
+			Proofs           []bridgetypes.AttestationProof `json:"proofs"`
+			Threshold        uint32                       `json:"threshold"`
+			Expiry           uint64                       `json:"expiry"`
+			SignerSetVersion uint64                       `json:"signer_set_version"`
 		} `json:"attestation"`
 	}{}
 
@@ -247,10 +248,24 @@ func writeRuntimeSubmissionFile(t *testing.T, path string, claim bridgetypes.Dep
 
 	payload.Attestation.MessageID = claim.Identity.MessageID
 	payload.Attestation.PayloadHash = claim.Digest()
-	payload.Attestation.Signers = []string{"relayer-1", "relayer-2"}
+	payload.Attestation.Signers = bridgetypes.DefaultHarnessSignerAddresses()[:2]
 	payload.Attestation.Threshold = 2
 	payload.Attestation.Expiry = 120
 	payload.Attestation.SignerSetVersion = 1
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(bridgetypes.Attestation{
+			MessageID:        payload.Attestation.MessageID,
+			PayloadHash:      payload.Attestation.PayloadHash,
+			Signers:          payload.Attestation.Signers,
+			Threshold:        payload.Attestation.Threshold,
+			Expiry:           payload.Attestation.Expiry,
+			SignerSetVersion: payload.Attestation.SignerSetVersion,
+		}, key)
+		if err != nil {
+			t.Fatalf("sign submission proof: %v", err)
+		}
+		payload.Attestation.Proofs = append(payload.Attestation.Proofs, proof)
+	}
 
 	encoded, err := json.Marshal(payload)
 	if err != nil {

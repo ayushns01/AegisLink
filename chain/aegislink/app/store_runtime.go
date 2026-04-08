@@ -80,7 +80,7 @@ func newStoreBackedApp(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	governanceKeeper, err := governancekeeper.NewStoreKeeper(runtime.multi, runtime.storeKeys["governance"], registryKeeper, limitsKeeper, ibcRouterKeeper)
+	governanceKeeper, err := governancekeeper.NewStoreKeeper(runtime.multi, runtime.storeKeys["governance"], registryKeeper, limitsKeeper, ibcRouterKeeper, cfg.GovernanceAuthorities)
 	if err != nil {
 		return nil, err
 	}

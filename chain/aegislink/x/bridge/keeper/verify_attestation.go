@@ -30,19 +30,28 @@ func (k *Keeper) verifyDepositClaim(claim bridgetypes.DepositClaim, attestation 
 		return ErrInsufficientAttestationQuorum
 	}
 
+	digest, err := attestation.SigningDigest()
+	if err != nil {
+		return err
+	}
+
 	verifiedSigners := uint32(0)
-	seen := make(map[string]struct{}, len(attestation.Signers))
+	seen := make(map[string]struct{}, len(attestation.Proofs))
 	allowed := make(map[string]struct{}, len(activeSignerSet.Signers))
 	for _, signer := range activeSignerSet.Signers {
-		allowed[signer] = struct{}{}
+		allowed[bridgetypes.NormalizeSignerAddress(signer)] = struct{}{}
 	}
-	for _, signer := range attestation.Signers {
-		if _, exists := seen[signer]; exists {
+	for _, proof := range attestation.Proofs {
+		recovered, err := verifyProof(proof, digest)
+		if err != nil {
 			continue
 		}
-		seen[signer] = struct{}{}
+		if _, exists := seen[recovered]; exists {
+			continue
+		}
+		seen[recovered] = struct{}{}
 
-		if _, ok := allowed[signer]; ok {
+		if _, ok := allowed[recovered]; ok {
 			verifiedSigners++
 		}
 	}

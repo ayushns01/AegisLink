@@ -191,6 +191,11 @@ func TestAttestationValidateBasic(t *testing.T) {
 		MessageID:        validClaimIdentity(ClaimKindDeposit).MessageID,
 		PayloadHash:      validDepositClaim().Digest(),
 		Signers:          []string{"signer-1", "signer-2", "signer-3"},
+		Proofs: []AttestationProof{
+			{Signer: "signer-1", Signature: []byte{1}},
+			{Signer: "signer-2", Signature: []byte{2}},
+			{Signer: "signer-3", Signature: []byte{3}},
+		},
 		Threshold:        2,
 		Expiry:           123,
 		SignerSetVersion: 1,
@@ -203,12 +208,23 @@ func TestAttestationValidateBasic(t *testing.T) {
 	cases := map[string]func(*Attestation){
 		"missing message id":         func(a *Attestation) { a.MessageID = "" },
 		"missing payload hash":       func(a *Attestation) { a.PayloadHash = "" },
-		"missing signers":            func(a *Attestation) { a.Signers = nil },
+		"missing proofs":             func(a *Attestation) { a.Proofs = nil },
 		"missing threshold":          func(a *Attestation) { a.Threshold = 0 },
 		"missing expiry":             func(a *Attestation) { a.Expiry = 0 },
 		"missing signer set version": func(a *Attestation) { a.SignerSetVersion = 0 },
 		"threshold overflow":         func(a *Attestation) { a.Threshold = 4 },
-		"duplicate signer":           func(a *Attestation) { a.Signers = []string{"signer-1", "signer-1"} },
+		"duplicate proof signer": func(a *Attestation) {
+			a.Proofs = []AttestationProof{
+				{Signer: "signer-1", Signature: []byte{1}},
+				{Signer: "signer-1", Signature: []byte{2}},
+			}
+		},
+		"missing proof signature": func(a *Attestation) {
+			a.Proofs = []AttestationProof{
+				{Signer: "signer-1", Signature: nil},
+				{Signer: "signer-2", Signature: []byte{2}},
+			}
+		},
 	}
 
 	for name, mutate := range cases {

@@ -72,6 +72,7 @@ func run(ctx context.Context, stdout, stderr io.Writer) error {
 			attestations.NewFileVoteSource(cfg.AttestationStatePath),
 			cfg.AttestationThreshold,
 			cfg.AttestationSignerSetVersion,
+			cfg.AttestationSignerKeys,
 		),
 		cosmos.NewSubmitter(claimSink),
 		cosmos.NewWatcher(cosmos.NewClient(withdrawalSource), cfg.CosmosConfirmations),

@@ -163,8 +163,8 @@ func TestRelayerCanBridgeLiveAnvilDepositIntoAegisLinkRuntime(t *testing.T) {
 	fixtures := writeEmptyRelayerFixtures(t)
 	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-1", Expiry: 10000000100},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-2", Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
 		},
 	})
 
@@ -279,8 +279,8 @@ func TestFullLiveBridgeLoopReleasesBackToEthereum(t *testing.T) {
 	fixtures := writeEmptyRelayerFixtures(t)
 	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-1", Expiry: 10000000100},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-2", Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
 		},
 	})
 
@@ -368,7 +368,7 @@ func newInboundServer(t *testing.T, opts inboundServerOptions) (bridgekeeper.Msg
 		}
 	}
 
-	keeper := bridgekeeper.NewKeeper(registry, limits, pauser, []string{"relayer-1", "relayer-2", "relayer-3"}, 2)
+	keeper := bridgekeeper.NewKeeper(registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
 	keeper.SetCurrentHeight(50)
 	return bridgekeeper.NewMsgServer(keeper), keeper, registry, limits, pauser
 }

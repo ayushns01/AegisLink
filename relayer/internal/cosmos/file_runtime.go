@@ -68,12 +68,13 @@ type persistedDepositClaim struct {
 }
 
 type persistedAttestation struct {
-	MessageID        string   `json:"message_id"`
-	PayloadHash      string   `json:"payload_hash"`
-	Signers          []string `json:"signers"`
-	Threshold        uint32   `json:"threshold"`
-	Expiry           uint64   `json:"expiry"`
-	SignerSetVersion uint64   `json:"signer_set_version"`
+	MessageID        string                       `json:"message_id"`
+	PayloadHash      string                       `json:"payload_hash"`
+	Signers          []string                     `json:"signers"`
+	Proofs           []bridgetypes.AttestationProof `json:"proofs"`
+	Threshold        uint32                       `json:"threshold"`
+	Expiry           uint64                       `json:"expiry"`
+	SignerSetVersion uint64                       `json:"signer_set_version"`
 }
 
 func NewFileWithdrawalSource(path string) *FileWithdrawalSource {
@@ -167,6 +168,7 @@ func (s *FileClaimSink) SubmitDepositClaim(ctx context.Context, claim bridgetype
 			MessageID:        attestation.MessageID,
 			PayloadHash:      attestation.PayloadHash,
 			Signers:          append([]string(nil), attestation.Signers...),
+			Proofs:           append([]bridgetypes.AttestationProof(nil), attestation.Proofs...),
 			Threshold:        attestation.Threshold,
 			Expiry:           attestation.Expiry,
 			SignerSetVersion: attestation.SignerSetVersion,

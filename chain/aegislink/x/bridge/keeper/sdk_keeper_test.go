@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/testutil"
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
@@ -29,7 +30,7 @@ func TestSDKKeeperPersistsBridgeAccountingAcrossReload(t *testing.T) {
 	}
 
 	_, claim, attestation, _, _, _ := newKeeperFixture(t)
-	storeKeeper, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, []string{"relayer-1", "relayer-2", "relayer-3"}, 2)
+	storeKeeper, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
 	if err != nil {
 		t.Fatalf("expected store-backed bridge keeper, got %v", err)
 	}
@@ -57,7 +58,7 @@ func TestSDKKeeperPersistsBridgeAccountingAcrossReload(t *testing.T) {
 		t.Fatalf("expected deposit claim to succeed, got %v", err)
 	}
 
-	reloaded, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, []string{"relayer-1", "relayer-2", "relayer-3"}, 2)
+	reloaded, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
 	if err != nil {
 		t.Fatalf("expected bridge keeper reload to succeed, got %v", err)
 	}

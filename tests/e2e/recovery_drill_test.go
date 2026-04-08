@@ -10,6 +10,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
@@ -197,7 +198,7 @@ func TestRecoveryDrillRejectsSignerSetMismatchUntilAttestationIsUpdated(t *testi
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-1", "relayer-2", "relayer-3"},
+		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {

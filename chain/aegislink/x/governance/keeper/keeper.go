@@ -6,16 +6,17 @@ import (
 	"math/big"
 	"strings"
 
+	storetypes "cosmossdk.io/store/types"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrykeeper "github.com/ayushns01/aegislink/chain/aegislink/x/registry/keeper"
-	storetypes "cosmossdk.io/store/types"
 )
 
 var ErrInvalidProposal = errors.New("invalid governance proposal")
+var ErrUnauthorizedProposal = errors.New("unauthorized governance proposal")
 
 type ProposalKind string
 
@@ -42,7 +43,7 @@ func (p AssetStatusProposal) ValidateBasic() error {
 }
 
 type LimitUpdateProposal struct {
-	ProposalID string              `json:"proposal_id"`
+	ProposalID string               `json:"proposal_id"`
 	Limit      limittypes.RateLimit `json:"limit"`
 }
 
@@ -57,8 +58,8 @@ func (p LimitUpdateProposal) ValidateBasic() error {
 }
 
 type RoutePolicyUpdateProposal struct {
-	ProposalID string                    `json:"proposal_id"`
-	RouteID    string                    `json:"route_id"`
+	ProposalID string                     `json:"proposal_id"`
+	RouteID    string                     `json:"route_id"`
 	Policy     ibcroutertypes.RoutePolicy `json:"policy"`
 }
 
@@ -77,6 +78,7 @@ type ProposalRecord struct {
 	Kind       ProposalKind `json:"kind"`
 	TargetID   string       `json:"target_id"`
 	Summary    string       `json:"summary"`
+	AppliedBy  string       `json:"applied_by"`
 }
 
 type StateSnapshot struct {
@@ -87,6 +89,7 @@ type Keeper struct {
 	registryKeeper  *registrykeeper.Keeper
 	limitsKeeper    *limitskeeper.Keeper
 	ibcRouterKeeper *ibcrouterkeeper.Keeper
+	authorities     map[string]struct{}
 	applied         []ProposalRecord
 	stateStore      *sdkstore.JSONStateStore
 }
@@ -95,11 +98,13 @@ func NewKeeper(
 	registryKeeper *registrykeeper.Keeper,
 	limitsKeeper *limitskeeper.Keeper,
 	ibcRouterKeeper *ibcrouterkeeper.Keeper,
+	authorities []string,
 ) *Keeper {
 	return &Keeper{
 		registryKeeper:  registryKeeper,
 		limitsKeeper:    limitsKeeper,
 		ibcRouterKeeper: ibcRouterKeeper,
+		authorities:     canonicalAuthoritySet(authorities),
 		applied:         make([]ProposalRecord, 0),
 	}
 }
@@ -110,13 +115,14 @@ func NewStoreKeeper(
 	registryKeeper *registrykeeper.Keeper,
 	limitsKeeper *limitskeeper.Keeper,
 	ibcRouterKeeper *ibcrouterkeeper.Keeper,
+	authorities []string,
 ) (*Keeper, error) {
 	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
 	if err != nil {
 		return nil, err
 	}
 
-	keeper := NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper)
+	keeper := NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper, authorities)
 	keeper.stateStore = stateStore
 
 	var state StateSnapshot
@@ -130,8 +136,12 @@ func NewStoreKeeper(
 	return keeper, nil
 }
 
-func (k *Keeper) ApplyAssetStatusProposal(proposal AssetStatusProposal) error {
+func (k *Keeper) ApplyAssetStatusProposal(authority string, proposal AssetStatusProposal) error {
 	if err := proposal.ValidateBasic(); err != nil {
+		return err
+	}
+	appliedBy, err := k.authorize(authority)
+	if err != nil {
 		return err
 	}
 
@@ -150,12 +160,17 @@ func (k *Keeper) ApplyAssetStatusProposal(proposal AssetStatusProposal) error {
 		Kind:       ProposalKindAssetStatus,
 		TargetID:   strings.TrimSpace(proposal.AssetID),
 		Summary:    fmt.Sprintf("set asset %s enabled=%t", strings.TrimSpace(proposal.AssetID), proposal.Enabled),
+		AppliedBy:  appliedBy,
 	})
 	return k.persist()
 }
 
-func (k *Keeper) ApplyLimitUpdateProposal(proposal LimitUpdateProposal) error {
+func (k *Keeper) ApplyLimitUpdateProposal(authority string, proposal LimitUpdateProposal) error {
 	if err := proposal.ValidateBasic(); err != nil {
+		return err
+	}
+	appliedBy, err := k.authorize(authority)
+	if err != nil {
 		return err
 	}
 
@@ -170,12 +185,17 @@ func (k *Keeper) ApplyLimitUpdateProposal(proposal LimitUpdateProposal) error {
 		Kind:       ProposalKindLimitUpdate,
 		TargetID:   strings.TrimSpace(limit.AssetID),
 		Summary:    fmt.Sprintf("set limit for %s to %s", strings.TrimSpace(limit.AssetID), limit.MaxAmount.String()),
+		AppliedBy:  appliedBy,
 	})
 	return k.persist()
 }
 
-func (k *Keeper) ApplyRoutePolicyUpdateProposal(proposal RoutePolicyUpdateProposal) error {
+func (k *Keeper) ApplyRoutePolicyUpdateProposal(authority string, proposal RoutePolicyUpdateProposal) error {
 	if err := proposal.ValidateBasic(); err != nil {
+		return err
+	}
+	appliedBy, err := k.authorize(authority)
+	if err != nil {
 		return err
 	}
 
@@ -194,6 +214,7 @@ func (k *Keeper) ApplyRoutePolicyUpdateProposal(proposal RoutePolicyUpdatePropos
 		Kind:       ProposalKindRoutePolicy,
 		TargetID:   strings.TrimSpace(proposal.RouteID),
 		Summary:    fmt.Sprintf("updated route policy for %s", strings.TrimSpace(proposal.RouteID)),
+		AppliedBy:  appliedBy,
 	})
 	return k.persist()
 }
@@ -214,6 +235,7 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 			Kind:       proposal.Kind,
 			TargetID:   strings.TrimSpace(proposal.TargetID),
 			Summary:    strings.TrimSpace(proposal.Summary),
+			AppliedBy:  canonicalAuthority(proposal.AppliedBy),
 		})
 	}
 	return k.persist()

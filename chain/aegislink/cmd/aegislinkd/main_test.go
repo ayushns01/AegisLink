@@ -115,7 +115,7 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -206,7 +206,7 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -266,7 +266,7 @@ func TestRunQuerySignerSetReturnsActiveSignerSet(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -309,7 +309,7 @@ func TestRunQuerySignerSetsListsHistory(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -384,7 +384,7 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -911,6 +911,53 @@ func TestRunTxCompleteIBCTransferPersistsCompletedTransfer(t *testing.T) {
 	}
 }
 
+func TestRunTxApplyAssetStatusProposalRequiresAuthorizedAuthority(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeApp(t, statePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save seeded runtime: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := run([]string{
+		"tx", "apply-asset-status-proposal",
+		"--state-path", statePath,
+		"--proposal-id", "asset-disable-unauthorized",
+		"--asset-id", "eth.usdc",
+		"--enabled=false",
+		"--authority", "intruder",
+	}, &stdout, io.Discard); err == nil {
+		t.Fatal("expected unauthorized governance proposal to be rejected")
+	}
+
+	stdout.Reset()
+	if err := run([]string{
+		"tx", "apply-asset-status-proposal",
+		"--state-path", statePath,
+		"--proposal-id", "asset-disable-authorized",
+		"--asset-id", "eth.usdc",
+		"--enabled=false",
+		"--authority", "guardian-1",
+	}, &stdout, io.Discard); err != nil {
+		t.Fatalf("run authorized asset status proposal: %v", err)
+	}
+
+	reloaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload runtime: %v", err)
+	}
+	asset, ok := reloaded.RegistryKeeper.GetAsset("eth.usdc")
+	if !ok || asset.Enabled {
+		t.Fatalf("expected asset to be disabled by authorized proposal, got %+v exists=%t", asset, ok)
+	}
+	proposals := reloaded.GovernanceKeeper.ExportState().AppliedProposals
+	if len(proposals) != 1 || proposals[0].AppliedBy != "guardian-1" {
+		t.Fatalf("expected applied_by guardian-1, got %+v", proposals)
+	}
+}
+
 func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) {
 	t.Helper()
 
@@ -930,12 +977,13 @@ func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositCla
 			Deadline           uint64 `json:"deadline"`
 		} `json:"claim"`
 		Attestation struct {
-			MessageID        string   `json:"message_id"`
-			PayloadHash      string   `json:"payload_hash"`
-			Signers          []string `json:"signers"`
-			Threshold        uint32   `json:"threshold"`
-			Expiry           uint64   `json:"expiry"`
-			SignerSetVersion uint64   `json:"signer_set_version"`
+			MessageID        string                         `json:"message_id"`
+			PayloadHash      string                         `json:"payload_hash"`
+			Signers          []string                       `json:"signers"`
+			Proofs           []bridgetypes.AttestationProof `json:"proofs"`
+			Threshold        uint32                         `json:"threshold"`
+			Expiry           uint64                         `json:"expiry"`
+			SignerSetVersion uint64                         `json:"signer_set_version"`
 		} `json:"attestation"`
 	}{}
 
@@ -955,6 +1003,7 @@ func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositCla
 	payload.Attestation.MessageID = attestation.MessageID
 	payload.Attestation.PayloadHash = attestation.PayloadHash
 	payload.Attestation.Signers = append([]string(nil), attestation.Signers...)
+	payload.Attestation.Proofs = append([]bridgetypes.AttestationProof(nil), attestation.Proofs...)
 	payload.Attestation.Threshold = attestation.Threshold
 	payload.Attestation.Expiry = attestation.Expiry
 	payload.Attestation.SignerSetVersion = attestation.SignerSetVersion
@@ -992,14 +1041,22 @@ func validDepositClaim(t *testing.T) bridgetypes.DepositClaim {
 }
 
 func validAttestationForClaim(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
-	return bridgetypes.Attestation{
+	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          []string{"relayer-1", "relayer-2"},
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
 	}
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			panic(err)
+		}
+		attestation.Proofs = append(attestation.Proofs, proof)
+	}
+	return attestation
 }
 
 func mustAmount(t *testing.T, value string) *big.Int {
@@ -1038,7 +1095,7 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -1091,7 +1148,7 @@ func initSDKRuntimeHome(t *testing.T, homeDir string) aegisapp.Config {
 		ChainID:           "aegislink-sdk-1",
 		RuntimeMode:       aegisapp.RuntimeModeSDKStore,
 		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	}, false)
 	if err != nil {

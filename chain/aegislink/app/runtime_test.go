@@ -23,7 +23,7 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 		AppName:           AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -144,7 +144,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 		RuntimeMode:       RuntimeModeSDKStore,
 		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
 		StatePath:         storePath,
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -364,7 +364,7 @@ func TestResolveConfigRejectsThresholdAboveSignerCount(t *testing.T) {
 
 	_, err := ResolveConfig(Config{
 		HomeDir:           filepath.Join(t.TempDir(), "home"),
-		AllowedSigners:    []string{"relayer-1"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:1],
 		RequiredThreshold: 2,
 	})
 	if err == nil {
@@ -397,14 +397,22 @@ func validDepositClaim(t *testing.T) bridgetypes.DepositClaim {
 }
 
 func validAttestationForClaim(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
-	return bridgetypes.Attestation{
+	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          []string{"relayer-1", "relayer-2"},
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
 	}
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			panic(err)
+		}
+		attestation.Proofs = append(attestation.Proofs, proof)
+	}
+	return attestation
 }
 
 func mustAmount(t *testing.T, value string) *big.Int {

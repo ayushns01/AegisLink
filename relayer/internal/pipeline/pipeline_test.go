@@ -317,6 +317,10 @@ func (s *stubCollector) Collect(_ context.Context, messageID, payloadHash string
 		MessageID:        messageID,
 		PayloadHash:      payloadHash,
 		Signers:          []string{"signer-1", "signer-2"},
+		Proofs: []bridgetypes.AttestationProof{
+			{Signer: "signer-1", Signature: []byte{1}},
+			{Signer: "signer-2", Signature: []byte{2}},
+		},
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,

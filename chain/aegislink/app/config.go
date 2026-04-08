@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	governancemodule "github.com/ayushns01/aegislink/chain/aegislink/x/governance"
 	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
@@ -24,24 +25,26 @@ const RuntimeModeSDKStore = "sdk-store-runtime"
 var ErrRuntimeAlreadyInitialized = errors.New("runtime already initialized")
 
 type Config struct {
-	AppName           string
-	ChainID           string
-	RuntimeMode       string
-	HomeDir           string
-	ConfigPath        string
-	GenesisPath       string
-	Modules           []string
-	StatePath         string
-	AllowedSigners    []string
-	RequiredThreshold uint32
+	AppName               string
+	ChainID               string
+	RuntimeMode           string
+	HomeDir               string
+	ConfigPath            string
+	GenesisPath           string
+	Modules               []string
+	StatePath             string
+	AllowedSigners        []string
+	GovernanceAuthorities []string
+	RequiredThreshold     uint32
 }
 
 type Genesis struct {
-	AppName           string   `json:"app_name"`
-	ChainID           string   `json:"chain_id"`
-	Modules           []string `json:"modules"`
-	AllowedSigners    []string `json:"allowed_signers"`
-	RequiredThreshold uint32   `json:"required_threshold"`
+	AppName               string   `json:"app_name"`
+	ChainID               string   `json:"chain_id"`
+	Modules               []string `json:"modules"`
+	AllowedSigners        []string `json:"allowed_signers"`
+	GovernanceAuthorities []string `json:"governance_authorities"`
+	RequiredThreshold     uint32   `json:"required_threshold"`
 }
 
 func DefaultConfig() Config {
@@ -61,8 +64,9 @@ func DefaultConfig() Config {
 			ibcroutermodule.ModuleName,
 			governancemodule.ModuleName,
 		},
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
-		RequiredThreshold: 2,
+		AllowedSigners:        bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		GovernanceAuthorities: []string{"guardian-1"},
+		RequiredThreshold:     2,
 	}
 }
 
@@ -170,11 +174,12 @@ func LoadGenesis(path string) (Genesis, error) {
 func DefaultGenesis(cfg Config) Genesis {
 	cfg = normalizeConfig(cfg)
 	return Genesis{
-		AppName:           cfg.AppName,
-		ChainID:           cfg.ChainID,
-		Modules:           append([]string(nil), cfg.Modules...),
-		AllowedSigners:    append([]string(nil), cfg.AllowedSigners...),
-		RequiredThreshold: cfg.RequiredThreshold,
+		AppName:               cfg.AppName,
+		ChainID:               cfg.ChainID,
+		Modules:               append([]string(nil), cfg.Modules...),
+		AllowedSigners:        append([]string(nil), cfg.AllowedSigners...),
+		GovernanceAuthorities: append([]string(nil), cfg.GovernanceAuthorities...),
+		RequiredThreshold:     cfg.RequiredThreshold,
 	}
 }
 
@@ -225,6 +230,9 @@ func mergeConfig(base Config, override Config) Config {
 	}
 	if len(override.AllowedSigners) > 0 {
 		base.AllowedSigners = append([]string(nil), override.AllowedSigners...)
+	}
+	if len(override.GovernanceAuthorities) > 0 {
+		base.GovernanceAuthorities = append([]string(nil), override.GovernanceAuthorities...)
 	}
 	if override.RequiredThreshold > 0 {
 		base.RequiredThreshold = override.RequiredThreshold
@@ -279,6 +287,9 @@ func validateConfig(cfg Config) error {
 	}
 	if len(cfg.AllowedSigners) == 0 {
 		return errors.New("at least one allowed signer is required")
+	}
+	if len(cfg.GovernanceAuthorities) == 0 {
+		return errors.New("at least one governance authority is required")
 	}
 	if cfg.RequiredThreshold == 0 {
 		return errors.New("required threshold must be greater than zero")

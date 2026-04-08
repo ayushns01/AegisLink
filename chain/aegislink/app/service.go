@@ -6,6 +6,7 @@ import (
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
@@ -78,4 +79,24 @@ func (s *IBCRouterQueryService) ListRoutes() []ibcrouterkeeper.Route {
 
 func (s *IBCRouterQueryService) ListTransfers() []ibcrouterkeeper.TransferRecord {
 	return s.app.Transfers()
+}
+
+type GovernanceTxService struct {
+	app *App
+}
+
+func NewGovernanceTxService(app *App) *GovernanceTxService {
+	return &GovernanceTxService{app: app}
+}
+
+func (s *GovernanceTxService) ApplyAssetStatusProposal(authority string, proposal governancekeeper.AssetStatusProposal) error {
+	return s.app.ApplyAssetStatusProposal(authority, proposal)
+}
+
+func (s *GovernanceTxService) ApplyLimitUpdateProposal(authority string, proposal governancekeeper.LimitUpdateProposal) error {
+	return s.app.ApplyLimitUpdateProposal(authority, proposal)
+}
+
+func (s *GovernanceTxService) ApplyRoutePolicyUpdateProposal(authority string, proposal governancekeeper.RoutePolicyUpdateProposal) error {
+	return s.app.ApplyRoutePolicyUpdateProposal(authority, proposal)
 }

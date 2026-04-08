@@ -3,15 +3,18 @@ package keeper
 import (
 	"errors"
 	"testing"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
 
 func TestSignerSetAcceptsActiveVersionAtCurrentHeight(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
+	signers := bridgetypes.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-4", "relayer-5", "relayer-6"},
+		Signers:     signers[3:6],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -25,7 +28,8 @@ func TestSignerSetAcceptsActiveVersionAtCurrentHeight(t *testing.T) {
 	claim.Identity.MessageID = claim.Identity.DerivedMessageID()
 	attestation := validAttestation(claim)
 	attestation.SignerSetVersion = 2
-	attestation.Signers = []string{"relayer-4", "relayer-5"}
+	attestation.Signers = signers[3:5]
+	attestation.Proofs = signAttestationForTestsFromHelpers(attestation, 3, 4)
 
 	if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
 		t.Fatalf("expected active signer set to verify, got %v", err)
@@ -36,9 +40,10 @@ func TestSignerSetRejectsVersionBeforeActivation(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
+	signers := bridgetypes.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-4", "relayer-5", "relayer-6"},
+		Signers:     signers[3:6],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -48,7 +53,8 @@ func TestSignerSetRejectsVersionBeforeActivation(t *testing.T) {
 	keeper.SetCurrentHeight(60)
 	attestation := validAttestation(claim)
 	attestation.SignerSetVersion = 2
-	attestation.Signers = []string{"relayer-4", "relayer-5"}
+	attestation.Signers = signers[3:5]
+	attestation.Proofs = signAttestationForTestsFromHelpers(attestation, 3, 4)
 
 	_, err := keeper.ExecuteDepositClaim(claim, attestation)
 	if !errors.Is(err, ErrSignerSetVersionMismatch) {
@@ -60,9 +66,10 @@ func TestSignerSetRejectsExpiredSet(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
+	signers := bridgetypes.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     1,
-		Signers:     []string{"relayer-1", "relayer-2", "relayer-3"},
+		Signers:     signers[:3],
 		Threshold:   2,
 		ActivatedAt: 1,
 		ExpiresAt:   55,
@@ -84,9 +91,10 @@ func TestSignerSetRejectsMismatchAgainstActiveVersion(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
+	signers := bridgetypes.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-4", "relayer-5", "relayer-6"},
+		Signers:     signers[3:6],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {

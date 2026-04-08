@@ -19,7 +19,7 @@ This repository is meant to show:
 - Ethereum deposit observation and release execution run through the live local Anvil path.
 - Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
 - AegisLink owns bridge, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, and `query status`.
-- AegisLink bridge attestations now bind to an explicit signer-set version, and the bridge keeper can activate, expire, and reject mismatched signer sets.
+- AegisLink bridge attestations now bind to an explicit signer-set version, carry cryptographic signer proofs, and the bridge keeper can activate, expire, and reject mismatched or invalid signer sets.
 - The bridge-relayer and route-relayer are real services with replay persistence and route lifecycle handling.
 - The Phase 6 route path now boots a dedicated destination runtime through `osmo-locald`, and `route-relayer` can move a transfer from an AegisLink home into that destination home without the old HTTP mock-target entrypoint.
 - Routed transfers go through packet-shaped delivery, destination-side execution, later acknowledgement, and explicit completion, failure, timeout, or refund handling.
@@ -80,6 +80,7 @@ Use these to build or review the project step by step:
 - [0-to-100 execution plan](docs/superpowers/plans/2026-03-30-aegislink-0-to-100-implementation.md)
 - [Final stretch plan](docs/superpowers/plans/2026-04-05-aegislink-final-stretch-plan.md)
 - [Future realism plan](docs/superpowers/plans/2026-04-06-aegislink-future-realism-plan.md)
+- [Gap remediation plan](docs/superpowers/plans/2026-04-08-aegislink-gap-remediation-plan.md)
 - [Initial implementation plan, historical](docs/superpowers/plans/2026-03-28-eth-cosmos-aegislink-implementation.md)
 
 Use these for operational and launch thinking:
@@ -165,7 +166,7 @@ That flow creates and uses:
 
 ## Current checkpoint
 
-As of April 7, 2026:
+As of April 8, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
 - Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
@@ -175,6 +176,7 @@ As of April 7, 2026:
 - Phase 8 is now complete for the current repo scope: the binaries expose Prometheus-style metrics, the repo ships a local monitoring scaffold, and the main operator recovery drills are codified in runbooks and e2e coverage
 - the local monitoring scaffold now exists too: Prometheus scrape config, Grafana provisioning, an initial destination-ops dashboard, and `make monitor`
 - Phase 9 is now complete for the current repo scope: the `ibcrouter` can register multiple destination route profiles with allowed assets, memo-policy guardrails, and allowed action types, the governance module can apply asset, limit, and route-policy changes through a recorded proposal path, and the routed execution layer now supports both `swap` and `stake`
+- Phase A of the gap-remediation plan is now complete for the current repo scope: Go-side bridge verification now requires cryptographic signer proofs instead of signer-name lists, and governance policy changes now require an explicit configured authority
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters

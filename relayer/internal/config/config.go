@@ -5,12 +5,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
 
 type Config struct {
 	CosmosChainID               string
 	AttestationThreshold        uint32
 	AttestationSignerSetVersion uint64
+	AttestationSignerKeys       []string
 	SubmissionRetryLimit        int
 	EVMConfirmations            uint64
 	CosmosConfirmations         uint64
@@ -32,6 +35,7 @@ func LoadFromEnv() Config {
 		CosmosChainID:               getString("AEGISLINK_RELAYER_COSMOS_CHAIN_ID", "aegislink-1"),
 		AttestationThreshold:        uint32(getInt("AEGISLINK_RELAYER_ATTESTATION_THRESHOLD", 2)),
 		AttestationSignerSetVersion: uint64(getInt("AEGISLINK_RELAYER_ATTESTATION_SIGNER_SET_VERSION", 1)),
+		AttestationSignerKeys:       getFieldsWithFallback("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS", bridgetypes.DefaultHarnessSignerPrivateKeys()[:3]),
 		SubmissionRetryLimit:        getInt("AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT", 3),
 		EVMConfirmations:            uint64(getInt("AEGISLINK_RELAYER_EVM_CONFIRMATIONS", 2)),
 		CosmosConfirmations:         uint64(getInt("AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS", 1)),
@@ -81,4 +85,12 @@ func getFields(key string) []string {
 		return nil
 	}
 	return strings.Fields(value)
+}
+
+func getFieldsWithFallback(key string, fallback []string) []string {
+	fields := getFields(key)
+	if len(fields) == 0 {
+		return append([]string(nil), fallback...)
+	}
+	return fields
 }

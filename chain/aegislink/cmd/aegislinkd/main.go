@@ -18,8 +18,11 @@ import (
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/opslog"
 	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcroutercli "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/client/cli"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
+	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 )
 
 func main() {
@@ -200,6 +203,12 @@ func runTx(args []string, stdout io.Writer) error {
 		return txCompleteIBCTransfer(args[1:], stdout)
 	case "refund-ibc-transfer":
 		return txRefundIBCTransfer(args[1:], stdout)
+	case "apply-asset-status-proposal":
+		return txApplyAssetStatusProposal(args[1:], stdout)
+	case "apply-limit-update-proposal":
+		return txApplyLimitUpdateProposal(args[1:], stdout)
+	case "apply-route-policy-update-proposal":
+		return txApplyRoutePolicyUpdateProposal(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown tx subcommand %q", args[0])
 	}
@@ -669,6 +678,173 @@ func txRefundIBCTransfer(args []string, stdout io.Writer) error {
 	return writeJSON(stdout, transferJSONResponse(transfer))
 }
 
+func txApplyAssetStatusProposal(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("apply-asset-status-proposal", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	proposalID := flags.String("proposal-id", "", "proposal identifier")
+	assetID := flags.String("asset-id", "", "asset identifier")
+	enabled := flags.Bool("enabled", true, "desired asset enabled status")
+	authority := flags.String("authority", "", "governance authority identifier")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*proposalID) == "" {
+		return fmt.Errorf("missing proposal id")
+	}
+	if strings.TrimSpace(*assetID) == "" {
+		return fmt.Errorf("missing asset id")
+	}
+	if strings.TrimSpace(*authority) == "" {
+		return fmt.Errorf("missing authority")
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+
+	service := app.NewGovernanceTxService(a)
+	proposal := governancekeeper.AssetStatusProposal{
+		ProposalID: *proposalID,
+		AssetID:    *assetID,
+		Enabled:    *enabled,
+	}
+	if err := service.ApplyAssetStatusProposal(*authority, proposal); err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, map[string]any{
+		"proposal_id": proposal.ProposalID,
+		"kind":        governancekeeper.ProposalKindAssetStatus,
+		"target_id":   proposal.AssetID,
+		"enabled":     proposal.Enabled,
+		"applied_by":  strings.TrimSpace(*authority),
+	})
+}
+
+func txApplyLimitUpdateProposal(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("apply-limit-update-proposal", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	proposalID := flags.String("proposal-id", "", "proposal identifier")
+	assetID := flags.String("asset-id", "", "asset identifier")
+	windowSeconds := flags.Uint64("window-seconds", 0, "rate limit window seconds")
+	maxAmountRaw := flags.String("max-amount", "", "rate limit max amount")
+	authority := flags.String("authority", "", "governance authority identifier")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*proposalID) == "" {
+		return fmt.Errorf("missing proposal id")
+	}
+	if strings.TrimSpace(*assetID) == "" {
+		return fmt.Errorf("missing asset id")
+	}
+	if *windowSeconds == 0 {
+		return fmt.Errorf("missing window seconds")
+	}
+	if strings.TrimSpace(*maxAmountRaw) == "" {
+		return fmt.Errorf("missing max amount")
+	}
+	if strings.TrimSpace(*authority) == "" {
+		return fmt.Errorf("missing authority")
+	}
+
+	maxAmount, err := parseBase10Amount(*maxAmountRaw)
+	if err != nil {
+		return err
+	}
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+
+	service := app.NewGovernanceTxService(a)
+	proposal := governancekeeper.LimitUpdateProposal{
+		ProposalID: *proposalID,
+		Limit: limittypes.RateLimit{
+			AssetID:       *assetID,
+			WindowSeconds: *windowSeconds,
+			MaxAmount:     maxAmount,
+		},
+	}
+	if err := service.ApplyLimitUpdateProposal(*authority, proposal); err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, map[string]any{
+		"proposal_id":    proposal.ProposalID,
+		"kind":           governancekeeper.ProposalKindLimitUpdate,
+		"target_id":      proposal.Limit.AssetID,
+		"window_seconds": proposal.Limit.WindowSeconds,
+		"max_amount":     proposal.Limit.MaxAmount.String(),
+		"applied_by":     strings.TrimSpace(*authority),
+	})
+}
+
+func txApplyRoutePolicyUpdateProposal(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("apply-route-policy-update-proposal", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	proposalID := flags.String("proposal-id", "", "proposal identifier")
+	routeID := flags.String("route-id", "", "route profile identifier")
+	memoPrefixes := flags.String("memo-prefixes", "", "comma-separated allowed memo prefixes")
+	actionTypes := flags.String("action-types", "", "comma-separated allowed action types")
+	authority := flags.String("authority", "", "governance authority identifier")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*proposalID) == "" {
+		return fmt.Errorf("missing proposal id")
+	}
+	if strings.TrimSpace(*routeID) == "" {
+		return fmt.Errorf("missing route id")
+	}
+	if strings.TrimSpace(*authority) == "" {
+		return fmt.Errorf("missing authority")
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+
+	service := app.NewGovernanceTxService(a)
+	proposal := governancekeeper.RoutePolicyUpdateProposal{
+		ProposalID: *proposalID,
+		RouteID:    *routeID,
+		Policy: ibcroutertypes.RoutePolicy{
+			AllowedMemoPrefixes: splitCommaSeparated(*memoPrefixes),
+			AllowedActionTypes:  splitCommaSeparated(*actionTypes),
+		},
+	}
+	if err := service.ApplyRoutePolicyUpdateProposal(*authority, proposal); err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, map[string]any{
+		"proposal_id":           proposal.ProposalID,
+		"kind":                  governancekeeper.ProposalKindRoutePolicy,
+		"target_id":             proposal.RouteID,
+		"allowed_memo_prefixes": proposal.Policy.AllowedMemoPrefixes,
+		"allowed_action_types":  proposal.Policy.AllowedActionTypes,
+		"applied_by":            strings.TrimSpace(*authority),
+	})
+}
+
 type submissionFilePayload struct {
 	Claim struct {
 		Kind               string `json:"kind"`
@@ -685,12 +861,13 @@ type submissionFilePayload struct {
 		Deadline           uint64 `json:"deadline"`
 	} `json:"claim"`
 	Attestation struct {
-		MessageID        string   `json:"message_id"`
-		PayloadHash      string   `json:"payload_hash"`
-		Signers          []string `json:"signers"`
-		Threshold        uint32   `json:"threshold"`
-		Expiry           uint64   `json:"expiry"`
-		SignerSetVersion uint64   `json:"signer_set_version"`
+		MessageID        string                         `json:"message_id"`
+		PayloadHash      string                         `json:"payload_hash"`
+		Signers          []string                       `json:"signers"`
+		Proofs           []bridgetypes.AttestationProof `json:"proofs"`
+		Threshold        uint32                         `json:"threshold"`
+		Expiry           uint64                         `json:"expiry"`
+		SignerSetVersion uint64                         `json:"signer_set_version"`
 	} `json:"attestation"`
 }
 
@@ -729,6 +906,7 @@ func loadSubmission(path string) (bridgetypes.DepositClaim, bridgetypes.Attestat
 		MessageID:        payload.Attestation.MessageID,
 		PayloadHash:      payload.Attestation.PayloadHash,
 		Signers:          append([]string(nil), payload.Attestation.Signers...),
+		Proofs:           append([]bridgetypes.AttestationProof(nil), payload.Attestation.Proofs...),
 		Threshold:        payload.Attestation.Threshold,
 		Expiry:           payload.Attestation.Expiry,
 		SignerSetVersion: payload.Attestation.SignerSetVersion,
@@ -865,6 +1043,7 @@ func statusEnvelope(kind string, status app.Status) map[string]any {
 		"modules":                   status.Modules,
 		"module_names":              status.ModuleNames,
 		"allowed_signers":           status.AllowedSigners,
+		"governance_authorities":    status.GovernanceAuthorities,
 		"active_signer_set_version": status.ActiveSignerSetVersion,
 		"active_signer_threshold":   status.ActiveSignerThreshold,
 		"signer_set_count":          status.SignerSetCount,
@@ -886,4 +1065,23 @@ func statusEnvelope(kind string, status app.Status) map[string]any {
 		"refunded_transfers":        status.RefundedTransfers,
 		"supply_by_denom":           status.SupplyByDenom,
 	}
+}
+
+func splitCommaSeparated(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		values = append(values, part)
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
 }

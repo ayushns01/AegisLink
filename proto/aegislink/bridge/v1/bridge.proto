@@ -38,6 +38,11 @@ message WithdrawalClaim {
   uint64 deadline = 6;
 }
 
+message AttestationProof {
+  string signer = 1;
+  bytes signature = 2;
+}
+
 message Attestation {
   string message_id = 1;
   string payload_hash = 2;
@@ -45,4 +50,5 @@ message Attestation {
   uint32 threshold = 4;
   uint64 expiry = 5;
   uint64 signer_set_version = 6;
+  repeated AttestationProof proofs = 7;
 }

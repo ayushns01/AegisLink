@@ -16,6 +16,9 @@ func TestLoadFromEnvFallsBackOnNegativeNumericValues(t *testing.T) {
 	if cfg.AttestationSignerSetVersion != 1 {
 		t.Fatalf("expected signer set version fallback 1, got %d", cfg.AttestationSignerSetVersion)
 	}
+	if len(cfg.AttestationSignerKeys) != 3 {
+		t.Fatalf("expected 3 default attestation signer keys, got %d", len(cfg.AttestationSignerKeys))
+	}
 	if cfg.SubmissionRetryLimit != 3 {
 		t.Fatalf("expected retry limit fallback 3, got %d", cfg.SubmissionRetryLimit)
 	}
@@ -55,5 +58,18 @@ func TestLoadFromEnvParsesEthereumRPCSourceConfig(t *testing.T) {
 	}
 	if cfg.EVMGatewayAddress != "0x1234567890abcdef1234567890abcdef12345678" {
 		t.Fatalf("expected gateway address to parse, got %q", cfg.EVMGatewayAddress)
+	}
+}
+
+func TestLoadFromEnvParsesAttestationSignerKeys(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS", "0x01 0x02")
+
+	cfg := LoadFromEnv()
+
+	if len(cfg.AttestationSignerKeys) != 2 {
+		t.Fatalf("expected two signer keys, got %d", len(cfg.AttestationSignerKeys))
+	}
+	if cfg.AttestationSignerKeys[0] != "0x01" || cfg.AttestationSignerKeys[1] != "0x02" {
+		t.Fatalf("unexpected signer keys: %v", cfg.AttestationSignerKeys)
 	}
 }

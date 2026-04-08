@@ -12,7 +12,8 @@ That means:
 - relayers provide evidence, not absolute truth
 - the bridge zone enforces replay protection, rate limits, asset policy, and pause controls
 - the system depends on the configured attester threshold and active signer set being honest and available
-- the current repo now supports explicit signer-set versioning and rotation instead of assuming one fixed attester shape forever
+- the current repo now supports explicit signer-set versioning, cryptographic signer proofs, and rotation instead of assuming one fixed attester shape forever
+- governance policy changes now require a configured authority instead of applying permissionlessly inside the runtime
 
 ## Security invariants
 
@@ -48,6 +49,8 @@ Do not claim:
   Controls which signatures are valid evidence.
 - `signer-set versioning`
   Makes attestations rejectable when they target an inactive, expired, or mismatched signer set.
+- `governance authorities`
+  Gate asset-policy, limit, and route-policy changes behind explicit operator identities.
 
 ## Launch questions
 

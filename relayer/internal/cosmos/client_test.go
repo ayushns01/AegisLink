@@ -143,12 +143,22 @@ func validDepositClaim() bridgetypes.DepositClaim {
 }
 
 func validAttestationForClaim(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
-	return bridgetypes.Attestation{
+	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          []string{"signer-1", "signer-2"},
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
 	}
+	proofs := make([]bridgetypes.AttestationProof, 0, 2)
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			panic(err)
+		}
+		proofs = append(proofs, proof)
+	}
+	attestation.Proofs = proofs
+	return attestation
 }

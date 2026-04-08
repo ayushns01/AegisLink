@@ -18,7 +18,7 @@ func TestAssetStatusProposalDisablesAndEnablesAsset(t *testing.T) {
 
 	governanceKeeper, registryKeeper, _, _ := seededGovernanceKeeper(t)
 
-	if err := governanceKeeper.ApplyAssetStatusProposal(AssetStatusProposal{
+	if err := governanceKeeper.ApplyAssetStatusProposal("guardian-1", AssetStatusProposal{
 		ProposalID: "asset-disable-1",
 		AssetID:    "eth.usdc",
 		Enabled:    false,
@@ -34,7 +34,7 @@ func TestAssetStatusProposalDisablesAndEnablesAsset(t *testing.T) {
 		t.Fatalf("expected asset to be disabled after proposal")
 	}
 
-	if err := governanceKeeper.ApplyAssetStatusProposal(AssetStatusProposal{
+	if err := governanceKeeper.ApplyAssetStatusProposal("guardian-1", AssetStatusProposal{
 		ProposalID: "asset-enable-1",
 		AssetID:    "eth.usdc",
 		Enabled:    true,
@@ -60,7 +60,7 @@ func TestLimitUpdateProposalAppliesNewLimit(t *testing.T) {
 
 	governanceKeeper, _, limitsKeeper, _ := seededGovernanceKeeper(t)
 
-	if err := governanceKeeper.ApplyLimitUpdateProposal(LimitUpdateProposal{
+	if err := governanceKeeper.ApplyLimitUpdateProposal("guardian-1", LimitUpdateProposal{
 		ProposalID: "limit-update-1",
 		Limit: limittypes.RateLimit{
 			AssetID:       "eth.usdc",
@@ -88,7 +88,7 @@ func TestRoutePolicyUpdateProposalChangesProfileBehavior(t *testing.T) {
 
 	governanceKeeper, _, _, routerKeeper := seededGovernanceKeeper(t)
 
-	if err := governanceKeeper.ApplyRoutePolicyUpdateProposal(RoutePolicyUpdateProposal{
+	if err := governanceKeeper.ApplyRoutePolicyUpdateProposal("guardian-1", RoutePolicyUpdateProposal{
 		ProposalID: "route-policy-1",
 		RouteID:    "osmosis-fast",
 		Policy: ibcroutertypes.RoutePolicy{
@@ -154,5 +154,5 @@ func seededGovernanceKeeper(t *testing.T) (*Keeper, *registrykeeper.Keeper, *lim
 		t.Fatalf("set route profile: %v", err)
 	}
 
-	return NewKeeper(registryKeeper, limitsKeeper, routerKeeper), registryKeeper, limitsKeeper, routerKeeper
+	return NewKeeper(registryKeeper, limitsKeeper, routerKeeper, []string{"guardian-1"}), registryKeeper, limitsKeeper, routerKeeper
 }

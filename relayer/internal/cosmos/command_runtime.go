@@ -138,6 +138,7 @@ func (s *CommandClaimSink) SubmitDepositClaim(ctx context.Context, claim bridget
 			MessageID:        attestation.MessageID,
 			PayloadHash:      attestation.PayloadHash,
 			Signers:          append([]string(nil), attestation.Signers...),
+			Proofs:           append([]bridgetypes.AttestationProof(nil), attestation.Proofs...),
 			Threshold:        attestation.Threshold,
 			Expiry:           attestation.Expiry,
 			SignerSetVersion: attestation.SignerSetVersion,

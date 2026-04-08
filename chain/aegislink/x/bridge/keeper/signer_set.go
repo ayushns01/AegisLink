@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
 
 type SignerSet struct {
@@ -55,7 +57,7 @@ func normalizeSignerSet(set SignerSet) SignerSet {
 		Signers:     make([]string, 0, len(set.Signers)),
 	}
 	for _, signer := range set.Signers {
-		normalized.Signers = append(normalized.Signers, strings.TrimSpace(signer))
+		normalized.Signers = append(normalized.Signers, bridgetypes.NormalizeSignerAddress(signer))
 	}
 	sort.Strings(normalized.Signers)
 	return normalized

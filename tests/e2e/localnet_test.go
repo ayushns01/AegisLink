@@ -87,12 +87,13 @@ type persistedDepositClaim struct {
 }
 
 type persistedAttestation struct {
-	MessageID        string   `json:"message_id"`
-	PayloadHash      string   `json:"payload_hash"`
-	Signers          []string `json:"signers"`
-	Threshold        uint32   `json:"threshold"`
-	Expiry           uint64   `json:"expiry"`
-	SignerSetVersion uint64   `json:"signer_set_version"`
+	MessageID        string                       `json:"message_id"`
+	PayloadHash      string                       `json:"payload_hash"`
+	Signers          []string                     `json:"signers"`
+	Proofs           []bridgetypes.AttestationProof `json:"proofs"`
+	Threshold        uint32                       `json:"threshold"`
+	Expiry           uint64                       `json:"expiry"`
+	SignerSetVersion uint64                       `json:"signer_set_version"`
 }
 
 type persistedWithdrawalState struct {
@@ -267,9 +268,9 @@ func writeInboundFixtures(t *testing.T) fixturePaths {
 	claim := depositClaimFromEvent(t, deposit)
 	votes := persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-1", Expiry: 140},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-2", Expiry: 150},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: "relayer-3", Expiry: 120},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 140},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 150},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[2], Expiry: 120},
 		},
 	}
 
@@ -320,7 +321,7 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -368,10 +369,17 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          []string{"relayer-1", "relayer-2"},
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
+	}
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			t.Fatalf("sign runtime attestation: %v", err)
+		}
+		attestation.Proofs = append(attestation.Proofs, proof)
 	}
 
 	app.SetCurrentHeight(50)
@@ -432,7 +440,7 @@ func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress strin
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "registry", "limits", "pauser"},
 		StatePath:         statePath,
-		AllowedSigners:    []string{"relayer-1", "relayer-2", "relayer-3"},
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -609,6 +617,7 @@ func decodeSubmission(t *testing.T, submission persistedClaimSubmission) (bridge
 		MessageID:        submission.Attestation.MessageID,
 		PayloadHash:      submission.Attestation.PayloadHash,
 		Signers:          append([]string(nil), submission.Attestation.Signers...),
+		Proofs:           append([]bridgetypes.AttestationProof(nil), submission.Attestation.Proofs...),
 		Threshold:        submission.Attestation.Threshold,
 		Expiry:           submission.Attestation.Expiry,
 		SignerSetVersion: submission.Attestation.SignerSetVersion,

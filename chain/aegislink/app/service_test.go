@@ -1,11 +1,13 @@
 package app
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
@@ -78,7 +80,7 @@ func TestBridgeQueryServiceReturnsActiveSignerSetAndHistory(t *testing.T) {
 
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     []string{"relayer-2", "relayer-4", "relayer-5"},
+		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -100,6 +102,34 @@ func TestBridgeQueryServiceReturnsActiveSignerSetAndHistory(t *testing.T) {
 	}
 	if sets[0].Version != 1 || sets[1].Version != 2 {
 		t.Fatalf("expected signer set history [1 2], got %+v", sets)
+	}
+}
+
+func TestGovernanceTxServiceRequiresAuthorizedAuthority(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	service := NewGovernanceTxService(app)
+	err := service.ApplyAssetStatusProposal("intruder", governancekeeper.AssetStatusProposal{
+		ProposalID: "asset-disable-unauthorized",
+		AssetID:    "eth.usdc",
+		Enabled:    false,
+	})
+	if !errors.Is(err, governancekeeper.ErrUnauthorizedProposal) {
+		t.Fatalf("expected unauthorized governance proposal error, got %v", err)
+	}
+
+	if err := service.ApplyAssetStatusProposal("guardian-1", governancekeeper.AssetStatusProposal{
+		ProposalID: "asset-disable-authorized",
+		AssetID:    "eth.usdc",
+		Enabled:    false,
+	}); err != nil {
+		t.Fatalf("apply authorized asset status proposal: %v", err)
+	}
+
+	asset, ok := app.RegistryKeeper.GetAsset("eth.usdc")
+	if !ok || asset.Enabled {
+		t.Fatalf("expected authorized governance proposal to disable asset, got %+v exists=%t", asset, ok)
 	}
 }
 
@@ -159,12 +189,20 @@ func sampleDepositClaim() bridgetypes.DepositClaim {
 }
 
 func sampleAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
-	return bridgetypes.Attestation{
+	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          []string{"relayer-1", "relayer-2"},
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,
 	}
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			panic(err)
+		}
+		attestation.Proofs = append(attestation.Proofs, proof)
+	}
+	return attestation
 }
