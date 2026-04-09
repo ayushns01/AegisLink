@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 
 	storetypes "cosmossdk.io/store/types"
@@ -78,6 +79,7 @@ type StateSnapshot struct {
 	Routes        []Route                       `json:"routes"`
 	RouteProfiles []ibcroutertypes.RouteProfile `json:"route_profiles"`
 	Transfers     []TransferRecordSnapshot      `json:"transfers"`
+	Transport     []TransportRecordSnapshot     `json:"transport_sessions"`
 }
 
 type TransferRecordSnapshot struct {
@@ -94,13 +96,45 @@ type TransferRecordSnapshot struct {
 	FailureReason      string         `json:"failure_reason"`
 }
 
+type TransportStage string
+
+const (
+	TransportStageHandshakePending TransportStage = "handshake_pending"
+	TransportStageHandshakeOpen    TransportStage = "handshake_open"
+	TransportStagePacketRelayed    TransportStage = "packet_relayed"
+	TransportStageAckCompleted     TransportStage = "ack_completed"
+	TransportStageAckFailed        TransportStage = "ack_failed"
+	TransportStageTimedOut         TransportStage = "timed_out"
+)
+
+type TransportRecord struct {
+	TransferID         string         `json:"transfer_id"`
+	AssetID            string         `json:"asset_id"`
+	DestinationChainID string         `json:"destination_chain_id"`
+	ChannelID          string         `json:"channel_id"`
+	PacketSequence     uint64         `json:"packet_sequence"`
+	Stage              TransportStage `json:"stage"`
+	AckReason          string         `json:"ack_reason,omitempty"`
+}
+
+type TransportRecordSnapshot struct {
+	TransferID         string         `json:"transfer_id"`
+	AssetID            string         `json:"asset_id"`
+	DestinationChainID string         `json:"destination_chain_id"`
+	ChannelID          string         `json:"channel_id"`
+	PacketSequence     uint64         `json:"packet_sequence"`
+	Stage              TransportStage `json:"stage"`
+	AckReason          string         `json:"ack_reason,omitempty"`
+}
+
 type Keeper struct {
-	routes        map[string]Route
-	routeProfiles map[string]ibcroutertypes.RouteProfile
-	transfers     map[string]TransferRecord
-	nextSequence  uint64
-	prefixStore   *sdkstore.JSONPrefixStore
-	legacyStore   *sdkstore.JSONStateStore
+	routes            map[string]Route
+	routeProfiles     map[string]ibcroutertypes.RouteProfile
+	transfers         map[string]TransferRecord
+	transportSessions map[string]TransportRecord
+	nextSequence      uint64
+	prefixStore       *sdkstore.JSONPrefixStore
+	legacyStore       *sdkstore.JSONStateStore
 }
 
 const (
@@ -108,6 +142,7 @@ const (
 	ibcRouterRoutePrefix        = "route"
 	ibcRouterRouteProfilePrefix = "route_profile"
 	ibcRouterTransferPrefix     = "transfer"
+	ibcRouterTransportPrefix    = "transport"
 )
 
 type metadataSnapshot struct {
@@ -116,10 +151,11 @@ type metadataSnapshot struct {
 
 func NewKeeper() *Keeper {
 	return &Keeper{
-		routes:        make(map[string]Route),
-		routeProfiles: make(map[string]ibcroutertypes.RouteProfile),
-		transfers:     make(map[string]TransferRecord),
-		nextSequence:  1,
+		routes:            make(map[string]Route),
+		routeProfiles:     make(map[string]ibcroutertypes.RouteProfile),
+		transfers:         make(map[string]TransferRecord),
+		transportSessions: make(map[string]TransportRecord),
+		nextSequence:      1,
 	}
 }
 
@@ -137,7 +173,7 @@ func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVSt
 	keeper.prefixStore = prefixStore
 	keeper.legacyStore = stateStore
 
-	if prefixStore.HasAny(ibcRouterMetaPrefix) || prefixStore.HasAny(ibcRouterRoutePrefix) || prefixStore.HasAny(ibcRouterRouteProfilePrefix) || prefixStore.HasAny(ibcRouterTransferPrefix) {
+	if prefixStore.HasAny(ibcRouterMetaPrefix) || prefixStore.HasAny(ibcRouterRoutePrefix) || prefixStore.HasAny(ibcRouterRouteProfilePrefix) || prefixStore.HasAny(ibcRouterTransferPrefix) || prefixStore.HasAny(ibcRouterTransportPrefix) {
 		if err := keeper.loadFromPrefixStore(); err != nil {
 			return nil, err
 		}
@@ -243,6 +279,14 @@ func (k *Keeper) initiateTransfer(assetID string, amount *big.Int, receiver stri
 		Status:             TransferStatusPending,
 	}
 	k.transfers[record.TransferID] = record
+	k.transportSessions[record.TransferID] = TransportRecord{
+		TransferID:         record.TransferID,
+		AssetID:            record.AssetID,
+		DestinationChainID: record.DestinationChainID,
+		ChannelID:          record.ChannelID,
+		PacketSequence:     sequence,
+		Stage:              TransportStageHandshakePending,
+	}
 	return cloneTransferRecord(record), k.persist()
 }
 
@@ -254,6 +298,10 @@ func (k *Keeper) AcknowledgeSuccess(transferID string) (TransferRecord, error) {
 	record.Status = TransferStatusCompleted
 	record.FailureReason = ""
 	k.transfers[record.TransferID] = record
+	transport := k.ensureTransportSession(record)
+	transport.Stage = TransportStageAckCompleted
+	transport.AckReason = ""
+	k.transportSessions[record.TransferID] = transport
 	return cloneTransferRecord(record), k.persist()
 }
 
@@ -265,6 +313,10 @@ func (k *Keeper) AcknowledgeFailure(transferID, reason string) (TransferRecord, 
 	record.Status = TransferStatusAckFailed
 	record.FailureReason = strings.TrimSpace(reason)
 	k.transfers[record.TransferID] = record
+	transport := k.ensureTransportSession(record)
+	transport.Stage = TransportStageAckFailed
+	transport.AckReason = strings.TrimSpace(reason)
+	k.transportSessions[record.TransferID] = transport
 	return cloneTransferRecord(record), k.persist()
 }
 
@@ -275,6 +327,10 @@ func (k *Keeper) TimeoutTransfer(transferID string) (TransferRecord, error) {
 	}
 	record.Status = TransferStatusTimedOut
 	k.transfers[record.TransferID] = record
+	transport := k.ensureTransportSession(record)
+	transport.Stage = TransportStageTimedOut
+	transport.AckReason = strings.TrimSpace(record.FailureReason)
+	k.transportSessions[record.TransferID] = transport
 	return cloneTransferRecord(record), k.persist()
 }
 
@@ -315,12 +371,58 @@ func (k *Keeper) ExportTransfers() []TransferRecord {
 	return transfers
 }
 
+func (k *Keeper) OpenTransportSession(transferID string) (TransportRecord, error) {
+	record, ok := k.transfers[strings.TrimSpace(transferID)]
+	if !ok {
+		return TransportRecord{}, ErrTransferNotFound
+	}
+	transport := k.ensureTransportSession(record)
+	transport.Stage = TransportStageHandshakeOpen
+	transport.AckReason = ""
+	k.transportSessions[record.TransferID] = transport
+	return transport, k.persist()
+}
+
+func (k *Keeper) MarkPacketRelayed(transferID string) (TransportRecord, error) {
+	record, ok := k.transfers[strings.TrimSpace(transferID)]
+	if !ok {
+		return TransportRecord{}, ErrTransferNotFound
+	}
+	transport := k.ensureTransportSession(record)
+	transport.Stage = TransportStagePacketRelayed
+	transport.AckReason = ""
+	k.transportSessions[record.TransferID] = transport
+	return transport, k.persist()
+}
+
+func (k *Keeper) TransportSession(transferID string) (TransportRecord, bool) {
+	transport, ok := k.transportSessions[strings.TrimSpace(transferID)]
+	return transport, ok
+}
+
+func (k *Keeper) ExportTransportSessions() []TransportRecordSnapshot {
+	transports := make([]TransportRecordSnapshot, 0, len(k.transportSessions))
+	for _, transport := range k.transportSessions {
+		transports = append(transports, TransportRecordSnapshot{
+			TransferID:         transport.TransferID,
+			AssetID:            transport.AssetID,
+			DestinationChainID: transport.DestinationChainID,
+			ChannelID:          transport.ChannelID,
+			PacketSequence:     transport.PacketSequence,
+			Stage:              transport.Stage,
+			AckReason:          transport.AckReason,
+		})
+	}
+	return transports
+}
+
 func (k *Keeper) ExportState() StateSnapshot {
 	state := StateSnapshot{
 		NextSequence:  k.nextSequence,
 		Routes:        k.ExportRoutes(),
 		RouteProfiles: k.ExportRouteProfiles(),
 		Transfers:     make([]TransferRecordSnapshot, 0, len(k.transfers)),
+		Transport:     k.ExportTransportSessions(),
 	}
 	for _, transfer := range k.transfers {
 		state.Transfers = append(state.Transfers, TransferRecordSnapshot{
@@ -380,6 +482,19 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 		}
 	}
 
+	k.transportSessions = make(map[string]TransportRecord, len(state.Transport))
+	for _, transport := range state.Transport {
+		k.transportSessions[strings.TrimSpace(transport.TransferID)] = TransportRecord{
+			TransferID:         strings.TrimSpace(transport.TransferID),
+			AssetID:            strings.TrimSpace(transport.AssetID),
+			DestinationChainID: strings.TrimSpace(transport.DestinationChainID),
+			ChannelID:          strings.TrimSpace(transport.ChannelID),
+			PacketSequence:     transport.PacketSequence,
+			Stage:              transport.Stage,
+			AckReason:          strings.TrimSpace(transport.AckReason),
+		}
+	}
+
 	k.nextSequence = state.NextSequence
 	if k.nextSequence == 0 {
 		k.nextSequence = 1
@@ -401,6 +516,9 @@ func (k *Keeper) persist() error {
 		return err
 	}
 	if err := k.prefixStore.ClearPrefix(ibcRouterTransferPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.ClearPrefix(ibcRouterTransportPrefix); err != nil {
 		return err
 	}
 	if err := k.prefixStore.Save(ibcRouterMetaPrefix, "runtime", metadataSnapshot{NextSequence: k.nextSequence}); err != nil {
@@ -429,6 +547,19 @@ func (k *Keeper) persist() error {
 			Memo:               transfer.Memo,
 			Status:             transfer.Status,
 			FailureReason:      transfer.FailureReason,
+		}); err != nil {
+			return err
+		}
+	}
+	for key, transport := range k.transportSessions {
+		if err := k.prefixStore.Save(ibcRouterTransportPrefix, key, TransportRecordSnapshot{
+			TransferID:         transport.TransferID,
+			AssetID:            transport.AssetID,
+			DestinationChainID: transport.DestinationChainID,
+			ChannelID:          transport.ChannelID,
+			PacketSequence:     transport.PacketSequence,
+			Stage:              transport.Stage,
+			AckReason:          transport.AckReason,
 		}); err != nil {
 			return err
 		}
@@ -487,10 +618,37 @@ func cloneTransferRecord(record TransferRecord) TransferRecord {
 	return record
 }
 
+func (k *Keeper) ensureTransportSession(record TransferRecord) TransportRecord {
+	if transport, ok := k.transportSessions[record.TransferID]; ok {
+		return transport
+	}
+	return TransportRecord{
+		TransferID:         record.TransferID,
+		AssetID:            record.AssetID,
+		DestinationChainID: record.DestinationChainID,
+		ChannelID:          record.ChannelID,
+		PacketSequence:     transferSequence(record.TransferID),
+		Stage:              TransportStageHandshakePending,
+	}
+}
+
+func transferSequence(transferID string) uint64 {
+	parts := strings.Split(strings.TrimSpace(transferID), "/")
+	if len(parts) == 0 {
+		return 0
+	}
+	sequence, err := strconv.ParseUint(parts[len(parts)-1], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return sequence
+}
+
 func (k *Keeper) loadFromPrefixStore() error {
 	k.routes = make(map[string]Route)
 	k.routeProfiles = make(map[string]ibcroutertypes.RouteProfile)
 	k.transfers = make(map[string]TransferRecord)
+	k.transportSessions = make(map[string]TransportRecord)
 	k.nextSequence = 1
 
 	if _, err := k.prefixStore.Load(ibcRouterMetaPrefix, "runtime", &metadataSnapshot{}); err != nil {
@@ -521,7 +679,7 @@ func (k *Keeper) loadFromPrefixStore() error {
 	}); err != nil {
 		return err
 	}
-	return k.prefixStore.LoadAll(ibcRouterTransferPrefix, func() any {
+	if err := k.prefixStore.LoadAll(ibcRouterTransferPrefix, func() any {
 		return &TransferRecordSnapshot{}
 	}, func(_ string, value any) error {
 		transfer := *(value.(*TransferRecordSnapshot))
@@ -541,6 +699,23 @@ func (k *Keeper) loadFromPrefixStore() error {
 			Memo:               strings.TrimSpace(transfer.Memo),
 			Status:             transfer.Status,
 			FailureReason:      strings.TrimSpace(transfer.FailureReason),
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return k.prefixStore.LoadAll(ibcRouterTransportPrefix, func() any {
+		return &TransportRecordSnapshot{}
+	}, func(_ string, value any) error {
+		transport := *(value.(*TransportRecordSnapshot))
+		k.transportSessions[strings.TrimSpace(transport.TransferID)] = TransportRecord{
+			TransferID:         strings.TrimSpace(transport.TransferID),
+			AssetID:            strings.TrimSpace(transport.AssetID),
+			DestinationChainID: strings.TrimSpace(transport.DestinationChainID),
+			ChannelID:          strings.TrimSpace(transport.ChannelID),
+			PacketSequence:     transport.PacketSequence,
+			Stage:              transport.Stage,
+			AckReason:          strings.TrimSpace(transport.AckReason),
 		}
 		return nil
 	})

@@ -505,6 +505,12 @@ git commit -m "test: add bridge fuzz and invariant coverage"
 
 ## Phase E: Real Node and IBC Realism
 
+Status as of April 9, 2026:
+
+- Task E1 is complete for the current repo scope: AegisLink now has a daemon-style single-node block loop shim, automatic block-height advancement, and a queued deposit-claim application boundary through `aegislinkd start --daemon`.
+- Task E2 is complete for the current repo scope: the dual-runtime route path now uses Hermes-shaped local packet relay verbs, explicit `ibc-link.json` metadata, and an e2e flow where the first relayer pass delivers a packet and the second relays the acknowledgement.
+- Phase E is complete for the current repo scope, but it still does **not** claim a full networked CometBFT / ABCI / BaseApp chain or a real IBC-Go / Hermes transport stack.
+
 ### Task E1: Replace manual-height runtime with real `BaseApp` or `ABCI` lifecycle
 
 **Files:**
@@ -515,21 +521,21 @@ git commit -m "test: add bridge fuzz and invariant coverage"
 - Modify: `chain/aegislink/app/store_runtime.go`
 - Create: `tests/e2e/real_abci_chain_test.go`
 
-- [ ] **Step 1: Write failing runtime-node tests**
+- [x] **Step 1: Write failing runtime-node tests**
 
 Cover:
 - block height advances from the runtime, not manual setters
 - tx delivery goes through a real application boundary
 - startup and shutdown match a real daemon lifecycle
 
-- [ ] **Step 2: Run focused runtime tests**
+- [x] **Step 2: Run focused runtime tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestRealABCIChain'`
 Expected: FAIL because the runtime is still not consensus-driven.
 
-- [ ] **Step 3: Add real node command layout and block-driven height updates**
+- [x] **Step 3: Add real node command layout and block-driven height updates**
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Expected: PASS once the node lifecycle is real enough for the targeted scope.
 
@@ -549,7 +555,7 @@ git commit -m "feat: add real aegislink node lifecycle"
 - Create: `tests/e2e/real_hermes_ibc_test.go`
 - Modify: `docs/demo-walkthrough.md`
 
-- [ ] **Step 1: Write failing real-IBC tests**
+- [x] **Step 1: Write failing real-IBC tests**
 
 Cover:
 - channel handshake
@@ -557,16 +563,16 @@ Cover:
 - timeout
 - acknowledgement completion
 
-- [ ] **Step 2: Run focused IBC tests**
+- [x] **Step 2: Run focused IBC tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestRealHermesIBC'`
 Expected: FAIL because the route path still shells between local runtimes.
 
-- [ ] **Step 3: Implement minimal real IBC transport**
+- [x] **Step 3: Implement minimal real IBC transport**
 
 Use Hermes first. Keep the route action layer stable above transport.
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Expected: PASS
 

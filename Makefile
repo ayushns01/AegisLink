@@ -1,4 +1,4 @@
-.PHONY: format test test-e2e test-route-e2e test-real-chain test-real-ibc test-phase-d demo inspect-demo real-demo inspect-real-demo devnet compose-devnet monitor
+.PHONY: format test test-e2e test-route-e2e test-real-chain test-real-abci test-real-ibc test-phase-d demo inspect-demo real-demo inspect-real-demo devnet compose-devnet monitor
 
 GO_CACHE_ROOT ?= /tmp/aegislink-e2e-go-cache
 GO_TEST_ENV = GOCACHE=$(GO_CACHE_ROOT)/gocache GOMODCACHE=$(GO_CACHE_ROOT)/gomodcache
@@ -20,8 +20,11 @@ test-route-e2e:
 test-real-chain:
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRealAegisLinkChain'
 
+test-real-abci:
+	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRealABCIChain'
+
 test-real-ibc:
-	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRealDestinationChainBootstrap|TestRealIBCRoute'
+	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRealDestinationChainBootstrap|TestRealIBCRoute|TestRealHermesIBC'
 
 test-phase-d:
 	@GOCACHE=$(GO_CACHE_ROOT)/gocache go test ./relayer/internal/pipeline ./relayer/internal/route
@@ -40,11 +43,11 @@ inspect-demo:
 	@cd tests/e2e && $(GO_TEST_ENV) go test ./... -run 'TestRouteRelayerCanUseConfiguredAlternatePoolOnMockTarget'
 
 real-demo:
-	@echo "Running the real dual-runtime route demo..."
+	@echo "Running the Hermes-shaped local route demo..."
 	@bash scripts/localnet/demo_real_ibc.sh demo
 
 inspect-real-demo:
-	@echo "Inspecting the real dual-runtime route path..."
+	@echo "Inspecting the Hermes-shaped local route path..."
 	@bash scripts/localnet/demo_real_ibc.sh inspect
 
 devnet:

@@ -123,6 +123,51 @@ func TestAcknowledgeSuccessMarksTransferCompleted(t *testing.T) {
 	}
 }
 
+func TestTransportSessionTracksHandshakePacketAndAckStages(t *testing.T) {
+	t.Parallel()
+
+	k := seededRouterKeeper(t)
+	transfer, err := k.InitiateTransfer("eth.usdc", mustAmount("25000000"), "osmo1recipient", 120, "swap:uosmo")
+	if err != nil {
+		t.Fatalf("initiate transfer: %v", err)
+	}
+
+	session, ok := k.TransportSession(transfer.TransferID)
+	if !ok {
+		t.Fatal("expected transport session to exist")
+	}
+	if session.Stage != TransportStageHandshakePending {
+		t.Fatalf("expected handshake_pending stage, got %q", session.Stage)
+	}
+
+	session, err = k.OpenTransportSession(transfer.TransferID)
+	if err != nil {
+		t.Fatalf("open transport session: %v", err)
+	}
+	if session.Stage != TransportStageHandshakeOpen {
+		t.Fatalf("expected handshake_open stage, got %q", session.Stage)
+	}
+
+	session, err = k.MarkPacketRelayed(transfer.TransferID)
+	if err != nil {
+		t.Fatalf("mark packet relayed: %v", err)
+	}
+	if session.Stage != TransportStagePacketRelayed {
+		t.Fatalf("expected packet_relayed stage, got %q", session.Stage)
+	}
+
+	if _, err := k.AcknowledgeSuccess(transfer.TransferID); err != nil {
+		t.Fatalf("ack success: %v", err)
+	}
+	session, ok = k.TransportSession(transfer.TransferID)
+	if !ok {
+		t.Fatal("expected transport session after ack success")
+	}
+	if session.Stage != TransportStageAckCompleted {
+		t.Fatalf("expected ack_completed stage, got %q", session.Stage)
+	}
+}
+
 func TestRouteStateMachineAllowsOnlyRecoverableRefunds(t *testing.T) {
 	t.Parallel()
 

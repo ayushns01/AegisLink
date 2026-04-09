@@ -258,6 +258,133 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 	}
 }
 
+func TestRunTxQueueDepositClaimPersistsPendingSubmission(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeApp(t, statePath)
+	claim := validDepositClaim(t)
+	submissionPath := filepath.Join(t.TempDir(), "submission.json")
+	writeSubmissionFile(t, submissionPath, claim, validAttestationForClaim(claim))
+	if err := app.Save(); err != nil {
+		t.Fatalf("save seeded state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "queue-deposit-claim",
+		"--state-path", statePath,
+		"--submission-file", submissionPath,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx queue-deposit-claim: %v\nstderr=%s", err, stderr.String())
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	if got := len(loaded.Status().ModuleNames); got == 0 {
+		t.Fatalf("expected loaded runtime to remain valid")
+	}
+	if got := loaded.Status().PendingDepositClaims; got != 1 {
+		t.Fatalf("expected one pending deposit claim, got %d", got)
+	}
+
+	var result struct {
+		Status    string `json:"status"`
+		MessageID string `json:"message_id"`
+		AssetID   string `json:"asset_id"`
+		Amount    string `json:"amount"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.Status != "queued" {
+		t.Fatalf("expected queued status, got %q", result.Status)
+	}
+	if result.MessageID != claim.Identity.MessageID {
+		t.Fatalf("expected message id %q, got %q", claim.Identity.MessageID, result.MessageID)
+	}
+	if result.AssetID != claim.AssetID {
+		t.Fatalf("expected asset id %q, got %q", claim.AssetID, result.AssetID)
+	}
+	if result.Amount != claim.Amount.String() {
+		t.Fatalf("expected amount %s, got %q", claim.Amount.String(), result.Amount)
+	}
+}
+
+func TestRunStartDaemonAdvancesHeightAndProcessesQueuedClaims(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "home")
+	cfg, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir: homeDir,
+		ChainID: "aegislink-devnet-1",
+	}, false)
+	if err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+	app := seededRuntimeApp(t, cfg.StatePath)
+	claim := validDepositClaim(t)
+	submissionPath := filepath.Join(t.TempDir(), "submission.json")
+	writeSubmissionFile(t, submissionPath, claim, validAttestationForClaim(claim))
+	if err := app.Save(); err != nil {
+		t.Fatalf("save seeded state: %v", err)
+	}
+
+	queueOutput := bytes.Buffer{}
+	if err := run([]string{
+		"tx", "queue-deposit-claim",
+		"--home", homeDir,
+		"--submission-file", submissionPath,
+	}, &queueOutput, io.Discard); err != nil {
+		t.Fatalf("run queue-deposit-claim: %v\n%s", err, queueOutput.String())
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"start",
+		"--home", homeDir,
+		"--daemon",
+		"--tick-interval-ms", "1",
+		"--max-blocks", "2",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run start daemon: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		Status        string `json:"status"`
+		CurrentHeight uint64 `json:"current_height"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode daemon output: %v\n%s", err, stdout.String())
+	}
+	if result.Status != "stopped" {
+		t.Fatalf("expected stopped daemon status, got %q", result.Status)
+	}
+	if result.CurrentHeight < 52 {
+		t.Fatalf("expected daemon height to advance past seed height, got %d", result.CurrentHeight)
+	}
+
+	loaded, err := aegisapp.LoadWithConfig(aegisapp.Config{
+		HomeDir: homeDir,
+	})
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	if got := loaded.Status().PendingDepositClaims; got != 0 {
+		t.Fatalf("expected queued claim to be drained, got %d", got)
+	}
+	if got := loaded.Status().ProcessedClaims; got != 1 {
+		t.Fatalf("expected one processed claim, got %d", got)
+	}
+	if !strings.Contains(stderr.String(), "runtime_stop") {
+		t.Fatalf("expected daemon stop log, got stderr=%s", stderr.String())
+	}
+}
+
 func TestRunQuerySignerSetReturnsActiveSignerSet(t *testing.T) {
 	t.Parallel()
 

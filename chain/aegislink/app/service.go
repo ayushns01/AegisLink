@@ -66,6 +66,10 @@ func (s *BridgeTxService) SubmitDepositClaim(claim bridgetypes.DepositClaim, att
 	return s.app.SubmitDepositClaim(claim, attestation)
 }
 
+func (s *BridgeTxService) QueueDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) error {
+	return s.app.QueueDepositClaim(claim, attestation)
+}
+
 func (s *BridgeTxService) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (bridgekeeper.WithdrawalRecord, error) {
 	return s.app.ExecuteWithdrawal(assetID, amount, recipient, deadline, signature)
 }

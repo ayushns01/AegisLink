@@ -32,6 +32,10 @@ The real-route demo adds a third proof path:
 
 3. A dual-runtime route where AegisLink and `osmo-locald` each boot from their own home directories and `route-relayer` moves a transfer across that boundary through command-backed packet and acknowledgement handling.
 
+The Phase E runtime path adds a fourth proof path:
+
+4. A daemon-style AegisLink node loop where `aegislinkd start --daemon` advances height automatically and drains queued deposit claims through the same application boundary used by the rest of the runtime.
+
 For the visual version of this flow, use [Current flow diagrams](architecture/03-current-flow-diagrams.md).
 
 ## What the demo proves
@@ -42,6 +46,8 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
 - The destination side is queryable through `/status`, `/packets`, `/executions`, `/pools`, `/balances`, and `/swaps`.
 - Route intent is richer than a single happy-path swap. The target can honor `min_out`, recipient override, and path metadata, and it can fail cleanly on unsupported actions.
 - The repo now also proves a real destination-runtime path through `make real-demo`, where the route no longer depends on the old HTTP target entrypoint.
+- The repo now also proves a Hermes-shaped local packet flow, where the route path explicitly relays `recv-packet` and later `acknowledge-packet` across separate runtime homes.
+- The repo now also proves a daemon-style node lifecycle through `make test-real-abci`, so the height advance is not only a manual setter path anymore.
 
 ## Short demo transcript
 
@@ -55,6 +61,8 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
    Say: `The destination side is not a stub. It tracks balances, pools, swap outputs, and failure reasons.`
 5. Run `make real-demo`.
    Say: `Now I am proving the route against a separate destination runtime home, not just the earlier HTTP harness path.`
+6. Run `make test-real-abci`.
+   Say: `Now I am proving that AegisLink can queue a deposit claim, advance blocks automatically, and apply the queued claim through the runtime loop.`
 
 ## Route lifecycle to point at
 
@@ -84,17 +92,18 @@ Those states are what make the local harness feel closer to real interchain deli
 - `The relayer carries evidence into AegisLink.`
 - `AegisLink mints and routes according to policy.`
 - `The mock Osmosis target persists the packet, executes the destination-side swap, and exposes both packet and execution state.`
-- `The Phase 6 path uses the dedicated osmo-locald runtime and route-relayer command path instead of the earlier HTTP-only target.`
+- `The Phase 6 and Phase E path uses the dedicated osmo-locald runtime and Hermes-shaped route-relayer command path instead of the earlier HTTP-only target.`
 - `The route can also fail for execution reasons like missing pool or min_out, not only transport reasons.`
 - `The route timeout path is recoverable on AegisLink, so the demo covers both success and refund-safe failure.`
+- `The AegisLink daemon loop can queue and later apply deposits, so the runtime now looks more like a single-node chain loop than a pure request-response shell.`
 
 ## Important honesty line
 
 This is still a strong local prototype, not a production bridge:
 
 - Ethereum observation and release are live locally.
-- AegisLink is a persistent runtime, not yet a full networked Cosmos node.
-- The destination side now has its own bootstrapped runtime home, but it is still not a full IBC-Go or Hermes-connected Osmosis node.
+- AegisLink is a persistent single-node runtime with a daemon block loop, not yet a full networked Cosmos node.
+- The destination side now has its own bootstrapped runtime home and Hermes-shaped local packet flow, but it is still not a full IBC-Go or Hermes-connected Osmosis node.
 
 That honesty makes the project stronger, not weaker.
 

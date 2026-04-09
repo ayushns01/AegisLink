@@ -24,18 +24,19 @@ import (
 )
 
 type App struct {
-	mu               sync.RWMutex
-	Config           Config
-	BridgeKeeper     *bridgekeeper.Keeper
-	IBCRouterKeeper  *ibcrouterkeeper.Keeper
-	RegistryKeeper   *registrykeeper.Keeper
-	LimitsKeeper     *limitskeeper.Keeper
-	PauserKeeper     *pauserkeeper.Keeper
-	GovernanceKeeper *governancekeeper.Keeper
-	encoding         EncodingConfig
-	storeKeys        map[string]string
-	storeRuntime     *storeRuntime
-	modules          []string
+	mu                   sync.RWMutex
+	Config               Config
+	BridgeKeeper         *bridgekeeper.Keeper
+	IBCRouterKeeper      *ibcrouterkeeper.Keeper
+	RegistryKeeper       *registrykeeper.Keeper
+	LimitsKeeper         *limitskeeper.Keeper
+	PauserKeeper         *pauserkeeper.Keeper
+	GovernanceKeeper     *governancekeeper.Keeper
+	encoding             EncodingConfig
+	storeKeys            map[string]string
+	storeRuntime         *storeRuntime
+	modules              []string
+	pendingDepositClaims []QueuedDepositClaim
 }
 
 type Status struct {
@@ -65,6 +66,7 @@ type Status struct {
 	FailedClaims           uint64            `json:"failed_claims"`
 	BridgeCircuitOpen      bool              `json:"bridge_circuit_open"`
 	LastInvariantError     string            `json:"last_invariant_error"`
+	PendingDepositClaims   int               `json:"pending_deposit_claims"`
 	Withdrawals            int               `json:"withdrawals"`
 	Routes                 int               `json:"routes"`
 	Transfers              int               `json:"transfers"`
@@ -155,6 +157,11 @@ func LoadWithConfig(cfg Config) (*App, error) {
 		return nil, err
 	}
 	if resolved.RuntimeMode == RuntimeModeSDKStore {
+		nodeState, err := loadRuntimeNodeState(resolved)
+		if err != nil {
+			return nil, err
+		}
+		app.pendingDepositClaims = append([]QueuedDepositClaim(nil), nodeState.PendingClaims...)
 		return app, nil
 	}
 
@@ -181,6 +188,7 @@ func LoadWithConfig(cfg Config) (*App, error) {
 	if err := app.GovernanceKeeper.ImportState(state.Governance); err != nil {
 		return nil, err
 	}
+	app.pendingDepositClaims = append([]QueuedDepositClaim(nil), state.PendingClaims...)
 
 	return app, nil
 }
@@ -213,6 +221,56 @@ func (a *App) SetCurrentHeight(height uint64) {
 	a.BridgeKeeper.SetCurrentHeight(height)
 }
 
+func (a *App) QueueDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) error {
+	if err := claim.ValidateBasic(); err != nil {
+		return err
+	}
+	if err := attestation.ValidateBasic(); err != nil {
+		return err
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	currentHeight := a.BridgeKeeper.ExportState().CurrentHeight
+	a.pendingDepositClaims = append(a.pendingDepositClaims, QueuedDepositClaim{
+		Claim:            claim,
+		Attestation:      attestation,
+		EnqueuedAtHeight: currentHeight,
+	})
+	return nil
+}
+
+func (a *App) AdvanceBlock() BlockProgress {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	bridgeState := a.BridgeKeeper.ExportState()
+	nextHeight := bridgeState.CurrentHeight + 1
+	a.BridgeKeeper.SetCurrentHeight(nextHeight)
+
+	progress := BlockProgress{
+		Height:              nextHeight,
+		BridgeCurrentHeight: nextHeight,
+	}
+	if len(a.pendingDepositClaims) == 0 {
+		return progress
+	}
+
+	pending := append([]QueuedDepositClaim(nil), a.pendingDepositClaims...)
+	a.pendingDepositClaims = nil
+	for _, submission := range pending {
+		if _, err := a.submitDepositClaimLocked(submission.Claim, submission.Attestation); err != nil {
+			progress.LastSubmissionMessage = err.Error()
+			continue
+		}
+		progress.AppliedQueuedClaims++
+		progress.LastSubmissionMessage = submission.Claim.Identity.MessageID
+	}
+	progress.PendingQueuedClaims = len(a.pendingDepositClaims)
+	return progress
+}
+
 func (a *App) RegisterAsset(asset registrytypes.Asset) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -240,6 +298,10 @@ func (a *App) Unpause(flow string) error {
 func (a *App) SubmitDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (bridgekeeper.ClaimResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.submitDepositClaimLocked(claim, attestation)
+}
+
+func (a *App) submitDepositClaimLocked(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (bridgekeeper.ClaimResult, error) {
 	return a.BridgeKeeper.ExecuteDepositClaim(claim, attestation)
 }
 
@@ -352,15 +414,16 @@ func (a *App) Save() error {
 		if a.storeRuntime != nil && a.storeRuntime.multi != nil {
 			a.storeRuntime.multi.Commit()
 		}
-		return nil
+		return persistRuntimeNodeState(a.Config, a.pendingDepositClaims)
 	}
 	return persistRuntimeState(a.Config.StatePath, runtimeState{
-		Assets:      a.RegistryKeeper.ExportAssets(),
-		Limits:      a.LimitsKeeper.ExportState(),
-		PausedFlows: a.PauserKeeper.ExportPausedFlows(),
-		Bridge:      a.BridgeKeeper.ExportState(),
-		IBCRouter:   a.IBCRouterKeeper.ExportState(),
-		Governance:  a.GovernanceKeeper.ExportState(),
+		Assets:        a.RegistryKeeper.ExportAssets(),
+		Limits:        a.LimitsKeeper.ExportState(),
+		PausedFlows:   a.PauserKeeper.ExportPausedFlows(),
+		PendingClaims: append([]QueuedDepositClaim(nil), a.pendingDepositClaims...),
+		Bridge:        a.BridgeKeeper.ExportState(),
+		IBCRouter:     a.IBCRouterKeeper.ExportState(),
+		Governance:    a.GovernanceKeeper.ExportState(),
 	})
 }
 
@@ -382,6 +445,9 @@ func (a *App) Close() error {
 		}
 		if a.storeRuntime != nil && a.storeRuntime.multi != nil {
 			a.storeRuntime.multi.Commit()
+		}
+		if err := persistRuntimeNodeState(a.Config, a.pendingDepositClaims); err != nil {
+			return err
 		}
 	}
 	if a.storeRuntime == nil || a.storeRuntime.db == nil {
@@ -420,6 +486,7 @@ func (a *App) Status() Status {
 		FailedClaims:          a.BridgeKeeper.RejectedClaims(),
 		BridgeCircuitOpen:     a.BridgeKeeper.CircuitBreakerTripped(),
 		LastInvariantError:    a.BridgeKeeper.LastInvariantError(),
+		PendingDepositClaims:  len(a.pendingDepositClaims),
 		Withdrawals:           len(bridgeState.Withdrawals),
 		Routes:                len(a.IBCRouterKeeper.ExportRoutes()),
 		Transfers:             len(transfers),

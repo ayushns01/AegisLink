@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/app"
 	appmetrics "github.com/ayushns01/aegislink/chain/aegislink/internal/metrics"
@@ -26,7 +28,7 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+	if err := runWithContext(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		_ = opslog.Write(os.Stderr, "error", "aegislinkd", "command_failed", "aegislinkd command failed", map[string]any{
 			"error": err.Error(),
 		})
@@ -35,6 +37,10 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	return runWithContext(context.Background(), args, stdout, stderr)
+}
+
+func runWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		a := app.New()
 		_, err := fmt.Fprintf(
@@ -50,7 +56,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "init":
 		return runInit(args[1:], stdout, stderr)
 	case "start":
-		return runStart(args[1:], stdout, stderr)
+		return runStart(ctx, args[1:], stdout, stderr)
 	case "query":
 		return runQuery(args[1:], stdout, stderr)
 	case "tx":
@@ -134,8 +140,27 @@ func runInit(args []string, stdout, stderr io.Writer) error {
 	})
 }
 
-func runStart(args []string, stdout, stderr io.Writer) error {
-	cfg, err := resolveRuntimeConfigFromArgs("start", args)
+func runStart(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("start", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	home := flags.String("home", "", "runtime home directory")
+	configPath := flags.String("config-path", "", "runtime config path")
+	statePath := flags.String("state-path", "", "runtime state path")
+	genesisPath := flags.String("genesis-path", "", "runtime genesis path")
+	runtimeMode := flags.String("runtime-mode", "", "runtime mode")
+	daemon := flags.Bool("daemon", false, "run a block loop instead of a one-shot status summary")
+	tickIntervalMS := flags.Uint("tick-interval-ms", 50, "daemon block tick interval in milliseconds")
+	maxBlocks := flags.Uint("max-blocks", 0, "maximum blocks to produce in daemon mode")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	cfg, err := app.ResolveConfig(app.Config{
+		HomeDir:     *home,
+		ConfigPath:  *configPath,
+		StatePath:   *statePath,
+		GenesisPath: *genesisPath,
+		RuntimeMode: *runtimeMode,
+	})
 	if err != nil {
 		return err
 	}
@@ -146,18 +171,78 @@ func runStart(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer closeApp(a)
 	status := a.Status()
-	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_start", "runtime started", map[string]any{
-		"chain_id":                  status.ChainID,
-		"home_dir":                  status.HomeDir,
-		"module_count":              status.Modules,
-		"configured_signers":        len(status.AllowedSigners),
-		"active_signer_set_version": status.ActiveSignerSetVersion,
-		"signer_set_count":          status.SignerSetCount,
-		"enabled_route_ids":         status.EnabledRouteIDs,
-		"current_height":            status.CurrentHeight,
+	if !*daemon {
+		_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_start", "runtime started", map[string]any{
+			"chain_id":                  status.ChainID,
+			"home_dir":                  status.HomeDir,
+			"module_count":              status.Modules,
+			"configured_signers":        len(status.AllowedSigners),
+			"active_signer_set_version": status.ActiveSignerSetVersion,
+			"signer_set_count":          status.SignerSetCount,
+			"enabled_route_ids":         status.EnabledRouteIDs,
+			"current_height":            status.CurrentHeight,
+			"daemon":                    false,
+		})
+		return writeJSON(stdout, statusEnvelope("started", status))
+	}
+
+	tickInterval := time.Duration(*tickIntervalMS) * time.Millisecond
+	if tickInterval <= 0 {
+		tickInterval = 50 * time.Millisecond
+	}
+	blockCount := uint64(0)
+	_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_start", "daemon node loop starting", map[string]any{
+		"chain_id":           status.ChainID,
+		"home_dir":           status.HomeDir,
+		"module_count":       status.Modules,
+		"configured_signers": len(status.AllowedSigners),
+		"daemon":             true,
+		"tick_interval_ms":   tickInterval.Milliseconds(),
+		"max_blocks":         *maxBlocks,
 	})
-	return writeJSON(stdout, statusEnvelope("started", status))
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			finalStatus := a.Status()
+			_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_stop", "daemon node loop stopped", map[string]any{
+				"chain_id":        finalStatus.ChainID,
+				"home_dir":        finalStatus.HomeDir,
+				"current_height":  finalStatus.CurrentHeight,
+				"produced_blocks": blockCount,
+				"pending_claims":  finalStatus.PendingDepositClaims,
+				"reason":          "context_cancelled",
+			})
+			return writeJSON(stdout, withProducedBlocks(statusEnvelope("stopped", finalStatus), blockCount))
+		case <-ticker.C:
+			progress := a.AdvanceBlock()
+			blockCount++
+			if err := a.Save(); err != nil {
+				return err
+			}
+			_ = opslog.Write(stderr, "info", "aegislinkd", "block_advanced", "daemon block advanced", map[string]any{
+				"height":                  progress.Height,
+				"applied_queued_claims":   progress.AppliedQueuedClaims,
+				"pending_queued_claims":   progress.PendingQueuedClaims,
+				"last_submission_message": progress.LastSubmissionMessage,
+			})
+			if *maxBlocks > 0 && blockCount >= uint64(*maxBlocks) {
+				finalStatus := a.Status()
+				_ = opslog.Write(stderr, "info", "aegislinkd", "runtime_stop", "daemon node loop stopped", map[string]any{
+					"chain_id":        finalStatus.ChainID,
+					"home_dir":        finalStatus.HomeDir,
+					"current_height":  finalStatus.CurrentHeight,
+					"produced_blocks": blockCount,
+					"pending_claims":  finalStatus.PendingDepositClaims,
+					"reason":          "max_blocks",
+				})
+				return writeJSON(stdout, withProducedBlocks(statusEnvelope("stopped", finalStatus), blockCount))
+			}
+		}
+	}
 }
 
 func queryStatus(args []string, stdout, stderr io.Writer) error {
@@ -179,6 +264,7 @@ func queryStatus(args []string, stdout, stderr io.Writer) error {
 		"enabled_route_ids":         status.EnabledRouteIDs,
 		"transfers":                 status.Transfers,
 		"processed_claims":          status.ProcessedClaims,
+		"pending_deposit_claims":    status.PendingDepositClaims,
 	})
 	return writeJSON(stdout, status)
 }
@@ -191,6 +277,8 @@ func runTx(args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "submit-deposit-claim":
 		return txSubmitDepositClaim(args[1:], stdout)
+	case "queue-deposit-claim":
+		return txQueueDepositClaim(args[1:], stdout)
 	case "execute-withdrawal":
 		return txExecuteWithdrawal(args[1:], stdout)
 	case "initiate-ibc-transfer":
@@ -458,6 +546,43 @@ func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 		return err
 	}
 	return writeJSON(stdout, bridgecli.SubmitDepositClaimResponse(result))
+}
+
+func txQueueDepositClaim(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("queue-deposit-claim", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	submissionFile := flags.String("submission-file", "", "path to claim+attestation json")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*submissionFile) == "" {
+		return fmt.Errorf("missing submission file")
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+	claim, attestation, err := loadSubmission(*submissionFile)
+	if err != nil {
+		return err
+	}
+	service := app.NewBridgeTxService(a)
+	if err := service.QueueDepositClaim(claim, attestation); err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, map[string]any{
+		"status":     "queued",
+		"message_id": claim.Identity.MessageID,
+		"asset_id":   claim.AssetID,
+		"amount":     claim.Amount.String(),
+	})
 }
 
 func txExecuteWithdrawal(args []string, stdout io.Writer) error {
@@ -1054,6 +1179,7 @@ func statusEnvelope(kind string, status app.Status) map[string]any {
 		"limits":                    status.Limits,
 		"paused_flows":              status.PausedFlows,
 		"processed_claims":          status.ProcessedClaims,
+		"pending_deposit_claims":    status.PendingDepositClaims,
 		"failed_claims":             status.FailedClaims,
 		"withdrawals":               status.Withdrawals,
 		"routes":                    status.Routes,
@@ -1065,6 +1191,11 @@ func statusEnvelope(kind string, status app.Status) map[string]any {
 		"refunded_transfers":        status.RefundedTransfers,
 		"supply_by_denom":           status.SupplyByDenom,
 	}
+}
+
+func withProducedBlocks(status map[string]any, produced uint64) map[string]any {
+	status["produced_blocks"] = produced
+	return status
 }
 
 func splitCommaSeparated(raw string) []string {

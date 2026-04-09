@@ -11,5 +11,5 @@ services:
 
   route-relayer:
     image: alpine:3.22
-    command: ["sh", "-lc", "echo 'run route-relayer against aegislink and osmo-local homes' && sleep infinity"]
+    command: ["sh", "-lc", "echo 'bootstrap with scripts/localnet/bootstrap_ibc.sh, then run packet relay against aegislink and osmo-local homes' && sleep infinity"]
     profiles: ["real-chains"]

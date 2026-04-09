@@ -28,7 +28,8 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - Routed transfers produce packet state, execution receipts, balances, pool updates, swap records, and later acknowledgements on the destination side.
 - The end-to-end local flow is exercised in tests and exposed through `make demo` and `make inspect-demo`.
 - The repo now also proves a single-node real-chain flow through `make test-real-chain`.
-- The repo now also proves a dual-runtime local route flow through `make test-real-ibc`, where `route-relayer` moves a transfer from an AegisLink home into a dedicated `osmo-locald` home.
+- The repo now also proves a daemon-style single-node block loop through `make test-real-abci`, where `aegislinkd start --daemon` advances height and drains queued deposit claims through the app boundary.
+- The repo now also proves a dual-runtime local route flow through `make test-real-ibc`, where `route-relayer` moves a transfer from an AegisLink home into a dedicated `osmo-locald` home through Hermes-shaped local packet and acknowledgement verbs.
 - The repo now also proves a threshold-verifier path in Foundry tests and versioned signer-set enforcement on the AegisLink side.
 - The runtime and CLI already expose active signer-set state and signer-set history, so the trust model is inspectable instead of buried in code.
 - The repo now includes Prometheus-style metrics, a local monitoring scaffold, and codified recovery drills, so operators can inspect and rehearse failure paths instead of only reading happy-path docs.
@@ -39,10 +40,10 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 
 ## What is still a local harness
 
-- AegisLink is now a store-backed single-node runtime, but it is still not a full networked CometBFT or ABCI chain.
-- State is persisted in Cosmos KV stores, but the repo still does not claim live consensus, IAVL-backed network operation, or real IBC today.
-- The destination side is now a bootstrapped local runtime with its own config and state, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
-- The route target is realistic enough to exercise packet lifecycle and destination execution, but it is still a controlled local environment.
+- AegisLink is now a store-backed single-node runtime with a daemon-style block loop, but it is still not a full networked CometBFT or ABCI chain.
+- State is persisted in Cosmos KV stores, but the repo still does not claim live consensus, IAVL-backed network operation, or a full BaseApp block pipeline today.
+- The destination side is now a bootstrapped local runtime with its own config, state, and local IBC link metadata, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
+- The route path is realistic enough to exercise packet lifecycle and destination execution through Hermes-shaped local commands, but it is still a controlled local environment rather than real proof-backed IBC transport.
 
 ## Why this still matters
 
@@ -56,7 +57,7 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
-- `The roadmap from here is deeper networked chain realism and fuller IBC-Go or Hermes realism, with the verifier boundary now documented explicitly.`
+- `The roadmap from here is deeper networked chain realism and fuller IBC-Go or Hermes realism, with the current daemon and dual-runtime seams acting as the transition layer.`
 
 Avoid phrasing like:
 
@@ -68,8 +69,8 @@ Avoid phrasing like:
 
 The next realism steps are:
 
-1. Push AegisLink from the current single-node runtime toward a real networked chain daemon.
-2. Replace the current dual-runtime route bridge with fuller IBC-Go or Hermes-backed networking.
+1. Push AegisLink from the current daemon-style single-node runtime toward a real networked CometBFT or BaseApp daemon.
+2. Replace the current Hermes-shaped dual-runtime route bridge with fuller IBC-Go or Hermes-backed networking.
 3. Validate the monitoring stack on a Docker-enabled machine and then deepen it with more production-style metrics or alerts.
 4. Expand destination integrations or route-action breadth only after the deeper runtime and networking work is credible.
 

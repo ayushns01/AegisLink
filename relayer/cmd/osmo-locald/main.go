@@ -46,6 +46,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runStart(args[1:], stdout)
 	case "query":
 		return runQuery(args[1:], stdout)
+	case "relay":
+		return runRelay(args[1:], stdout)
 	case "tx":
 		return runTx(args[1:], stdout)
 	default:
@@ -129,8 +131,25 @@ func runQuery(args []string, stdout io.Writer) error {
 		return queryExecutions(args[1:], stdout)
 	case "ready-acks":
 		return queryReadyAcks(args[1:], stdout)
+	case "packet-acks":
+		return queryReadyAcks(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown query subcommand %q", args[0])
+	}
+}
+
+func runRelay(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("missing relay subcommand")
+	}
+
+	switch args[0] {
+	case "recv-packet":
+		return relayReceivePacket(args[1:], stdout)
+	case "acknowledge-packet":
+		return relayAcknowledgePacket(args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown relay subcommand %q", args[0])
 	}
 }
 
@@ -272,11 +291,19 @@ func queryReadyAcks(args []string, stdout io.Writer) error {
 }
 
 func txReceiveTransfer(args []string, stdout io.Writer) error {
-	flags := flag.NewFlagSet("receive-transfer", flag.ContinueOnError)
+	return relayReceivePacket(args, stdout)
+}
+
+func relayReceivePacket(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("recv-packet", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
 	cfgFlags := addRuntimeFlags(flags)
 	transferID := flags.String("transfer-id", "", "transfer identifier")
+	_ = flags.Uint64("sequence", 0, "packet sequence")
+	_ = flags.String("source-port", "", "source port")
+	_ = flags.String("source-channel", "", "source channel")
+	_ = flags.String("destination-port", "", "destination port")
 	assetID := flags.String("asset-id", "", "asset identifier")
 	amount := flags.String("amount", "", "transfer amount")
 	receiver := flags.String("receiver", "", "destination receiver")
@@ -304,7 +331,7 @@ func txReceiveTransfer(args []string, stdout io.Writer) error {
 		TimeoutHeight:      *timeoutHeight,
 		Memo:               strings.TrimSpace(*memo),
 		Status:             "pending",
-	},)
+	})
 	if err != nil {
 		return err
 	}
@@ -312,7 +339,11 @@ func txReceiveTransfer(args []string, stdout io.Writer) error {
 }
 
 func txConfirmAck(args []string, stdout io.Writer) error {
-	flags := flag.NewFlagSet("confirm-ack", flag.ContinueOnError)
+	return relayAcknowledgePacket(args, stdout)
+}
+
+func relayAcknowledgePacket(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("acknowledge-packet", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 
 	cfgFlags := addRuntimeFlags(flags)
@@ -490,28 +521,28 @@ func writeConfig(path string, cfg runtimeConfig) error {
 
 func statusEnvelope(kind string, cfg runtimeConfig, status route.MockTargetStatus) map[string]any {
 	return map[string]any{
-		"status":            kind,
-		"chain_id":          cfg.ChainID,
-		"runtime_mode":      cfg.RuntimeMode,
-		"home_dir":          cfg.HomeDir,
-		"config_path":       cfg.ConfigPath,
-		"state_path":        cfg.StatePath,
-		"initialized":       true,
-		"packets":           status.Packets,
-		"receipts":          status.Receipts,
-		"executions":        status.Executions,
-		"pools":             status.Pools,
-		"balances":          status.Balances,
-		"swaps":             status.Swaps,
-		"swap_failures":     status.SwapFailures,
-		"received_packets":  status.ReceivedPackets,
-		"executed_packets":  status.ExecutedPackets,
-		"ready_acks":        status.ReadyAcks,
-		"completed_acks":    status.CompletedAcks,
-		"failed_acks":       status.FailedAcks,
-		"timed_out_acks":    status.TimedOutAcks,
-		"relayed_acks":      status.RelayedAcks,
-		"pending_receipts":  status.PendingReceipts,
+		"status":           kind,
+		"chain_id":         cfg.ChainID,
+		"runtime_mode":     cfg.RuntimeMode,
+		"home_dir":         cfg.HomeDir,
+		"config_path":      cfg.ConfigPath,
+		"state_path":       cfg.StatePath,
+		"initialized":      true,
+		"packets":          status.Packets,
+		"receipts":         status.Receipts,
+		"executions":       status.Executions,
+		"pools":            status.Pools,
+		"balances":         status.Balances,
+		"swaps":            status.Swaps,
+		"swap_failures":    status.SwapFailures,
+		"received_packets": status.ReceivedPackets,
+		"executed_packets": status.ExecutedPackets,
+		"ready_acks":       status.ReadyAcks,
+		"completed_acks":   status.CompletedAcks,
+		"failed_acks":      status.FailedAcks,
+		"timed_out_acks":   status.TimedOutAcks,
+		"relayed_acks":     status.RelayedAcks,
+		"pending_receipts": status.PendingReceipts,
 	}
 }
 

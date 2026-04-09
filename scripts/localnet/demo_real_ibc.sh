@@ -12,14 +12,14 @@ cd "$REPO_ROOT/tests/e2e"
 
 case "$MODE" in
   demo)
-    echo "Running the real dual-runtime route demo..."
-    echo "Proof path: AegisLink SDK-store home -> route-relayer -> osmo-locald home"
-    go test ./... -run 'TestRealDestinationChainBootstrap|TestRealIBCRoute'
+    echo "Running the real Hermes-shaped local route demo..."
+    echo "Proof path: AegisLink SDK-store home -> packet relay -> osmo-locald home -> ack relay"
+    go test ./... -run 'TestRealDestinationChainBootstrap|TestRealIBCRoute|TestRealHermesIBC'
     ;;
   inspect)
-    echo "Inspecting the real dual-runtime route path..."
-    echo "Inspection points: destination status, pools, balances, packets, executions"
-    go test ./... -run 'TestRealIBCRoute'
+    echo "Inspecting the real Hermes-shaped local route path..."
+    echo "Inspection points: link metadata, destination packets, packet-acks, balances, executions"
+    go test ./... -run 'TestRealHermesIBC|TestRealIBCRoute'
     ;;
   *)
     echo "usage: $0 [demo|inspect]" >&2

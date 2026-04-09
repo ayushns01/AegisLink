@@ -14,11 +14,11 @@ func TestCommandIBCTargetInvokesExpectedCommands(t *testing.T) {
 		command := strings.Join(args, " ")
 		commands = append(commands, command)
 		switch {
-		case strings.Contains(command, "tx receive-transfer"):
+		case strings.Contains(command, "relay recv-packet"):
 			return []byte(`{"status":"received"}`), nil
-		case strings.Contains(command, "query ready-acks"):
+		case strings.Contains(command, "query packet-acks"):
 			return []byte(`[{"transfer_id":"ibc/eth.usdc/1","status":"completed"}]`), nil
-		case strings.Contains(command, "tx confirm-ack"):
+		case strings.Contains(command, "relay acknowledge-packet"):
 			return []byte(`{"status":"confirmed"}`), nil
 		default:
 			return nil, errUnexpectedCommand
@@ -63,13 +63,13 @@ func TestCommandIBCTargetInvokesExpectedCommands(t *testing.T) {
 	if len(commands) != 3 {
 		t.Fatalf("expected 3 commands, got %d", len(commands))
 	}
-	if !strings.Contains(commands[0], "tx receive-transfer") {
-		t.Fatalf("expected receive-transfer command, got %q", commands[0])
+	if !strings.Contains(commands[0], "relay recv-packet") {
+		t.Fatalf("expected recv-packet command, got %q", commands[0])
 	}
-	if !strings.Contains(commands[1], "query ready-acks") {
-		t.Fatalf("expected ready-acks query, got %q", commands[1])
+	if !strings.Contains(commands[1], "query packet-acks") {
+		t.Fatalf("expected packet-acks query, got %q", commands[1])
 	}
-	if !strings.Contains(commands[2], "tx confirm-ack") {
-		t.Fatalf("expected confirm-ack tx, got %q", commands[2])
+	if !strings.Contains(commands[2], "relay acknowledge-packet") {
+		t.Fatalf("expected acknowledge-packet relay command, got %q", commands[2])
 	}
 }

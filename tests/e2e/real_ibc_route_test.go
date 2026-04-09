@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -56,6 +58,7 @@ func TestRealIBCRoute(t *testing.T) {
 
 	destinationHome := filepath.Join(t.TempDir(), "osmo-local-home")
 	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_destination_chain.sh", destinationHome)
+	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_ibc.sh", aegisHome, destinationHome)
 
 	initiateOutput := runGoCommand(
 		t,
@@ -93,18 +96,17 @@ func TestRealIBCRoute(t *testing.T) {
 	}
 
 	env := map[string]string{
-		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD":                "go",
-		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD_ARGS":           "run ./chain/aegislink/cmd/aegislinkd",
-		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_HOME":               aegisHome,
-		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_RUNTIME_MODE":       aegisapp.RuntimeModeSDKStore,
-		"AEGISLINK_ROUTE_RELAYER_DESTINATION_CMD":              "go",
-		"AEGISLINK_ROUTE_RELAYER_DESTINATION_CMD_ARGS":         "run ./relayer/cmd/osmo-locald",
-		"AEGISLINK_ROUTE_RELAYER_DESTINATION_HOME":             destinationHome,
-		"AEGISLINK_ROUTE_RELAYER_DESTINATION_RUNTIME_MODE":     "osmo-local-runtime",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD":            "go",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD_ARGS":       "run ./chain/aegislink/cmd/aegislinkd",
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_HOME":           aegisHome,
+		"AEGISLINK_ROUTE_RELAYER_AEGISLINK_RUNTIME_MODE":   aegisapp.RuntimeModeSDKStore,
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_CMD":          "go",
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_CMD_ARGS":     "run ./relayer/cmd/osmo-locald",
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_HOME":         destinationHome,
+		"AEGISLINK_ROUTE_RELAYER_DESTINATION_RUNTIME_MODE": "osmo-local-runtime",
 	}
 
 	firstRouteRun := runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/route-relayer")
-	secondRouteRun := runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/route-relayer")
 
 	transferQuery := runGoCommand(
 		t,
@@ -124,6 +126,73 @@ func TestRealIBCRoute(t *testing.T) {
 		Status     string `json:"status"`
 	}
 	if err := decodeLastJSONObject(transferQuery, &transfers); err != nil {
+		t.Fatalf("decode transfers after first relay: %v\n%s", err, transferQuery)
+	}
+	if len(transfers) != 1 || transfers[0].Status != "pending" {
+		t.Fatalf("expected pending transfer after first packet relay, got %+v", transfers)
+	}
+
+	packetOutput := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./relayer/cmd/osmo-locald",
+		"query",
+		"packets",
+		"--home",
+		destinationHome,
+	)
+	var packets []struct {
+		TransferID  string `json:"transfer_id"`
+		PacketState string `json:"packet_state"`
+		AckState    string `json:"ack_state"`
+	}
+	if err := decodeLastJSONObject(packetOutput, &packets); err != nil {
+		t.Fatalf("decode packets after first relay: %v\n%s", err, packetOutput)
+	}
+	if len(packets) != 1 || packets[0].PacketState == "" {
+		t.Fatalf("expected destination packet receipt after first relay, got %+v", packets)
+	}
+
+	ackOutput := runGoCommand(
+		t,
+		repoRoot(t),
+		nil,
+		"run",
+		"./relayer/cmd/osmo-locald",
+		"query",
+		"packet-acks",
+		"--home",
+		destinationHome,
+	)
+	var pendingAcks []struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := decodeLastJSONObject(ackOutput, &pendingAcks); err != nil {
+		t.Fatalf("decode packet acks after first relay: %v\n%s", err, ackOutput)
+	}
+	if len(pendingAcks) != 1 {
+		t.Fatalf("expected one pending ack after first relay, got %+v", pendingAcks)
+	}
+
+	secondRouteRun := runGoCommand(t, repoRoot(t), env, "run", "./relayer/cmd/route-relayer")
+
+	transferQuery = runGoCommand(
+		t,
+		filepath.Join(repoRoot(t), "chain", "aegislink"),
+		nil,
+		"run",
+		"./cmd/aegislinkd",
+		"query",
+		"transfers",
+		"--home",
+		aegisHome,
+		"--runtime-mode",
+		aegisapp.RuntimeModeSDKStore,
+	)
+	if err := decodeLastJSONObject(transferQuery, &transfers); err != nil {
 		t.Fatalf("decode transfers: %v\n%s", err, transferQuery)
 	}
 	if len(transfers) != 1 || transfers[0].Status != "completed" {
@@ -134,7 +203,7 @@ func TestRealIBCRoute(t *testing.T) {
 			"run",
 			"./relayer/cmd/osmo-locald",
 			"query",
-			"ready-acks",
+			"packet-acks",
 			"--home",
 			destinationHome,
 		)
@@ -180,6 +249,51 @@ func TestRealIBCRoute(t *testing.T) {
 	}
 	if len(balances) == 0 {
 		t.Fatal("expected destination balance state")
+	}
+}
+
+func TestRealHermesIBC(t *testing.T) {
+	t.Parallel()
+
+	aegisHome := filepath.Join(t.TempDir(), "aegis-home")
+	destinationHome := filepath.Join(t.TempDir(), "osmo-local-home")
+	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_real_chain.sh", aegisHome)
+	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_destination_chain.sh", destinationHome)
+	runShellScript(t, repoRoot(t), "scripts/localnet/bootstrap_ibc.sh", aegisHome, destinationHome)
+
+	type linkMetadata struct {
+		RelayMode          string `json:"relay_mode"`
+		SourceChainID      string `json:"source_chain_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		SourcePort         string `json:"source_port"`
+		SourceChannel      string `json:"source_channel"`
+		ConnectionID       string `json:"connection_id"`
+	}
+
+	readLink := func(path string) linkMetadata {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read ibc link metadata: %v", err)
+		}
+		var link linkMetadata
+		if err := json.Unmarshal(data, &link); err != nil {
+			t.Fatalf("decode ibc link metadata: %v", err)
+		}
+		return link
+	}
+
+	aegisLink := readLink(filepath.Join(aegisHome, "data", "ibc-link.json"))
+	destLink := readLink(filepath.Join(destinationHome, "data", "ibc-link.json"))
+
+	if aegisLink.RelayMode != "hermes-local" || destLink.RelayMode != "hermes-local" {
+		t.Fatalf("expected hermes-local relay metadata, got aegis=%+v dest=%+v", aegisLink, destLink)
+	}
+	if aegisLink.SourcePort != "transfer" || aegisLink.SourceChannel != "channel-0" {
+		t.Fatalf("unexpected source packet metadata: %+v", aegisLink)
+	}
+	if aegisLink.ConnectionID == "" || destLink.ConnectionID == "" {
+		t.Fatalf("expected connection metadata, got aegis=%+v dest=%+v", aegisLink, destLink)
 	}
 }
 

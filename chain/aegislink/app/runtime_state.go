@@ -14,12 +14,13 @@ import (
 )
 
 type runtimeState struct {
-	Assets      []registrytypes.Asset          `json:"assets"`
-	Limits      limitskeeper.StateSnapshot     `json:"limits"`
-	PausedFlows []string                       `json:"paused_flows"`
-	Bridge      bridgekeeper.StateSnapshot     `json:"bridge"`
-	IBCRouter   ibcrouterkeeper.StateSnapshot  `json:"ibc_router"`
-	Governance  governancekeeper.StateSnapshot `json:"governance"`
+	Assets        []registrytypes.Asset          `json:"assets"`
+	Limits        limitskeeper.StateSnapshot     `json:"limits"`
+	PausedFlows   []string                       `json:"paused_flows"`
+	PendingClaims []QueuedDepositClaim           `json:"pending_claims"`
+	Bridge        bridgekeeper.StateSnapshot     `json:"bridge"`
+	IBCRouter     ibcrouterkeeper.StateSnapshot  `json:"ibc_router"`
+	Governance    governancekeeper.StateSnapshot `json:"governance"`
 }
 
 func loadRuntimeState(path string) (runtimeState, error) {
@@ -36,23 +37,25 @@ func loadRuntimeState(path string) (runtimeState, error) {
 	}
 
 	var raw struct {
-		Assets      []registrytypes.Asset          `json:"assets"`
-		Limits      json.RawMessage                `json:"limits"`
-		PausedFlows []string                       `json:"paused_flows"`
-		Bridge      bridgekeeper.StateSnapshot     `json:"bridge"`
-		IBCRouter   ibcrouterkeeper.StateSnapshot  `json:"ibc_router"`
-		Governance  governancekeeper.StateSnapshot `json:"governance"`
+		Assets        []registrytypes.Asset          `json:"assets"`
+		Limits        json.RawMessage                `json:"limits"`
+		PausedFlows   []string                       `json:"paused_flows"`
+		PendingClaims []QueuedDepositClaim           `json:"pending_claims"`
+		Bridge        bridgekeeper.StateSnapshot     `json:"bridge"`
+		IBCRouter     ibcrouterkeeper.StateSnapshot  `json:"ibc_router"`
+		Governance    governancekeeper.StateSnapshot `json:"governance"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return runtimeState{}, err
 	}
 
 	state := runtimeState{
-		Assets:      raw.Assets,
-		PausedFlows: raw.PausedFlows,
-		Bridge:      raw.Bridge,
-		IBCRouter:   raw.IBCRouter,
-		Governance:  raw.Governance,
+		Assets:        raw.Assets,
+		PausedFlows:   raw.PausedFlows,
+		PendingClaims: raw.PendingClaims,
+		Bridge:        raw.Bridge,
+		IBCRouter:     raw.IBCRouter,
+		Governance:    raw.Governance,
 	}
 	if len(raw.Limits) > 0 {
 		switch raw.Limits[0] {

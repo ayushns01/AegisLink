@@ -24,9 +24,18 @@ func NewCommandIBCTarget(command string, baseArgs []string, locator RuntimeLocat
 }
 
 func (t *CommandIBCTarget) SubmitTransfer(ctx context.Context, transfer Transfer) (Ack, error) {
+	envelope, err := buildDeliveryEnvelope(transfer)
+	if err != nil {
+		return Ack{}, err
+	}
+
 	args := append(append([]string(nil), t.baseArgs...),
-		"tx", "receive-transfer",
+		"relay", "recv-packet",
 		"--transfer-id", transfer.TransferID,
+		"--sequence", fmt.Sprintf("%d", envelope.Packet.Sequence),
+		"--source-port", envelope.Packet.SourcePort,
+		"--source-channel", envelope.Packet.SourceChannel,
+		"--destination-port", envelope.Packet.DestinationPort,
 		"--asset-id", transfer.AssetID,
 		"--amount", transfer.Amount,
 		"--receiver", transfer.Receiver,
@@ -51,7 +60,7 @@ func (t *CommandIBCTarget) SubmitTransfer(ctx context.Context, transfer Transfer
 
 func (t *CommandIBCTarget) ReadyAcks(ctx context.Context) ([]AckRecord, error) {
 	args := append(append([]string(nil), t.baseArgs...),
-		"query", "ready-acks",
+		"query", "packet-acks",
 	)
 	args = appendRuntimeLocatorArgs(args, t.locator)
 	output, err := t.run(ctx, t.command, args...)
@@ -68,7 +77,7 @@ func (t *CommandIBCTarget) ReadyAcks(ctx context.Context) ([]AckRecord, error) {
 
 func (t *CommandIBCTarget) ConfirmAck(ctx context.Context, transferID string) error {
 	args := append(append([]string(nil), t.baseArgs...),
-		"tx", "confirm-ack",
+		"relay", "acknowledge-packet",
 		"--transfer-id", strings.TrimSpace(transferID),
 	)
 	args = appendRuntimeLocatorArgs(args, t.locator)
