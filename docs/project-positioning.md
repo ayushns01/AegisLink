@@ -22,6 +22,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - Ethereum gateway contracts emit and consume real local events and release transactions over the Anvil-backed path.
 - The bridge-relayer and route-relayer are real services with replay-aware processing and route lifecycle handling.
 - AegisLink persists bridge, policy, and route state in Cosmos KV stores and exposes operator-facing `init`, `start`, `tx`, and `query` CLI commands.
+- The SDK-store runtime now persists bridge, registry, limits, pauser, governance, and route state as prefix-keyed records instead of single JSON blobs, so reload behavior is per-record and the storage layout is closer to real chain state.
 - Bridge and route interfaces now have generated proto surfaces and service-backed CLI response mapping inside the `chain/aegislink` module.
 - Routed transfers produce packet state, execution receipts, balances, pool updates, swap records, and later acknowledgements on the destination side.
 - The end-to-end local flow is exercised in tests and exposed through `make demo` and `make inspect-demo`.
@@ -30,6 +31,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now also proves a threshold-verifier path in Foundry tests and versioned signer-set enforcement on the AegisLink side.
 - The runtime and CLI already expose active signer-set state and signer-set history, so the trust model is inspectable instead of buried in code.
 - The repo now includes Prometheus-style metrics, a local monitoring scaffold, and codified recovery drills, so operators can inspect and rehearse failure paths instead of only reading happy-path docs.
+- The app runtime now serializes mutating access behind a single boundary and has focused race-smoke coverage, so concurrent reads, deposits, and policy updates are exercised explicitly instead of relying on unsynchronized keeper maps.
 - The `ibcrouter` now supports destination route profiles, so multiple destinations, route-specific asset allowlists, and memo-policy guardrails can be modeled without rewriting the core bridge lifecycle.
 - The repo now also includes a minimal governance module, so asset enablement, rate-limit updates, and route-policy updates can flow through an authority-gated recorded proposal path instead of direct keeper edits.
 - The route layer now supports a second concrete action beyond swaps: profile-constrained `stake` actions can execute on the dual-runtime path with recipient and validator-path hints, while unsupported actions still fail through explicit destination receipts.

@@ -41,6 +41,11 @@ func (s *JSONStateStore) Load(target any) error {
 	return json.Unmarshal(value, target)
 }
 
+func (s *JSONStateStore) HasState() bool {
+	value := s.multiStore.GetKVStore(s.key).Get(stateKey)
+	return len(value) > 0
+}
+
 func (s *JSONStateStore) Save(value any) error {
 	encoded, err := json.Marshal(value)
 	if err != nil {

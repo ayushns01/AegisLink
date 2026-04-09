@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/store/metrics"
@@ -47,8 +48,13 @@ func newStoreRuntime(cfg Config) (*storeRuntime, error) {
 	for _, moduleName := range cfg.Modules {
 		multi.MountStoreWithDB(storeKeys[moduleName], storetypes.StoreTypeIAVL, nil)
 	}
-	if err := multi.LoadLatestVersion(); err != nil {
+	if err := multi.LoadLatestVersion(); err != nil && !strings.Contains(err.Error(), "version does not exist") {
 		return nil, fmt.Errorf("load latest sdk store version: %w", err)
+	}
+	if multi.LastCommitID().Version == 0 {
+		if err := multi.SetInitialVersion(1); err != nil {
+			return nil, fmt.Errorf("set initial sdk store version: %w", err)
+		}
 	}
 
 	return &storeRuntime{

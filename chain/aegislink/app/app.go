@@ -20,9 +20,11 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type App struct {
+	mu               sync.RWMutex
 	Config           Config
 	BridgeKeeper     *bridgekeeper.Keeper
 	IBCRouterKeeper  *ibcrouterkeeper.Keeper
@@ -206,90 +208,134 @@ func (a *App) DefaultGenesis() Genesis {
 }
 
 func (a *App) SetCurrentHeight(height uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.BridgeKeeper.SetCurrentHeight(height)
 }
 
 func (a *App) RegisterAsset(asset registrytypes.Asset) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.RegistryKeeper.RegisterAsset(asset)
 }
 
 func (a *App) SetLimit(limit limittypes.RateLimit) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.LimitsKeeper.SetLimit(limit)
 }
 
 func (a *App) Pause(flow string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.PauserKeeper.Pause(flow)
 }
 
 func (a *App) Unpause(flow string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.PauserKeeper.Unpause(flow)
 }
 
 func (a *App) SubmitDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (bridgekeeper.ClaimResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.BridgeKeeper.ExecuteDepositClaim(claim, attestation)
 }
 
 func (a *App) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (bridgekeeper.WithdrawalRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.BridgeKeeper.ExecuteWithdrawal(assetID, amount, recipient, deadline, signature)
 }
 
 func (a *App) Withdrawals(fromHeight, toHeight uint64) []bridgekeeper.WithdrawalRecord {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.BridgeKeeper.Withdrawals(fromHeight, toHeight)
 }
 
 func (a *App) ActiveSignerSet() (bridgekeeper.SignerSet, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.BridgeKeeper.ActiveSignerSet()
 }
 
 func (a *App) SignerSets() []bridgekeeper.SignerSet {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.BridgeKeeper.ExportSignerSets()
 }
 
 func (a *App) Routes() []ibcrouterkeeper.Route {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.IBCRouterKeeper.ExportRoutes()
 }
 
 func (a *App) SetRoute(route ibcrouterkeeper.Route) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.SetRoute(route)
 }
 
 func (a *App) Transfers() []ibcrouterkeeper.TransferRecord {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.IBCRouterKeeper.ExportTransfers()
 }
 
 func (a *App) InitiateIBCTransfer(assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (ibcrouterkeeper.TransferRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.InitiateTransfer(assetID, amount, receiver, timeoutHeight, memo)
 }
 
 func (a *App) FailIBCTransfer(transferID, reason string) (ibcrouterkeeper.TransferRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.AcknowledgeFailure(transferID, reason)
 }
 
 func (a *App) TimeoutIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.TimeoutTransfer(transferID)
 }
 
 func (a *App) CompleteIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.AcknowledgeSuccess(transferID)
 }
 
 func (a *App) RefundIBCTransfer(transferID string) (ibcrouterkeeper.TransferRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.MarkRefunded(transferID)
 }
 
 func (a *App) ApplyAssetStatusProposal(authority string, proposal governancekeeper.AssetStatusProposal) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.GovernanceKeeper.ApplyAssetStatusProposal(authority, proposal)
 }
 
 func (a *App) ApplyLimitUpdateProposal(authority string, proposal governancekeeper.LimitUpdateProposal) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.GovernanceKeeper.ApplyLimitUpdateProposal(authority, proposal)
 }
 
 func (a *App) ApplyRoutePolicyUpdateProposal(authority string, proposal governancekeeper.RoutePolicyUpdateProposal) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.GovernanceKeeper.ApplyRoutePolicyUpdateProposal(authority, proposal)
 }
 
 func (a *App) Save() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.Config.RuntimeMode == RuntimeModeSDKStore {
 		for _, flush := range []func() error{
 			a.RegistryKeeper.Flush,
@@ -302,6 +348,9 @@ func (a *App) Save() error {
 			if err := flush(); err != nil {
 				return err
 			}
+		}
+		if a.storeRuntime != nil && a.storeRuntime.multi != nil {
+			a.storeRuntime.multi.Commit()
 		}
 		return nil
 	}
@@ -316,6 +365,25 @@ func (a *App) Save() error {
 }
 
 func (a *App) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Config.RuntimeMode == RuntimeModeSDKStore {
+		for _, flush := range []func() error{
+			a.RegistryKeeper.Flush,
+			a.LimitsKeeper.Flush,
+			a.PauserKeeper.Flush,
+			a.BridgeKeeper.Flush,
+			a.IBCRouterKeeper.Flush,
+			a.GovernanceKeeper.Flush,
+		} {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		if a.storeRuntime != nil && a.storeRuntime.multi != nil {
+			a.storeRuntime.multi.Commit()
+		}
+	}
 	if a.storeRuntime == nil || a.storeRuntime.db == nil {
 		return nil
 	}
@@ -323,6 +391,8 @@ func (a *App) Close() error {
 }
 
 func (a *App) Status() Status {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	bridgeState := a.BridgeKeeper.ExportState()
 	transfers := a.IBCRouterKeeper.ExportTransfers()
 	routes := a.IBCRouterKeeper.ExportRoutes()

@@ -68,8 +68,17 @@ type Keeper struct {
 	lastInvariantError    string
 
 	nextWithdrawalNonce uint64
-	stateStore          *sdkstore.JSONStateStore
+	prefixStore         *sdkstore.JSONPrefixStore
+	legacyStore         *sdkstore.JSONStateStore
 }
+
+const (
+	bridgeMetaPrefix       = "meta"
+	bridgeSignerSetPrefix  = "signer_set"
+	bridgeClaimPrefix      = "claim"
+	bridgeSupplyPrefix     = "supply"
+	bridgeWithdrawalPrefix = "withdrawal"
+)
 
 func NewKeeper(registry *registrykeeper.Keeper, limits *limitskeeper.Keeper, pauser *pauserkeeper.Keeper, allowedSigners []string, requiredThreshold uint32) *Keeper {
 	if requiredThreshold == 0 {
@@ -103,20 +112,33 @@ func NewStoreKeeper(
 	allowedSigners []string,
 	requiredThreshold uint32,
 ) (*Keeper, error) {
+	prefixStore, err := sdkstore.NewJSONPrefixStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
 	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
 	if err != nil {
 		return nil, err
 	}
 
 	keeper := NewKeeper(registry, limits, pauser, allowedSigners, requiredThreshold)
-	keeper.stateStore = stateStore
+	keeper.prefixStore = prefixStore
+	keeper.legacyStore = stateStore
 
-	var state StateSnapshot
-	if err := stateStore.Load(&state); err != nil {
-		return nil, err
+	if prefixStore.HasAny(bridgeMetaPrefix) || prefixStore.HasAny(bridgeSignerSetPrefix) || prefixStore.HasAny(bridgeClaimPrefix) || prefixStore.HasAny(bridgeSupplyPrefix) || prefixStore.HasAny(bridgeWithdrawalPrefix) {
+		if err := keeper.loadFromPrefixStore(); err != nil {
+			return nil, err
+		}
+		return keeper, nil
 	}
-	if err := keeper.ImportState(state); err != nil {
-		return nil, err
+	if stateStore.HasState() {
+		var state StateSnapshot
+		if err := stateStore.Load(&state); err != nil {
+			return nil, err
+		}
+		if err := keeper.ImportState(state); err != nil {
+			return nil, err
+		}
 	}
 
 	return keeper, nil
@@ -260,10 +282,76 @@ func (k *Keeper) RejectedClaims() uint64 {
 }
 
 func (k *Keeper) persist() error {
-	if k.stateStore == nil {
+	if k.prefixStore == nil {
 		return nil
 	}
-	return k.stateStore.Save(k.ExportState())
+	if err := k.prefixStore.ClearPrefix(bridgeMetaPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.ClearPrefix(bridgeSignerSetPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.ClearPrefix(bridgeClaimPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.ClearPrefix(bridgeSupplyPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.ClearPrefix(bridgeWithdrawalPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.Save(bridgeMetaPrefix, "runtime", bridgeMetadataSnapshot{
+		CurrentHeight:         k.currentHeight,
+		NextWithdrawalNonce:   k.nextWithdrawalNonce,
+		RejectedClaims:        k.rejectedClaims,
+		CircuitBreakerTripped: k.circuitBreakerTripped,
+		LastInvariantError:    k.lastInvariantError,
+	}); err != nil {
+		return err
+	}
+	for _, signerSet := range k.signerSets {
+		if err := k.prefixStore.Save(bridgeSignerSetPrefix, fmt.Sprintf("%d", signerSet.Version), SignerSetSnapshot{
+			Version:     signerSet.Version,
+			Signers:     append([]string(nil), signerSet.Signers...),
+			Threshold:   signerSet.Threshold,
+			ActivatedAt: signerSet.ActivatedAt,
+			ExpiresAt:   signerSet.ExpiresAt,
+		}); err != nil {
+			return err
+		}
+	}
+	for claimKey, record := range k.processedClaims {
+		if err := k.prefixStore.Save(bridgeClaimPrefix, claimKey, ClaimRecordSnapshot{
+			ClaimKey:  claimKey,
+			MessageID: record.MessageID,
+			Denom:     record.Denom,
+			AssetID:   record.AssetID,
+			Amount:    record.Amount.String(),
+			Status:    record.Status,
+		}); err != nil {
+			return err
+		}
+	}
+	for denom, amount := range k.supplyByDenom {
+		if err := k.prefixStore.Save(bridgeSupplyPrefix, denom, amount.String()); err != nil {
+			return err
+		}
+	}
+	for idx, withdrawal := range k.withdrawals {
+		if err := k.prefixStore.Save(bridgeWithdrawalPrefix, fmt.Sprintf("%020d", idx), WithdrawalRecordSnapshot{
+			BlockHeight:  withdrawal.BlockHeight,
+			Identity:     withdrawal.Identity,
+			AssetID:      withdrawal.AssetID,
+			AssetAddress: withdrawal.AssetAddress,
+			Amount:       withdrawal.Amount.String(),
+			Recipient:    withdrawal.Recipient,
+			Deadline:     withdrawal.Deadline,
+			Signature:    append([]byte(nil), withdrawal.Signature...),
+		}); err != nil {
+			return err
+		}
+	}
+	return k.prefixStore.Commit()
 }
 
 func (k *Keeper) Flush() error {

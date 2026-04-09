@@ -22,6 +22,7 @@ This repository is meant to show:
 - AegisLink bridge attestations now bind to an explicit signer-set version, carry cryptographic signer proofs, and the bridge keeper can activate, expire, and reject mismatched or invalid signer sets.
 - AegisLink rate limits now track rolling-window usage instead of only comparing a single transfer amount to a static ceiling.
 - The bridge runtime now exposes a supply-accounting circuit breaker, so corrupted supply state can trip the bridge into an explicit reject-only mode instead of failing silently.
+- AegisLink SDK-store persistence now uses prefix-keyed per-record state instead of whole-module JSON blobs, and the app runtime serializes mutations through a single access boundary with focused race-smoke coverage.
 - The bridge-relayer and route-relayer are real services with replay persistence and route lifecycle handling.
 - The Phase 6 route path now boots a dedicated destination runtime through `osmo-locald`, and `route-relayer` can move a transfer from an AegisLink home into that destination home without the old HTTP mock-target entrypoint.
 - Routed transfers go through packet-shaped delivery, destination-side execution, later acknowledgement, and explicit completion, failure, timeout, or refund handling.
@@ -180,6 +181,7 @@ As of April 8, 2026:
 - Phase 9 is now complete for the current repo scope: the `ibcrouter` can register multiple destination route profiles with allowed assets, memo-policy guardrails, and allowed action types, the governance module can apply asset, limit, and route-policy changes through a recorded proposal path, and the routed execution layer now supports both `swap` and `stake`
 - Phase A of the gap-remediation plan is now complete for the current repo scope: Go-side bridge verification now requires cryptographic signer proofs instead of signer-name lists, and governance policy changes now require an explicit configured authority
 - Phase B of the gap-remediation plan is now complete for the current repo scope: bridge volume controls now use persisted rolling-window usage tracking, and the bridge runtime now trips a visible circuit breaker when accounting invariants are violated
+- Phase C of the gap-remediation plan is now complete for the current repo scope: chain state is persisted as prefix-keyed SDK-store records instead of whole-module JSON blobs, disk-backed runtime reloads are covered, and the app exposes a serialized runtime boundary with race-smoke coverage
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters

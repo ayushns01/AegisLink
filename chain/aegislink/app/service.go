@@ -24,6 +24,9 @@ func (s *BridgeQueryService) GetClaim(messageID string) (bridgekeeper.ClaimRecor
 		return bridgekeeper.ClaimRecordSnapshot{}, false
 	}
 
+	s.app.mu.RLock()
+	defer s.app.mu.RUnlock()
+
 	for _, record := range s.app.BridgeKeeper.ExportState().ProcessedClaims {
 		if record.MessageID == messageID {
 			return record, true
@@ -42,6 +45,8 @@ func (s *BridgeQueryService) ActiveSignerSet() (bridgekeeper.SignerSet, error) {
 }
 
 func (s *BridgeQueryService) GetSignerSet(version uint64) (bridgekeeper.SignerSet, bool) {
+	s.app.mu.RLock()
+	defer s.app.mu.RUnlock()
 	return s.app.BridgeKeeper.SignerSet(version)
 }
 

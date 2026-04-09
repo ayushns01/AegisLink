@@ -18,10 +18,16 @@ var (
 )
 
 type Keeper struct {
-	limits     map[string]limittypes.RateLimit
-	usage      map[string]limittypes.WindowUsage
-	stateStore *sdkstore.JSONStateStore
+	limits      map[string]limittypes.RateLimit
+	usage       map[string]limittypes.WindowUsage
+	prefixStore *sdkstore.JSONPrefixStore
+	legacyStore *sdkstore.JSONStateStore
 }
+
+const (
+	limitPrefix = "limit"
+	usagePrefix = "usage"
+)
 
 func NewKeeper() *Keeper {
 	return &Keeper{
@@ -31,13 +37,25 @@ func NewKeeper() *Keeper {
 }
 
 func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	prefixStore, err := sdkstore.NewJSONPrefixStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
 	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
 	if err != nil {
 		return nil, err
 	}
 
 	keeper := NewKeeper()
-	keeper.stateStore = stateStore
+	keeper.prefixStore = prefixStore
+	keeper.legacyStore = stateStore
+
+	if prefixStore.HasAny(limitPrefix) || prefixStore.HasAny(usagePrefix) {
+		if err := keeper.loadFromPrefixStore(); err != nil {
+			return nil, err
+		}
+		return keeper, nil
+	}
 
 	var raw json.RawMessage
 	if err := stateStore.Load(&raw); err != nil {
@@ -107,10 +125,26 @@ func (k *Keeper) ImportLimits(limits []limittypes.RateLimit) error {
 }
 
 func (k *Keeper) persist() error {
-	if k.stateStore == nil {
+	if k.prefixStore == nil {
 		return nil
 	}
-	return k.stateStore.Save(k.ExportState())
+	if err := k.prefixStore.ClearPrefix(limitPrefix); err != nil {
+		return err
+	}
+	if err := k.prefixStore.ClearPrefix(usagePrefix); err != nil {
+		return err
+	}
+	for key, limit := range k.limits {
+		if err := k.prefixStore.Save(limitPrefix, key, canonicalLimit(limit)); err != nil {
+			return err
+		}
+	}
+	for key, usage := range k.usage {
+		if err := k.prefixStore.Save(usagePrefix, key, canonicalUsage(usage)); err != nil {
+			return err
+		}
+	}
+	return k.prefixStore.Commit()
 }
 
 func (k *Keeper) Flush() error {
@@ -134,4 +168,27 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 		return err
 	}
 	return k.ImportUsage(state.Usage)
+}
+
+func (k *Keeper) loadFromPrefixStore() error {
+	k.limits = make(map[string]limittypes.RateLimit)
+	k.usage = make(map[string]limittypes.WindowUsage)
+
+	if err := k.prefixStore.LoadAll(limitPrefix, func() any {
+		return &limittypes.RateLimit{}
+	}, func(_ string, value any) error {
+		limit := canonicalLimit(*(value.(*limittypes.RateLimit)))
+		k.limits[limitKey(limit.AssetID)] = limit
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return k.prefixStore.LoadAll(usagePrefix, func() any {
+		return &limittypes.WindowUsage{}
+	}, func(_ string, value any) error {
+		record := canonicalUsage(*(value.(*limittypes.WindowUsage)))
+		k.usage[limitKey(record.AssetID)] = record
+		return nil
+	})
 }

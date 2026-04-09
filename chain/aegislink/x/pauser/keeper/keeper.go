@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	storetypes "cosmossdk.io/store/types"
+	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 )
 
 var (
@@ -15,9 +15,12 @@ var (
 )
 
 type Keeper struct {
-	paused     map[string]bool
-	stateStore *sdkstore.JSONStateStore
+	paused      map[string]bool
+	prefixStore *sdkstore.JSONPrefixStore
+	legacyStore *sdkstore.JSONStateStore
 }
+
+const pausedFlowPrefix = "paused"
 
 func NewKeeper() *Keeper {
 	return &Keeper{
@@ -26,20 +29,33 @@ func NewKeeper() *Keeper {
 }
 
 func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	prefixStore, err := sdkstore.NewJSONPrefixStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
 	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
 	if err != nil {
 		return nil, err
 	}
 
 	keeper := NewKeeper()
-	keeper.stateStore = stateStore
+	keeper.prefixStore = prefixStore
+	keeper.legacyStore = stateStore
 
-	var pausedFlows []string
-	if err := stateStore.Load(&pausedFlows); err != nil {
-		return nil, err
+	if prefixStore.HasAny(pausedFlowPrefix) {
+		if err := keeper.loadFromPrefixStore(); err != nil {
+			return nil, err
+		}
+		return keeper, nil
 	}
-	if err := keeper.ImportPausedFlows(pausedFlows); err != nil {
-		return nil, err
+	if stateStore.HasState() {
+		var pausedFlows []string
+		if err := stateStore.Load(&pausedFlows); err != nil {
+			return nil, err
+		}
+		if err := keeper.ImportPausedFlows(pausedFlows); err != nil {
+			return nil, err
+		}
 	}
 
 	return keeper, nil
@@ -90,18 +106,28 @@ func (k *Keeper) ExportPausedFlows() []string {
 func (k *Keeper) ImportPausedFlows(flows []string) error {
 	k.paused = make(map[string]bool, len(flows))
 	for _, flow := range flows {
-		if err := k.Pause(flow); err != nil {
+		key, err := flowKey(flow)
+		if err != nil {
 			return err
 		}
+		k.paused[key] = true
 	}
 	return k.persist()
 }
 
 func (k *Keeper) persist() error {
-	if k.stateStore == nil {
+	if k.prefixStore == nil {
 		return nil
 	}
-	return k.stateStore.Save(k.ExportPausedFlows())
+	if err := k.prefixStore.ClearPrefix(pausedFlowPrefix); err != nil {
+		return err
+	}
+	for _, flow := range k.ExportPausedFlows() {
+		if err := k.prefixStore.Save(pausedFlowPrefix, flow, flow); err != nil {
+			return err
+		}
+	}
+	return k.prefixStore.Commit()
 }
 
 func (k *Keeper) Flush() error {
@@ -114,4 +140,19 @@ func flowKey(flow string) (string, error) {
 		return "", ErrInvalidFlow
 	}
 	return key, nil
+}
+
+func (k *Keeper) loadFromPrefixStore() error {
+	k.paused = make(map[string]bool)
+	return k.prefixStore.LoadAll(pausedFlowPrefix, func() any {
+		value := ""
+		return &value
+	}, func(_ string, value any) error {
+		key, err := flowKey(*(value.(*string)))
+		if err != nil {
+			return err
+		}
+		k.paused[key] = true
+		return nil
+	})
 }

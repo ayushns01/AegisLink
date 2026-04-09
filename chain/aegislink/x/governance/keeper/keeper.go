@@ -91,8 +91,11 @@ type Keeper struct {
 	ibcRouterKeeper *ibcrouterkeeper.Keeper
 	authorities     map[string]struct{}
 	applied         []ProposalRecord
-	stateStore      *sdkstore.JSONStateStore
+	prefixStore     *sdkstore.JSONPrefixStore
+	legacyStore     *sdkstore.JSONStateStore
 }
+
+const proposalPrefix = "proposal"
 
 func NewKeeper(
 	registryKeeper *registrykeeper.Keeper,
@@ -117,20 +120,33 @@ func NewStoreKeeper(
 	ibcRouterKeeper *ibcrouterkeeper.Keeper,
 	authorities []string,
 ) (*Keeper, error) {
+	prefixStore, err := sdkstore.NewJSONPrefixStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
 	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
 	if err != nil {
 		return nil, err
 	}
 
 	keeper := NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper, authorities)
-	keeper.stateStore = stateStore
+	keeper.prefixStore = prefixStore
+	keeper.legacyStore = stateStore
 
-	var state StateSnapshot
-	if err := stateStore.Load(&state); err != nil {
-		return nil, err
+	if prefixStore.HasAny(proposalPrefix) {
+		if err := keeper.loadFromPrefixStore(); err != nil {
+			return nil, err
+		}
+		return keeper, nil
 	}
-	if err := keeper.ImportState(state); err != nil {
-		return nil, err
+	if stateStore.HasState() {
+		var state StateSnapshot
+		if err := stateStore.Load(&state); err != nil {
+			return nil, err
+		}
+		if err := keeper.ImportState(state); err != nil {
+			return nil, err
+		}
 	}
 
 	return keeper, nil
@@ -246,10 +262,18 @@ func (k *Keeper) Flush() error {
 }
 
 func (k *Keeper) persist() error {
-	if k.stateStore == nil {
+	if k.prefixStore == nil {
 		return nil
 	}
-	return k.stateStore.Save(k.ExportState())
+	if err := k.prefixStore.ClearPrefix(proposalPrefix); err != nil {
+		return err
+	}
+	for _, proposal := range k.applied {
+		if err := k.prefixStore.Save(proposalPrefix, strings.TrimSpace(proposal.ProposalID), proposal); err != nil {
+			return err
+		}
+	}
+	return k.prefixStore.Commit()
 }
 
 func cloneAmount(value *big.Int) *big.Int {
@@ -257,4 +281,21 @@ func cloneAmount(value *big.Int) *big.Int {
 		return nil
 	}
 	return new(big.Int).Set(value)
+}
+
+func (k *Keeper) loadFromPrefixStore() error {
+	k.applied = make([]ProposalRecord, 0)
+	return k.prefixStore.LoadAll(proposalPrefix, func() any {
+		return &ProposalRecord{}
+	}, func(_ string, value any) error {
+		proposal := *(value.(*ProposalRecord))
+		k.applied = append(k.applied, ProposalRecord{
+			ProposalID: strings.TrimSpace(proposal.ProposalID),
+			Kind:       proposal.Kind,
+			TargetID:   strings.TrimSpace(proposal.TargetID),
+			Summary:    strings.TrimSpace(proposal.Summary),
+			AppliedBy:  canonicalAuthority(proposal.AppliedBy),
+		})
+		return nil
+	})
 }

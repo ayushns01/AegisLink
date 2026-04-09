@@ -308,6 +308,11 @@ git commit -m "feat: add bridge accounting invariants"
 
 ## Phase C: State Layout and Concurrency Safety
 
+Status as of April 9, 2026:
+
+- Task C1 is complete for the current repo scope: bridge, registry, limits, pauser, governance, and route state now persist through prefix-keyed SDK-store records instead of whole-module JSON blobs, and disk-backed reload coverage exists for the migrated runtime.
+- Task C2 is complete for the current repo scope: the app runtime now serializes mutating access behind a single boundary, focused race-smoke coverage exists, and targeted `go test -race` checks pass for the serialized runtime path.
+
 ### Task C1: Replace whole-module JSON blobs with prefix-keyed storage
 
 **Files:**

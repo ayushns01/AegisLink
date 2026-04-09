@@ -4,9 +4,9 @@ import (
 	"errors"
 	"strings"
 
+	storetypes "cosmossdk.io/store/types"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
-	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -15,9 +15,12 @@ var (
 )
 
 type Keeper struct {
-	assets     map[string]registrytypes.Asset
-	stateStore *sdkstore.JSONStateStore
+	assets      map[string]registrytypes.Asset
+	prefixStore *sdkstore.JSONPrefixStore
+	legacyStore *sdkstore.JSONStateStore
 }
+
+const assetPrefix = "asset"
 
 func NewKeeper() *Keeper {
 	return &Keeper{
@@ -26,20 +29,33 @@ func NewKeeper() *Keeper {
 }
 
 func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVStoreKey) (*Keeper, error) {
+	prefixStore, err := sdkstore.NewJSONPrefixStore(multiStore, key)
+	if err != nil {
+		return nil, err
+	}
 	stateStore, err := sdkstore.NewJSONStateStore(multiStore, key)
 	if err != nil {
 		return nil, err
 	}
 
 	keeper := NewKeeper()
-	keeper.stateStore = stateStore
+	keeper.prefixStore = prefixStore
+	keeper.legacyStore = stateStore
 
-	var assets []registrytypes.Asset
-	if err := stateStore.Load(&assets); err != nil {
-		return nil, err
+	if prefixStore.HasAny(assetPrefix) {
+		if err := keeper.loadFromPrefixStore(); err != nil {
+			return nil, err
+		}
+		return keeper, nil
 	}
-	if err := keeper.ImportAssets(assets); err != nil {
-		return nil, err
+	if stateStore.HasState() {
+		var assets []registrytypes.Asset
+		if err := stateStore.Load(&assets); err != nil {
+			return nil, err
+		}
+		if err := keeper.ImportAssets(assets); err != nil {
+			return nil, err
+		}
 	}
 
 	return keeper, nil
@@ -96,18 +112,28 @@ func (k *Keeper) ExportAssets() []registrytypes.Asset {
 func (k *Keeper) ImportAssets(assets []registrytypes.Asset) error {
 	k.assets = make(map[string]registrytypes.Asset, len(assets))
 	for _, asset := range assets {
-		if err := k.RegisterAsset(asset); err != nil {
+		if err := asset.ValidateBasic(); err != nil {
 			return err
 		}
+		stored := canonicalAsset(asset)
+		k.assets[assetKey(stored.AssetID)] = stored
 	}
 	return k.persist()
 }
 
 func (k *Keeper) persist() error {
-	if k.stateStore == nil {
+	if k.prefixStore == nil {
 		return nil
 	}
-	return k.stateStore.Save(k.ExportAssets())
+	if err := k.prefixStore.ClearPrefix(assetPrefix); err != nil {
+		return err
+	}
+	for key, asset := range k.assets {
+		if err := k.prefixStore.Save(assetPrefix, key, canonicalAsset(asset)); err != nil {
+			return err
+		}
+	}
+	return k.prefixStore.Commit()
 }
 
 func (k *Keeper) Flush() error {
@@ -125,4 +151,15 @@ func canonicalAsset(asset registrytypes.Asset) registrytypes.Asset {
 	asset.Denom = strings.TrimSpace(asset.Denom)
 	asset.DisplayName = strings.TrimSpace(asset.DisplayName)
 	return asset
+}
+
+func (k *Keeper) loadFromPrefixStore() error {
+	k.assets = make(map[string]registrytypes.Asset)
+	return k.prefixStore.LoadAll(assetPrefix, func() any {
+		return &registrytypes.Asset{}
+	}, func(_ string, value any) error {
+		asset := canonicalAsset(*(value.(*registrytypes.Asset)))
+		k.assets[assetKey(asset.AssetID)] = asset
+		return nil
+	})
 }

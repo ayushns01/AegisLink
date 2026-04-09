@@ -19,6 +19,14 @@ type StateSnapshot struct {
 	Withdrawals           []WithdrawalRecordSnapshot `json:"withdrawals"`
 }
 
+type bridgeMetadataSnapshot struct {
+	CurrentHeight         uint64 `json:"current_height"`
+	NextWithdrawalNonce   uint64 `json:"next_withdrawal_nonce"`
+	RejectedClaims        uint64 `json:"rejected_claims"`
+	CircuitBreakerTripped bool   `json:"circuit_breaker_tripped"`
+	LastInvariantError    string `json:"last_invariant_error"`
+}
+
 type SignerSetSnapshot struct {
 	Version     uint64   `json:"version"`
 	Signers     []string `json:"signers"`
@@ -165,4 +173,102 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 	}
 
 	return nil
+}
+
+func (k *Keeper) loadFromPrefixStore() error {
+	defaultSignerSets := k.signerSets
+	k.signerSets = make(map[uint64]SignerSet)
+	k.processedClaims = make(map[string]ClaimRecord)
+	k.supplyByDenom = make(map[string]*big.Int)
+	k.withdrawals = make([]WithdrawalRecord, 0)
+	k.nextWithdrawalNonce = 1
+
+	var meta bridgeMetadataSnapshot
+	if found, err := k.prefixStore.Load(bridgeMetaPrefix, "runtime", &meta); err != nil {
+		return err
+	} else if found {
+		k.currentHeight = meta.CurrentHeight
+		k.nextWithdrawalNonce = meta.NextWithdrawalNonce
+		k.rejectedClaims = meta.RejectedClaims
+		k.circuitBreakerTripped = meta.CircuitBreakerTripped
+		k.lastInvariantError = meta.LastInvariantError
+		if k.nextWithdrawalNonce == 0 {
+			k.nextWithdrawalNonce = 1
+		}
+	}
+
+	if err := k.prefixStore.LoadAll(bridgeSignerSetPrefix, func() any {
+		return &SignerSetSnapshot{}
+	}, func(_ string, value any) error {
+		signerSet := *(value.(*SignerSetSnapshot))
+		set := normalizeSignerSet(SignerSet{
+			Version:     signerSet.Version,
+			Signers:     append([]string(nil), signerSet.Signers...),
+			Threshold:   signerSet.Threshold,
+			ActivatedAt: signerSet.ActivatedAt,
+			ExpiresAt:   signerSet.ExpiresAt,
+		})
+		k.signerSets[set.Version] = set
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(k.signerSets) == 0 {
+		k.signerSets = defaultSignerSets
+	}
+
+	if err := k.prefixStore.LoadAll(bridgeClaimPrefix, func() any {
+		return &ClaimRecordSnapshot{}
+	}, func(_ string, value any) error {
+		claim := *(value.(*ClaimRecordSnapshot))
+		amount, ok := new(big.Int).SetString(claim.Amount, 10)
+		if !ok {
+			return fmt.Errorf("invalid processed claim amount %q", claim.Amount)
+		}
+		k.processedClaims[claim.ClaimKey] = ClaimRecord{
+			MessageID: claim.MessageID,
+			Denom:     claim.Denom,
+			AssetID:   claim.AssetID,
+			Amount:    amount,
+			Status:    claim.Status,
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := k.prefixStore.LoadAll(bridgeSupplyPrefix, func() any {
+		value := ""
+		return &value
+	}, func(id string, value any) error {
+		parsed, ok := new(big.Int).SetString(*(value.(*string)), 10)
+		if !ok {
+			return fmt.Errorf("invalid supply amount %q", *(value.(*string)))
+		}
+		k.supplyByDenom[id] = parsed
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return k.prefixStore.LoadAll(bridgeWithdrawalPrefix, func() any {
+		return &WithdrawalRecordSnapshot{}
+	}, func(_ string, value any) error {
+		withdrawal := *(value.(*WithdrawalRecordSnapshot))
+		amount, ok := new(big.Int).SetString(withdrawal.Amount, 10)
+		if !ok {
+			return fmt.Errorf("invalid withdrawal amount %q", withdrawal.Amount)
+		}
+		k.withdrawals = append(k.withdrawals, WithdrawalRecord{
+			BlockHeight:  withdrawal.BlockHeight,
+			Identity:     withdrawal.Identity,
+			AssetID:      withdrawal.AssetID,
+			AssetAddress: withdrawal.AssetAddress,
+			Amount:       amount,
+			Recipient:    withdrawal.Recipient,
+			Deadline:     withdrawal.Deadline,
+			Signature:    append([]byte(nil), withdrawal.Signature...),
+		})
+		return nil
+	})
 }
