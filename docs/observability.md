@@ -63,6 +63,8 @@ The repo now has the first real Prometheus-style inspection surfaces:
   Exposes destination packet, execution, ready-ack, and swap-failure counts as Prometheus text.
 - `bridge-relayer` and `route-relayer` with `AEGISLINK_PRINT_METRICS=1`
   Emit a one-shot Prometheus text snapshot after a run so operators can capture worker metrics during local testing or scripts.
+- `bridge-relayer --loop` and `route-relayer --loop`
+  Run as poll-based daemons with configurable poll interval and temporary-failure backoff, so operators can keep a long-running local worker alive instead of shelling repeated one-shot runs.
 
 ## Structured logs available now
 
@@ -76,10 +78,12 @@ The current repo now emits structured JSON logs for the main operator surfaces:
 - `bridge-relayer`
   - `run_start`
   - `run_complete`
+  - `run_retry`
   - `run_failed`
 - `route-relayer`
   - `run_start`
   - `run_complete`
+  - `run_retry`
   - `run_failed`
 - `mock-osmosis-target`
   - `server_start`
@@ -121,6 +125,8 @@ The operator-facing binaries now emit short summaries instead of only succeeding
   Reports deposit observations, duplicate suppression, submit attempts, withdrawal observations, and release attempts.
 - `route-relayer`
   Reports ready acknowledgements, completed or failed acknowledgements, observed transfers, delivered transfers, and received-only deliveries.
+- loop mode for both relayers
+  Adds temporary-failure retry summaries with consecutive-failure counts, so a transient RPC issue is visible as a degraded run instead of only a crash.
 - `mock-osmosis-target`
   Reports startup mode, listen address, persisted state path, and pool count.
 
@@ -156,6 +162,7 @@ The repo now includes the first local monitoring scaffold:
   First operator dashboard for destination packets, executions, ready acknowledgements, and swap failures.
 
 Use `make monitor` to bring up Prometheus, Grafana, and the destination target together.
+Use `make test-phase-d` to rerun the relayer loop and property-style hardening checks introduced in Phase D.
 
 Recovery coverage is now tied to this observability layer through [Incident drills](runbooks/incident-drills.md), so the operator path is test-backed instead of being dashboard-only.
 

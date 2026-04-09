@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
@@ -14,6 +15,10 @@ type Config struct {
 	AttestationThreshold        uint32
 	AttestationSignerSetVersion uint64
 	AttestationSignerKeys       []string
+	Loop                        bool
+	PollInterval                time.Duration
+	FailureBackoff              time.Duration
+	MaxRuns                     int
 	SubmissionRetryLimit        int
 	EVMConfirmations            uint64
 	CosmosConfirmations         uint64
@@ -36,6 +41,10 @@ func LoadFromEnv() Config {
 		AttestationThreshold:        uint32(getInt("AEGISLINK_RELAYER_ATTESTATION_THRESHOLD", 2)),
 		AttestationSignerSetVersion: uint64(getInt("AEGISLINK_RELAYER_ATTESTATION_SIGNER_SET_VERSION", 1)),
 		AttestationSignerKeys:       getFieldsWithFallback("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS", bridgetypes.DefaultHarnessSignerPrivateKeys()[:3]),
+		Loop:                        getBool("AEGISLINK_RELAYER_LOOP", false),
+		PollInterval:                time.Duration(getInt("AEGISLINK_RELAYER_POLL_INTERVAL_MS", 1000)) * time.Millisecond,
+		FailureBackoff:              time.Duration(getInt("AEGISLINK_RELAYER_FAILURE_BACKOFF_MS", 5000)) * time.Millisecond,
+		MaxRuns:                     getInt("AEGISLINK_RELAYER_MAX_RUNS", 0),
 		SubmissionRetryLimit:        getInt("AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT", 3),
 		EVMConfirmations:            uint64(getInt("AEGISLINK_RELAYER_EVM_CONFIRMATIONS", 2)),
 		CosmosConfirmations:         uint64(getInt("AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS", 1)),
@@ -73,6 +82,21 @@ func getInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func getBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func defaultRuntimePath(name string) string {

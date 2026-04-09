@@ -3,6 +3,10 @@ package config
 import "time"
 
 type RouteConfig struct {
+	Loop                  bool
+	PollInterval          time.Duration
+	FailureBackoff        time.Duration
+	MaxRuns               int
 	AegisLinkCommand     string
 	AegisLinkCommandArgs []string
 	AegisLinkHome        string
@@ -24,6 +28,10 @@ type RouteConfig struct {
 
 func LoadRouteFromEnv() RouteConfig {
 	return RouteConfig{
+		Loop:                  getBool("AEGISLINK_ROUTE_RELAYER_LOOP", false),
+		PollInterval:          time.Duration(getInt("AEGISLINK_ROUTE_RELAYER_POLL_INTERVAL_MS", 1000)) * time.Millisecond,
+		FailureBackoff:        time.Duration(getInt("AEGISLINK_ROUTE_RELAYER_FAILURE_BACKOFF_MS", 5000)) * time.Millisecond,
+		MaxRuns:               getInt("AEGISLINK_ROUTE_RELAYER_MAX_RUNS", 0),
 		AegisLinkCommand:       getString("AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD", ""),
 		AegisLinkCommandArgs:   getFields("AEGISLINK_ROUTE_RELAYER_AEGISLINK_CMD_ARGS"),
 		AegisLinkHome:          getString("AEGISLINK_ROUTE_RELAYER_AEGISLINK_HOME", ""),

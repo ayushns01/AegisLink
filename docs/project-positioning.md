@@ -21,6 +21,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 
 - Ethereum gateway contracts emit and consume real local events and release transactions over the Anvil-backed path.
 - The bridge-relayer and route-relayer are real services with replay-aware processing and route lifecycle handling.
+- The relayers now also support poll-based daemon operation with graceful shutdown and temporary-failure backoff, so the local system can be exercised as a long-running worker instead of only one-shot commands.
 - AegisLink persists bridge, policy, and route state in Cosmos KV stores and exposes operator-facing `init`, `start`, `tx`, and `query` CLI commands.
 - The SDK-store runtime now persists bridge, registry, limits, pauser, governance, and route state as prefix-keyed records instead of single JSON blobs, so reload behavior is per-record and the storage layout is closer to real chain state.
 - Bridge and route interfaces now have generated proto surfaces and service-backed CLI response mapping inside the `chain/aegislink` module.
@@ -75,6 +76,7 @@ The next realism steps are:
 ## Hardening now present
 
 - The bridge keeper now has stronger replay and supply-conservation invariant coverage plus a persisted circuit-breaker path.
+- The repo now also has property-style hardening coverage: a focused Foundry gateway invariant file plus Go fuzz coverage for supply-safety and route-refund state transitions.
 - The route keeper now has explicit recoverable-refund state-machine coverage.
 - The Ethereum gateway now depends on a narrow verifier interface, so the current v1 verifier can be swapped more cleanly for future threshold or light-client implementations.
 - The bridge keeper now tracks versioned signer sets with activation and expiry, so attestation trust assumptions are explicit and queryable.

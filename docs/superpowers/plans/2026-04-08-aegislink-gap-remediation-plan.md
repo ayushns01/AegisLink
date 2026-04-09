@@ -411,6 +411,11 @@ git commit -m "fix: add runtime concurrency safety"
 
 ## Phase D: Relayer Runtime Hardening
 
+Status as of April 9, 2026:
+
+- Task D1 is complete for the current repo scope: `bridge-relayer` and `route-relayer` now support loop-based daemon operation with configurable poll intervals, temporary-failure backoff, graceful shutdown, and repeated run summaries.
+- Task D2 is complete for the current repo scope: the repo now includes a focused Foundry gateway invariant file plus Go fuzz coverage for bridge supply safety and route-refund state-machine safety.
+
 ### Task D1: Convert relayers from `RunOnce` workers into long-running daemons
 
 **Files:**

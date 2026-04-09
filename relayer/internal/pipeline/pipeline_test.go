@@ -6,7 +6,10 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	"github.com/ayushns01/aegislink/relayer/internal/config"
@@ -286,6 +289,130 @@ func TestCoordinatorRunOnceFailsWhenReplayLoadFails(t *testing.T) {
 	}
 }
 
+func TestCoordinatorDaemonRunPollsWithoutDuplicateReprocessing(t *testing.T) {
+	t.Parallel()
+
+	store := replay.NewStore()
+	deposit := newPipelineDepositEvent()
+	depositWatcher := &stubDepositWatcher{
+		events:     []evm.DepositEvent{deposit},
+		nextCursor: 11,
+	}
+	submitter := &stubCosmosSubmitter{}
+
+	coordinator := New(
+		config.Config{
+			CosmosChainID:        "aegislink-1",
+			AttestationThreshold: 2,
+		},
+		store,
+		depositWatcher,
+		&stubCollector{},
+		submitter,
+		&stubWithdrawalWatcher{},
+		&stubEVMReleaser{},
+	)
+
+	daemon := NewDaemon(coordinator, DaemonConfig{PollInterval: time.Millisecond})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- daemon.Run(ctx)
+	}()
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(submitter.claims) == 1 && len(depositWatcher.calls) >= 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("daemon run: %v", err)
+	}
+	if len(submitter.claims) != 1 {
+		t.Fatalf("expected one deposit submission across polling loop, got %d", len(submitter.claims))
+	}
+	if len(depositWatcher.calls) < 2 {
+		t.Fatalf("expected repeated polling calls, got %v", depositWatcher.calls)
+	}
+	if got := store.Checkpoint(depositCheckpointKey); got != 11 {
+		t.Fatalf("expected checkpoint 11, got %d", got)
+	}
+}
+
+func TestCoordinatorDaemonRunBacksOffAfterTemporaryFailure(t *testing.T) {
+	t.Parallel()
+
+	depositWatcher := &countingDepositWatcher{
+		errs: []error{
+			evm.TemporaryError{Err: errors.New("rpc timeout")},
+			nil,
+			nil,
+		},
+		nextCursor: 22,
+	}
+
+	coordinator := New(
+		config.Config{CosmosChainID: "aegislink-1"},
+		replay.NewStore(),
+		depositWatcher,
+		&stubCollector{},
+		&stubCosmosSubmitter{},
+		&stubWithdrawalWatcher{},
+		&stubEVMReleaser{},
+	)
+
+	daemon := NewDaemon(coordinator, DaemonConfig{
+		PollInterval:      time.Millisecond,
+		FailureBackoff:    40 * time.Millisecond,
+		MaxConsecutiveRuns: 3,
+	})
+
+	start := time.Now()
+	if err := daemon.Run(context.Background()); err != nil {
+		t.Fatalf("daemon run: %v", err)
+	}
+	if got := depositWatcher.calls.Load(); got < 2 {
+		t.Fatalf("expected retry after temporary error, got %d observe calls", got)
+	}
+	if elapsed := time.Since(start); elapsed < 35*time.Millisecond {
+		t.Fatalf("expected backoff delay, run finished too quickly: %s", elapsed)
+	}
+}
+
+func TestCoordinatorDaemonRunStopsGracefullyOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	coordinator := New(
+		config.Config{CosmosChainID: "aegislink-1"},
+		replay.NewStore(),
+		&blockingDepositWatcher{},
+		&stubCollector{},
+		&stubCosmosSubmitter{},
+		&stubWithdrawalWatcher{},
+		&stubEVMReleaser{},
+	)
+
+	daemon := NewDaemon(coordinator, DaemonConfig{PollInterval: 5 * time.Millisecond})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- daemon.Run(ctx)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("expected graceful shutdown, got %v", err)
+	}
+}
+
 type stubDepositWatcher struct {
 	events     []evm.DepositEvent
 	nextCursor uint64
@@ -296,6 +423,31 @@ type stubDepositWatcher struct {
 func (s *stubDepositWatcher) Observe(_ context.Context, fromBlock uint64) ([]evm.DepositEvent, uint64, error) {
 	s.calls = append(s.calls, fromBlock)
 	return append([]evm.DepositEvent(nil), s.events...), s.nextCursor, s.err
+}
+
+type countingDepositWatcher struct {
+	errs       []error
+	nextCursor uint64
+	calls      atomic.Int32
+}
+
+func (w *countingDepositWatcher) Observe(_ context.Context, fromBlock uint64) ([]evm.DepositEvent, uint64, error) {
+	call := int(w.calls.Add(1))
+	if call <= len(w.errs) && w.errs[call-1] != nil {
+		return nil, fromBlock, w.errs[call-1]
+	}
+	return nil, w.nextCursor, nil
+}
+
+type blockingDepositWatcher struct {
+	once sync.Once
+}
+
+func (w *blockingDepositWatcher) Observe(ctx context.Context, fromBlock uint64) ([]evm.DepositEvent, uint64, error) {
+	w.once.Do(func() {
+		<-ctx.Done()
+	})
+	return nil, fromBlock, ctx.Err()
 }
 
 type collectorCall struct {

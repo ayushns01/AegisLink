@@ -2,9 +2,11 @@ package route
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Transfer struct {
@@ -104,6 +106,21 @@ type Relayer struct {
 	target Target
 }
 
+type LoopConfig struct {
+	PollInterval       time.Duration
+	FailureBackoff     time.Duration
+	MaxConsecutiveRuns int
+	OnResult           func(LoopEvent)
+}
+
+type LoopEvent struct {
+	Iteration           int
+	Summary             RunSummary
+	Err                 error
+	Temporary           bool
+	ConsecutiveFailures int
+}
+
 type RunSummary struct {
 	ReadyAcks         int `json:"ready_acks"`
 	CompletedAcks     int `json:"completed_acks"`
@@ -121,6 +138,21 @@ func NewRelayer(source PendingTransferSource, sink AckSink, target Target) *Rela
 		target: target,
 	}
 }
+
+type TemporaryError struct {
+	Err error
+}
+
+func (e TemporaryError) Error() string {
+	if e.Err == nil {
+		return "temporary route error"
+	}
+	return e.Err.Error()
+}
+
+func (e TemporaryError) Unwrap() error { return e.Err }
+
+func (e TemporaryError) Temporary() bool { return true }
 
 func (r *Relayer) RunOnce(ctx context.Context) error {
 	_, err := r.RunOnceWithSummary(ctx)
@@ -170,6 +202,62 @@ func (r *Relayer) RunOnceWithSummary(ctx context.Context) (RunSummary, error) {
 	return summary, nil
 }
 
+func (r *Relayer) RunLoop(ctx context.Context, cfg LoopConfig) error {
+	if cfg.PollInterval <= 0 {
+		cfg.PollInterval = time.Second
+	}
+	if cfg.FailureBackoff <= 0 {
+		cfg.FailureBackoff = 5 * time.Second
+	}
+
+	consecutiveFailures := 0
+	for iteration := 1; ; iteration++ {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+
+		summary, err := r.RunOnceWithSummary(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			temporary := isTemporary(err)
+			if temporary {
+				consecutiveFailures++
+			}
+			emitLoopEvent(cfg, LoopEvent{
+				Iteration:           iteration,
+				Summary:             summary,
+				Err:                 err,
+				Temporary:           temporary,
+				ConsecutiveFailures: consecutiveFailures,
+			})
+			if !temporary {
+				return err
+			}
+			if cfg.MaxConsecutiveRuns > 0 && iteration >= cfg.MaxConsecutiveRuns {
+				return nil
+			}
+			if waitForNextRouteRun(ctx, cfg.FailureBackoff) {
+				return nil
+			}
+			continue
+		}
+
+		consecutiveFailures = 0
+		emitLoopEvent(cfg, LoopEvent{
+			Iteration: iteration,
+			Summary:   summary,
+		})
+		if cfg.MaxConsecutiveRuns > 0 && iteration >= cfg.MaxConsecutiveRuns {
+			return nil
+		}
+		if waitForNextRouteRun(ctx, cfg.PollInterval) {
+			return nil
+		}
+	}
+}
+
 func (r *Relayer) applyAck(ctx context.Context, transferID string, ack Ack) error {
 	switch ack.Status {
 	case AckStatusCompleted:
@@ -192,6 +280,36 @@ func (s *RunSummary) recordAck(status AckStatus) {
 	case AckStatusTimedOut:
 		s.TimedOutAcks++
 	}
+}
+
+func emitLoopEvent(cfg LoopConfig, event LoopEvent) {
+	if cfg.OnResult != nil {
+		cfg.OnResult(event)
+	}
+}
+
+func waitForNextRouteRun(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		select {
+		case <-ctx.Done():
+			return true
+		default:
+			return false
+		}
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func isTemporary(err error) bool {
+	var temporary interface{ Temporary() bool }
+	return errors.As(err, &temporary) && temporary.Temporary()
 }
 
 func buildDeliveryEnvelope(transfer Transfer) (DeliveryEnvelope, error) {

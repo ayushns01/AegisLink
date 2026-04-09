@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"io"
 	"os"
 	"strings"
@@ -13,7 +14,7 @@ import (
 )
 
 func main() {
-	if err := run(context.Background(), os.Stdout, os.Stderr); err != nil {
+	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		_ = opslog.Write(os.Stderr, "error", "route-relayer", "run_failed", "route relayer run failed", map[string]any{
 			"error": err.Error(),
 		})
@@ -21,8 +22,12 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, stdout, stderr io.Writer) error {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	cfg := config.LoadRouteFromEnv()
+	loop, err := parseLoopFlag(args, cfg.Loop)
+	if err != nil {
+		return err
+	}
 
 	sourceLocator := route.RuntimeLocator{
 		Home:        cfg.AegisLinkHome,
@@ -49,6 +54,9 @@ func run(ctx context.Context, stdout, stderr io.Writer) error {
 	)
 
 	_ = opslog.Write(stderr, "info", "route-relayer", "run_start", "route relayer run started", map[string]any{
+		"loop_mode":                loop,
+		"poll_interval_ms":         cfg.PollInterval.Milliseconds(),
+		"failure_backoff_ms":       cfg.FailureBackoff.Milliseconds(),
 		"target_url":               cfg.TargetURL,
 		"target_timeout":           cfg.TargetTimeout.String(),
 		"aegislink_home":           cfg.AegisLinkHome,
@@ -60,11 +68,39 @@ func run(ctx context.Context, stdout, stderr io.Writer) error {
 		"destination_command":      cfg.DestinationCommand,
 	})
 
-	summary, err := relayer.RunOnceWithSummary(ctx)
-	if err != nil {
-		return err
+	if loop {
+		return relayer.RunLoop(ctx, route.LoopConfig{
+			PollInterval:       cfg.PollInterval,
+			FailureBackoff:     cfg.FailureBackoff,
+			MaxConsecutiveRuns: cfg.MaxRuns,
+			OnResult: func(event route.LoopEvent) {
+				logRouteOutcome(stdout, stderr, event.Summary, event.Err, event.ConsecutiveFailures)
+			},
+		})
 	}
-	if err := opslog.Write(stderr, "info", "route-relayer", "run_complete", "route relayer run completed", map[string]any{
+
+	summary, err := relayer.RunOnceWithSummary(ctx)
+	logRouteOutcome(stdout, stderr, summary, err, 0)
+	return err
+}
+
+func metricsOutputEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("AEGISLINK_PRINT_METRICS"))
+	return value == "1" || strings.EqualFold(value, "true")
+}
+
+func parseLoopFlag(args []string, fallback bool) (bool, error) {
+	flags := flag.NewFlagSet("route-relayer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	loop := flags.Bool("loop", fallback, "run continuously")
+	if err := flags.Parse(args); err != nil {
+		return false, err
+	}
+	return *loop, nil
+}
+
+func logRouteOutcome(stdout, stderr io.Writer, summary route.RunSummary, err error, consecutiveFailures int) {
+	fields := map[string]any{
 		"ready_acks":          summary.ReadyAcks,
 		"completed_acks":      summary.CompletedAcks,
 		"failed_acks":         summary.FailedAcks,
@@ -72,10 +108,16 @@ func run(ctx context.Context, stdout, stderr io.Writer) error {
 		"transfers_observed":  summary.TransfersObserved,
 		"transfers_delivered": summary.TransfersDelivered,
 		"received_deliveries": summary.ReceivedDeliveries,
-	}); err != nil {
-		return err
 	}
-
+	if consecutiveFailures > 0 {
+		fields["consecutive_failures"] = consecutiveFailures
+	}
+	if err != nil {
+		fields["error"] = err.Error()
+		_ = opslog.Write(stderr, "warn", "route-relayer", "run_retry", "route relayer run failed temporarily", fields)
+		return
+	}
+	_ = opslog.Write(stderr, "info", "route-relayer", "run_complete", "route relayer run completed", fields)
 	if metricsOutputEnabled() {
 		_, _ = io.WriteString(stdout, relayermetrics.FormatRouteRunSnapshot(relayermetrics.RouteRunSnapshot{
 			PendingTransfers:   summary.TransfersObserved,
@@ -84,11 +126,4 @@ func run(ctx context.Context, stdout, stderr io.Writer) error {
 			FailedAcks:         summary.FailedAcks,
 		}))
 	}
-
-	return nil
-}
-
-func metricsOutputEnabled() bool {
-	value := strings.TrimSpace(os.Getenv("AEGISLINK_PRINT_METRICS"))
-	return value == "1" || strings.EqualFold(value, "true")
 }

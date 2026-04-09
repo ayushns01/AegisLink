@@ -2,8 +2,12 @@ package route
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestRelayerRunOnceCompletesReadyAckBeforeSubmittingTransfers(t *testing.T) {
@@ -227,6 +231,112 @@ func TestParseRouteActionReportsMalformedOrUnsupportedAction(t *testing.T) {
 	}
 }
 
+func TestRelayerRunLoopPollsWithoutDuplicateRedelivery(t *testing.T) {
+	t.Parallel()
+
+	source := &statefulLoopSource{
+		transfers: []Transfer{
+			{
+				TransferID:         "ibc/eth.usdc/1",
+				AssetID:            "eth.usdc",
+				Amount:             "25000000",
+				Receiver:           "osmo1recipient",
+				DestinationChainID: "osmosis-1",
+				ChannelID:          "channel-0",
+				DestinationDenom:   "ibc/uatom-usdc",
+				TimeoutHeight:      140,
+				Memo:               "swap:uosmo",
+				Status:             "pending",
+			},
+		},
+	}
+	sink := &statefulLoopSink{
+		stubSink: &stubSink{},
+		source:   source,
+	}
+	target := &loopTarget{
+		submitAck: Ack{Status: AckStatusReceived},
+		readyAck:  AckRecord{TransferID: "ibc/eth.usdc/1", Status: AckStatusCompleted},
+	}
+
+	relayer := NewRelayer(source, sink, target)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- relayer.RunLoop(ctx, LoopConfig{PollInterval: time.Millisecond})
+	}()
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(target.calls) == 1 && len(sink.completed) == 1 && source.calls.Load() >= 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("run loop: %v", err)
+	}
+	if len(target.calls) != 1 {
+		t.Fatalf("expected one transfer delivery across loop, got %d", len(target.calls))
+	}
+	if len(sink.completed) != 1 || sink.completed[0] != "ibc/eth.usdc/1" {
+		t.Fatalf("expected completed transfer once, got %v", sink.completed)
+	}
+	if got := source.calls.Load(); got < 2 {
+		t.Fatalf("expected repeated polling, got %d source calls", got)
+	}
+}
+
+func TestRelayerRunLoopBacksOffAfterTemporaryFailure(t *testing.T) {
+	t.Parallel()
+
+	source := &erroringLoopSource{
+		errs: []error{
+			TemporaryError{Err: errors.New("target unavailable")},
+			nil,
+			nil,
+		},
+	}
+	relayer := NewRelayer(source, &stubSink{}, &stubTarget{})
+
+	start := time.Now()
+	if err := relayer.RunLoop(context.Background(), LoopConfig{
+		PollInterval:       time.Millisecond,
+		FailureBackoff:     40 * time.Millisecond,
+		MaxConsecutiveRuns: 3,
+	}); err != nil {
+		t.Fatalf("run loop: %v", err)
+	}
+	if got := source.calls.Load(); got < 2 {
+		t.Fatalf("expected retry after temporary failure, got %d calls", got)
+	}
+	if elapsed := time.Since(start); elapsed < 35*time.Millisecond {
+		t.Fatalf("expected backoff delay, run finished too quickly: %s", elapsed)
+	}
+}
+
+func TestRelayerRunLoopStopsGracefullyOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	relayer := NewRelayer(&blockingLoopSource{}, &stubSink{}, &stubTarget{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- relayer.RunLoop(ctx, LoopConfig{PollInterval: 5 * time.Millisecond})
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("expected graceful shutdown, got %v", err)
+	}
+}
+
 type stubSource struct {
 	transfers []Transfer
 }
@@ -280,4 +390,108 @@ func (s *stubTarget) ReadyAcks(context.Context) ([]AckRecord, error) {
 func (s *stubTarget) ConfirmAck(_ context.Context, transferID string) error {
 	s.confirmed = append(s.confirmed, transferID)
 	return nil
+}
+
+type statefulLoopSource struct {
+	mu        sync.Mutex
+	transfers []Transfer
+	calls     atomic.Int32
+}
+
+func (s *statefulLoopSource) PendingTransfers(context.Context) ([]Transfer, error) {
+	s.calls.Add(1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Transfer, len(s.transfers))
+	copy(out, s.transfers)
+	return out, nil
+}
+
+func (s *statefulLoopSource) complete(transferID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	filtered := s.transfers[:0]
+	for _, transfer := range s.transfers {
+		if transfer.TransferID == transferID {
+			continue
+		}
+		filtered = append(filtered, transfer)
+	}
+	s.transfers = filtered
+}
+
+type statefulLoopSink struct {
+	*stubSink
+	source *statefulLoopSource
+}
+
+func (s *statefulLoopSink) CompleteTransfer(ctx context.Context, transferID string) error {
+	if s.stubSink == nil {
+		s.stubSink = &stubSink{}
+	}
+	if err := s.stubSink.CompleteTransfer(ctx, transferID); err != nil {
+		return err
+	}
+	s.source.complete(transferID)
+	return nil
+}
+
+type loopTarget struct {
+	mu        sync.Mutex
+	submitAck Ack
+	readyAck  AckRecord
+	delivered bool
+	confirmed []string
+	calls     []Transfer
+}
+
+func (t *loopTarget) SubmitTransfer(_ context.Context, transfer Transfer) (Ack, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.calls = append(t.calls, transfer)
+	t.delivered = true
+	return t.submitAck, nil
+}
+
+func (t *loopTarget) ReadyAcks(context.Context) ([]AckRecord, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.delivered || t.readyAck.TransferID == "" {
+		return nil, nil
+	}
+	if len(t.confirmed) > 0 {
+		return nil, nil
+	}
+	return []AckRecord{t.readyAck}, nil
+}
+
+func (t *loopTarget) ConfirmAck(_ context.Context, transferID string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.confirmed = append(t.confirmed, transferID)
+	return nil
+}
+
+type erroringLoopSource struct {
+	errs  []error
+	calls atomic.Int32
+}
+
+func (s *erroringLoopSource) PendingTransfers(context.Context) ([]Transfer, error) {
+	call := int(s.calls.Add(1))
+	if call <= len(s.errs) && s.errs[call-1] != nil {
+		return nil, s.errs[call-1]
+	}
+	return nil, nil
+}
+
+type blockingLoopSource struct {
+	once sync.Once
+}
+
+func (s *blockingLoopSource) PendingTransfers(ctx context.Context) ([]Transfer, error) {
+	s.once.Do(func() {
+		<-ctx.Done()
+	})
+	return nil, ctx.Err()
 }
