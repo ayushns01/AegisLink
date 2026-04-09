@@ -1117,7 +1117,7 @@ func waitForHTTP(t *testing.T, url string) {
 	t.Helper()
 
 	client := &http.Client{Timeout: 200 * time.Millisecond}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
 		if err == nil {

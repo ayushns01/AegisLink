@@ -12,6 +12,8 @@ import (
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
+	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 )
 
 func TestRecoveryDrillRelayerRestartUsesReplayPersistence(t *testing.T) {
@@ -210,12 +212,102 @@ func TestRecoveryDrillRejectsSignerSetMismatchUntilAttestationIsUpdated(t *testi
 	}
 
 	attestation.SignerSetVersion = 2
+	attestation.Proofs = signAttestationWithSignerIndexes(t, attestation, 0, 1)
 	result, err := app.SubmitDepositClaim(claim, attestation)
 	if err != nil {
 		t.Fatalf("submit claim after signer-set fix: %v", err)
 	}
 	if result.Status != bridgekeeper.ClaimStatusAccepted {
 		t.Fatalf("expected accepted claim after signer-set fix, got %q", result.Status)
+	}
+}
+
+func TestRecoveryDrillRateLimitWindowRecoversAfterWindowExpires(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrap(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 10,
+		MaxAmount:     mustBigAmount(t, "100000000"),
+	}); err != nil {
+		t.Fatalf("set narrow limit: %v", err)
+	}
+
+	firstClaim := sampleAttestationDepositClaim(t, 1)
+	firstAttestation := signedAttestationForClaim(t, firstClaim, 0, 1)
+	app.SetCurrentHeight(50)
+	if _, err := app.SubmitDepositClaim(firstClaim, firstAttestation); err != nil {
+		t.Fatalf("submit first claim: %v", err)
+	}
+
+	secondClaim := sampleAttestationDepositClaim(t, 2)
+	secondAttestation := signedAttestationForClaim(t, secondClaim, 0, 1)
+	app.SetCurrentHeight(55)
+	if _, err := app.SubmitDepositClaim(secondClaim, secondAttestation); !errors.Is(err, limitskeeper.ErrRateLimitExceeded) {
+		t.Fatalf("expected rolling-window limit rejection, got %v", err)
+	}
+
+	thirdClaim := sampleAttestationDepositClaim(t, 3)
+	thirdAttestation := signedAttestationForClaim(t, thirdClaim, 0, 1)
+	app.SetCurrentHeight(61)
+	result, err := app.SubmitDepositClaim(thirdClaim, thirdAttestation)
+	if err != nil {
+		t.Fatalf("submit claim after window expiry: %v", err)
+	}
+	if result.Status != bridgekeeper.ClaimStatusAccepted {
+		t.Fatalf("expected accepted claim after window expiry, got %q", result.Status)
+	}
+}
+
+func TestRecoveryDrillCircuitBreakerTripsOnCorruptedSupply(t *testing.T) {
+	t.Parallel()
+
+	statePath := writeRuntimeChainBootstrap(t)
+	app, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+
+	firstClaim := sampleAttestationDepositClaim(t, 1)
+	firstAttestation := signedAttestationForClaim(t, firstClaim, 0, 1)
+	app.SetCurrentHeight(50)
+	if _, err := app.SubmitDepositClaim(firstClaim, firstAttestation); err != nil {
+		t.Fatalf("submit first claim: %v", err)
+	}
+
+	state := app.BridgeKeeper.ExportState()
+	state.SupplyByDenom["uethusdc"] = "999999999"
+	if err := app.BridgeKeeper.ImportState(state); err != nil {
+		t.Fatalf("import tampered bridge state: %v", err)
+	}
+	if err := app.BridgeKeeper.CheckAccountingInvariant(); !errors.Is(err, bridgekeeper.ErrAccountingInvariantBroken) {
+		t.Fatalf("expected accounting invariant failure after tamper, got %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save tripped circuit state: %v", err)
+	}
+
+	reloaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload tripped circuit state: %v", err)
+	}
+	if !reloaded.BridgeKeeper.CircuitBreakerTripped() {
+		t.Fatal("expected circuit breaker to persist across reload")
+	}
+	if status := reloaded.Status(); !status.BridgeCircuitOpen {
+		t.Fatalf("expected runtime status to report bridge circuit open, got %+v", status)
+	}
+
+	secondClaim := sampleAttestationDepositClaim(t, 2)
+	secondAttestation := signedAttestationForClaim(t, secondClaim, 0, 1)
+	reloaded.SetCurrentHeight(60)
+	if _, err := reloaded.SubmitDepositClaim(secondClaim, secondAttestation); !errors.Is(err, bridgekeeper.ErrBridgeCircuitOpen) {
+		t.Fatalf("expected bridge circuit breaker rejection after tamper, got %v", err)
 	}
 }
 
@@ -234,6 +326,8 @@ func TestRecoveryDrillRunbookDocumentsCoreScenarios(t *testing.T) {
 		"timed-out route refund",
 		"paused asset recovery",
 		"signer-set mismatch rejection",
+		"rate-limit window recovery",
+		"bridge circuit breaker",
 	} {
 		if !strings.Contains(content, expected) {
 			t.Fatalf("expected incident drills runbook to mention %q\n%s", expected, content)

@@ -30,6 +30,8 @@ var (
 	ErrAssetPaused                   = errors.New("asset paused")
 	ErrInsufficientSupply            = errors.New("insufficient supply")
 	ErrInvalidWithdrawal             = errors.New("invalid withdrawal")
+	ErrAccountingInvariantBroken     = errors.New("bridge accounting invariant failed")
+	ErrBridgeCircuitOpen             = errors.New("bridge circuit breaker is open")
 )
 
 type ClaimStatus string
@@ -61,6 +63,9 @@ type Keeper struct {
 	rejectedClaims  uint64
 	supplyByDenom   map[string]*big.Int
 	withdrawals     []WithdrawalRecord
+
+	circuitBreakerTripped bool
+	lastInvariantError    string
 
 	nextWithdrawalNonce uint64
 	stateStore          *sdkstore.JSONStateStore
@@ -123,6 +128,10 @@ func (k *Keeper) SetCurrentHeight(height uint64) {
 }
 
 func (k *Keeper) ExecuteDepositClaim(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (ClaimResult, error) {
+	if err := k.ensureCircuitHealthy(); err != nil {
+		k.rejectedClaims++
+		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
+	}
 	if err := claim.ValidateBasic(); err != nil {
 		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected}, err
@@ -152,16 +161,27 @@ func (k *Keeper) ExecuteDepositClaim(claim bridgetypes.DepositClaim, attestation
 		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, fmt.Errorf("%w: %s", ErrAssetPaused, claim.AssetID)
 	}
-	if err := k.limitsKeeper.CheckTransfer(claim.AssetID, claim.Amount); err != nil {
+	if err := k.limitsKeeper.CheckTransferAtHeight(claim.AssetID, claim.Amount, k.currentHeight); err != nil {
+		k.rejectedClaims++
+		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
+	}
+	if err := k.limitsKeeper.RecordTransferAtHeight(claim.AssetID, claim.Amount, k.currentHeight); err != nil {
 		k.rejectedClaims++
 		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
 	}
 
 	result := k.acceptDepositClaim(claimKey, claim, asset)
+	if err := k.CheckAccountingInvariant(); err != nil {
+		k.rejectedClaims++
+		return ClaimResult{Status: ClaimStatusRejected, MessageID: claim.Identity.MessageID}, err
+	}
 	return result, k.persist()
 }
 
 func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (WithdrawalRecord, error) {
+	if err := k.ensureCircuitHealthy(); err != nil {
+		return WithdrawalRecord{}, err
+	}
 	if amount == nil || amount.Sign() <= 0 {
 		return WithdrawalRecord{}, fmt.Errorf("%w: amount must be positive", ErrInvalidWithdrawal)
 	}
@@ -188,7 +208,10 @@ func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient st
 	if err := k.pauserKeeper.AssertNotPaused(assetID); err != nil {
 		return WithdrawalRecord{}, fmt.Errorf("%w: %s", ErrAssetPaused, assetID)
 	}
-	if err := k.limitsKeeper.CheckTransfer(assetID, amount); err != nil {
+	if err := k.limitsKeeper.CheckTransferAtHeight(assetID, amount, k.currentHeight); err != nil {
+		return WithdrawalRecord{}, err
+	}
+	if err := k.limitsKeeper.RecordTransferAtHeight(assetID, amount, k.currentHeight); err != nil {
 		return WithdrawalRecord{}, err
 	}
 
@@ -198,8 +221,13 @@ func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient st
 	}
 
 	record := k.newWithdrawalRecord(assetID, asset.SourceContract, amount, recipient, deadline, signature)
-	k.burnRepresentation(asset.Denom, amount)
+	if err := k.burnRepresentation(asset.Denom, amount); err != nil {
+		return WithdrawalRecord{}, err
+	}
 	k.withdrawals = append(k.withdrawals, record)
+	if err := k.CheckAccountingInvariant(); err != nil {
+		return WithdrawalRecord{}, err
+	}
 
 	return cloneWithdrawalRecord(record), k.persist()
 }

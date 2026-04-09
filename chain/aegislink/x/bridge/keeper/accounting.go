@@ -51,12 +51,16 @@ func (k *Keeper) mintRepresentation(denom string, amount *big.Int) {
 	k.supplyByDenom[denom].Add(k.supplyByDenom[denom], amount)
 }
 
-func (k *Keeper) burnRepresentation(denom string, amount *big.Int) {
+func (k *Keeper) burnRepresentation(denom string, amount *big.Int) error {
 	current, ok := k.supplyByDenom[denom]
 	if !ok {
-		return
+		return ErrInsufficientSupply
+	}
+	if current.Cmp(amount) < 0 {
+		return ErrInsufficientSupply
 	}
 	current.Sub(current, amount)
+	return nil
 }
 
 func cloneWithdrawalRecord(record WithdrawalRecord) WithdrawalRecord {

@@ -61,6 +61,8 @@ type Status struct {
 	PausedFlows            int               `json:"paused_flows"`
 	ProcessedClaims        int               `json:"processed_claims"`
 	FailedClaims           uint64            `json:"failed_claims"`
+	BridgeCircuitOpen      bool              `json:"bridge_circuit_open"`
+	LastInvariantError     string            `json:"last_invariant_error"`
 	Withdrawals            int               `json:"withdrawals"`
 	Routes                 int               `json:"routes"`
 	Transfers              int               `json:"transfers"`
@@ -162,7 +164,7 @@ func LoadWithConfig(cfg Config) (*App, error) {
 	if err := app.RegistryKeeper.ImportAssets(state.Assets); err != nil {
 		return nil, err
 	}
-	if err := app.LimitsKeeper.ImportLimits(state.Limits); err != nil {
+	if err := app.LimitsKeeper.ImportState(state.Limits); err != nil {
 		return nil, err
 	}
 	if err := app.PauserKeeper.ImportPausedFlows(state.PausedFlows); err != nil {
@@ -305,7 +307,7 @@ func (a *App) Save() error {
 	}
 	return persistRuntimeState(a.Config.StatePath, runtimeState{
 		Assets:      a.RegistryKeeper.ExportAssets(),
-		Limits:      a.LimitsKeeper.ExportLimits(),
+		Limits:      a.LimitsKeeper.ExportState(),
 		PausedFlows: a.PauserKeeper.ExportPausedFlows(),
 		Bridge:      a.BridgeKeeper.ExportState(),
 		IBCRouter:   a.IBCRouterKeeper.ExportState(),
@@ -346,6 +348,8 @@ func (a *App) Status() Status {
 		PausedFlows:           len(a.PauserKeeper.ExportPausedFlows()),
 		ProcessedClaims:       len(bridgeState.ProcessedClaims),
 		FailedClaims:          a.BridgeKeeper.RejectedClaims(),
+		BridgeCircuitOpen:     a.BridgeKeeper.CircuitBreakerTripped(),
+		LastInvariantError:    a.BridgeKeeper.LastInvariantError(),
 		Withdrawals:           len(bridgeState.Withdrawals),
 		Routes:                len(a.IBCRouterKeeper.ExportRoutes()),
 		Transfers:             len(transfers),

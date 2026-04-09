@@ -1,13 +1,14 @@
 package keeper
 
 import (
+	"encoding/json"
 	"errors"
 	"math/big"
 	"strings"
 
+	storetypes "cosmossdk.io/store/types"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/sdkstore"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
-	storetypes "cosmossdk.io/store/types"
 )
 
 var (
@@ -18,12 +19,14 @@ var (
 
 type Keeper struct {
 	limits     map[string]limittypes.RateLimit
+	usage      map[string]limittypes.WindowUsage
 	stateStore *sdkstore.JSONStateStore
 }
 
 func NewKeeper() *Keeper {
 	return &Keeper{
 		limits: make(map[string]limittypes.RateLimit),
+		usage:  make(map[string]limittypes.WindowUsage),
 	}
 }
 
@@ -36,12 +39,29 @@ func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVSt
 	keeper := NewKeeper()
 	keeper.stateStore = stateStore
 
-	var limits []limittypes.RateLimit
-	if err := stateStore.Load(&limits); err != nil {
+	var raw json.RawMessage
+	if err := stateStore.Load(&raw); err != nil {
 		return nil, err
 	}
-	if err := keeper.ImportLimits(limits); err != nil {
-		return nil, err
+	if len(raw) > 0 {
+		switch raw[0] {
+		case '[':
+			var legacyLimits []limittypes.RateLimit
+			if err := json.Unmarshal(raw, &legacyLimits); err != nil {
+				return nil, err
+			}
+			if err := keeper.ImportLimits(legacyLimits); err != nil {
+				return nil, err
+			}
+		default:
+			var state StateSnapshot
+			if err := json.Unmarshal(raw, &state); err != nil {
+				return nil, err
+			}
+			if err := keeper.ImportState(state); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return keeper, nil
@@ -63,18 +83,7 @@ func (k *Keeper) GetLimit(assetID string) (limittypes.RateLimit, bool) {
 }
 
 func (k *Keeper) CheckTransfer(assetID string, amount *big.Int) error {
-	if amount == nil || amount.Sign() < 0 {
-		return ErrInvalidTransfer
-	}
-
-	limit, ok := k.GetLimit(assetID)
-	if !ok {
-		return ErrLimitNotFound
-	}
-	if amount.Cmp(limit.MaxAmount) > 0 {
-		return ErrRateLimitExceeded
-	}
-	return nil
+	return k.CheckTransferAtHeight(assetID, amount, 0)
 }
 
 func (k *Keeper) ExportLimits() []limittypes.RateLimit {
@@ -88,9 +97,11 @@ func (k *Keeper) ExportLimits() []limittypes.RateLimit {
 func (k *Keeper) ImportLimits(limits []limittypes.RateLimit) error {
 	k.limits = make(map[string]limittypes.RateLimit, len(limits))
 	for _, limit := range limits {
-		if err := k.SetLimit(limit); err != nil {
+		if err := limit.ValidateBasic(); err != nil {
 			return err
 		}
+		stored := canonicalLimit(limit)
+		k.limits[limitKey(stored.AssetID)] = stored
 	}
 	return k.persist()
 }
@@ -99,7 +110,7 @@ func (k *Keeper) persist() error {
 	if k.stateStore == nil {
 		return nil
 	}
-	return k.stateStore.Save(k.ExportLimits())
+	return k.stateStore.Save(k.ExportState())
 }
 
 func (k *Keeper) Flush() error {
@@ -116,4 +127,11 @@ func canonicalLimit(limit limittypes.RateLimit) limittypes.RateLimit {
 		limit.MaxAmount = new(big.Int).Set(limit.MaxAmount)
 	}
 	return limit
+}
+
+func (k *Keeper) ImportState(state StateSnapshot) error {
+	if err := k.ImportLimits(state.Limits); err != nil {
+		return err
+	}
+	return k.ImportUsage(state.Usage)
 }

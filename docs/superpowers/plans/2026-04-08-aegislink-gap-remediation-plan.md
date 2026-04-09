@@ -219,6 +219,11 @@ git commit -m "feat: authorize governance policy changes"
 
 ## Phase B: Accounting and Rate-Limit Correctness
 
+Status as of April 9, 2026:
+
+- Task B1 is complete for the current repo scope: the limits module now persists rolling-window usage, keeper and store-backed tests prove accumulation and expiry behavior, and the bridge keeper records usage during deposit and withdrawal execution.
+- Task B2 is complete for the current repo scope: the bridge keeper now has explicit accounting-invariant checks, safe burn semantics, a persisted circuit breaker, operator-visible status surfaces, and recovery-drill coverage for invariant failure.
+
 ### Task B1: Implement real time-windowed rate limiting
 
 **Files:**
@@ -228,19 +233,19 @@ git commit -m "feat: authorize governance policy changes"
 - Test: `chain/aegislink/x/limits/keeper/keeper_test.go`
 - Test: `tests/e2e/recovery_drill_test.go`
 
-- [ ] **Step 1: Write failing limit-window tests**
+- [x] **Step 1: Write failing limit-window tests**
 
 Cover:
 - multiple transfers within a window accumulate
 - transfer after the window expires is allowed again
 - limits are enforced separately per asset
 
-- [ ] **Step 2: Run the focused limits tests**
+- [x] **Step 2: Run the focused limits tests**
 
 Run: `GOCACHE=/tmp/aegislink-gocache go test ./chain/aegislink/x/limits/keeper -run 'TestCheckTransfer'`
 Expected: FAIL because the keeper only compares amount to `MaxAmount`.
 
-- [ ] **Step 3: Implement persisted usage tracking**
+- [x] **Step 3: Implement persisted usage tracking**
 
 Choose one:
 - sliding-window history
@@ -248,7 +253,7 @@ Choose one:
 
 Prefer token bucket if you want simpler O(1) writes.
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `GOCACHE=/tmp/aegislink-gocache go test ./chain/aegislink/x/limits/...`
 Expected: PASS
@@ -270,26 +275,26 @@ git commit -m "feat: add windowed bridge rate limiting"
 - Test: `chain/aegislink/x/bridge/keeper/keeper_test.go`
 - Test: `tests/e2e/recovery_drill_test.go`
 
-- [ ] **Step 1: Write failing invariant tests**
+- [x] **Step 1: Write failing invariant tests**
 
 Cover:
 - minted minus burned equals tracked supply
 - invariant failure pauses or rejects further flows
 - `burnRepresentation` rejects underflow even if called incorrectly
 
-- [ ] **Step 2: Run focused bridge invariant tests**
+- [x] **Step 2: Run focused bridge invariant tests**
 
 Run: `GOCACHE=/tmp/aegislink-gocache go test ./chain/aegislink/x/bridge/keeper -run 'TestBridgeSupply|TestInvariant'`
 Expected: FAIL because the keeper does not enforce invariants centrally.
 
-- [ ] **Step 3: Implement invariant helpers**
+- [x] **Step 3: Implement invariant helpers**
 
 Add:
 - `CheckAccountingInvariant()`
 - safe burn helper that cannot silently go negative
 - optional auto-pause or circuit-breaker behavior on invariant failure
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `GOCACHE=/tmp/aegislink-gocache go test ./chain/aegislink/x/bridge/keeper`
 Expected: PASS

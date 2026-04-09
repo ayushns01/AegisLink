@@ -271,6 +271,45 @@ func TestBridgeSupplyConservationAcrossDepositAndWithdrawalSequence(t *testing.T
 	}
 }
 
+func TestBridgeAccountingInvariantRejectsTamperedSupplyAndTripsCircuitBreaker(t *testing.T) {
+	t.Parallel()
+
+	keeper, claim, attestation, _, _, _ := newKeeperFixture(t)
+	if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("expected first deposit claim to succeed, got %v", err)
+	}
+
+	keeper.supplyByDenom["uethusdc"] = mustAmount("999999999")
+	if err := keeper.CheckAccountingInvariant(); !errors.Is(err, ErrAccountingInvariantBroken) {
+		t.Fatalf("expected accounting invariant error after tamper, got %v", err)
+	}
+
+	secondClaim := claim
+	secondClaim.Identity.SourceTxHash = "0xbeadcafe"
+	secondClaim.Identity.SourceLogIndex = 8
+	secondClaim.Identity.Nonce = 2
+	secondClaim.Identity.MessageID = secondClaim.Identity.DerivedMessageID()
+	secondAttestation := validAttestation(secondClaim)
+
+	_, err := keeper.ExecuteDepositClaim(secondClaim, secondAttestation)
+	if !errors.Is(err, ErrBridgeCircuitOpen) {
+		t.Fatalf("expected circuit breaker rejection after invariant failure, got %v", err)
+	}
+	if !keeper.CircuitBreakerTripped() {
+		t.Fatal("expected circuit breaker to remain tripped")
+	}
+}
+
+func TestBurnRepresentationRejectsUnderflow(t *testing.T) {
+	t.Parallel()
+
+	keeper, _, _, _, _, _ := newKeeperFixture(t)
+	err := keeper.burnRepresentation("uethusdc", mustAmount("1"))
+	if !errors.Is(err, ErrInsufficientSupply) {
+		t.Fatalf("expected insufficient supply from direct underflow burn, got %v", err)
+	}
+}
+
 func newKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgetypes.Attestation, *registrykeeper.Keeper, *limitskeeper.Keeper, *pauserkeeper.Keeper) {
 	t.Helper()
 

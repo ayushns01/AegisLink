@@ -71,11 +71,46 @@ Expected evidence:
 - the second attempt succeeds after the signer-set version is corrected
 - `aegislinkd query signer-set` and `query signer-sets` explain the active version and history during the drill
 
+## Drill 5: rate-limit window recovery
+
+Goal:
+- prove that rolling-window bridge limits reject cumulative volume inside a window and recover automatically after the window expires
+
+Steps:
+1. Bootstrap an AegisLink runtime with one enabled asset and a narrow bridge limit window.
+2. Submit one valid inbound claim that consumes the full window budget.
+3. Submit a second valid claim before the window expires and confirm rejection.
+4. Advance the runtime past the configured window boundary.
+5. Submit a third valid claim.
+
+Expected evidence:
+- the second claim is rejected with a rate-limit exceeded error
+- the rolling-window usage persists while the window is active
+- the third claim is accepted once the window has expired
+
+## Drill 6: bridge circuit breaker
+
+Goal:
+- prove that operators can detect corrupted bridge accounting state and see the bridge reject new flow once the invariant fails
+
+Steps:
+1. Bootstrap an AegisLink runtime and submit one valid inbound claim.
+2. Corrupt the tracked supply state intentionally in a local drill environment.
+3. Run the accounting invariant check and confirm it trips the bridge circuit breaker.
+4. Reload the runtime and inspect status.
+5. Attempt another valid claim.
+
+Expected evidence:
+- the invariant check fails with an accounting-invariant error
+- runtime status reports the bridge circuit as open
+- the next bridge action is rejected because the circuit breaker remains tripped
+
 ## Drill cadence
 
 Run these drills:
 - before public demos that exercise failure handling
 - after relayer or verifier configuration changes
+- after bridge limit or accounting code changes
 - before any production-style testnet rehearsal
 
 If the team cannot run these drills end to end, the operator story is not ready.

@@ -8,16 +8,17 @@ import (
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
 
 type runtimeState struct {
-	Assets      []registrytypes.Asset         `json:"assets"`
-	Limits      []limittypes.RateLimit        `json:"limits"`
-	PausedFlows []string                      `json:"paused_flows"`
-	Bridge      bridgekeeper.StateSnapshot    `json:"bridge"`
-	IBCRouter   ibcrouterkeeper.StateSnapshot `json:"ibc_router"`
+	Assets      []registrytypes.Asset          `json:"assets"`
+	Limits      limitskeeper.StateSnapshot     `json:"limits"`
+	PausedFlows []string                       `json:"paused_flows"`
+	Bridge      bridgekeeper.StateSnapshot     `json:"bridge"`
+	IBCRouter   ibcrouterkeeper.StateSnapshot  `json:"ibc_router"`
 	Governance  governancekeeper.StateSnapshot `json:"governance"`
 }
 
@@ -34,9 +35,38 @@ func loadRuntimeState(path string) (runtimeState, error) {
 		return runtimeState{}, err
 	}
 
-	var state runtimeState
-	if err := json.Unmarshal(data, &state); err != nil {
+	var raw struct {
+		Assets      []registrytypes.Asset          `json:"assets"`
+		Limits      json.RawMessage                `json:"limits"`
+		PausedFlows []string                       `json:"paused_flows"`
+		Bridge      bridgekeeper.StateSnapshot     `json:"bridge"`
+		IBCRouter   ibcrouterkeeper.StateSnapshot  `json:"ibc_router"`
+		Governance  governancekeeper.StateSnapshot `json:"governance"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return runtimeState{}, err
+	}
+
+	state := runtimeState{
+		Assets:      raw.Assets,
+		PausedFlows: raw.PausedFlows,
+		Bridge:      raw.Bridge,
+		IBCRouter:   raw.IBCRouter,
+		Governance:  raw.Governance,
+	}
+	if len(raw.Limits) > 0 {
+		switch raw.Limits[0] {
+		case '[':
+			var legacyLimits []limittypes.RateLimit
+			if err := json.Unmarshal(raw.Limits, &legacyLimits); err != nil {
+				return runtimeState{}, err
+			}
+			state.Limits = limitskeeper.StateSnapshot{Limits: legacyLimits}
+		default:
+			if err := json.Unmarshal(raw.Limits, &state.Limits); err != nil {
+				return runtimeState{}, err
+			}
+		}
 	}
 	return state, nil
 }

@@ -27,3 +27,19 @@ func (l RateLimit) ValidateBasic() error {
 	}
 	return nil
 }
+
+type WindowUsage struct {
+	AssetID     string
+	WindowStart uint64
+	UsedAmount  *big.Int
+}
+
+func (u WindowUsage) ValidateBasic() error {
+	if strings.TrimSpace(u.AssetID) == "" {
+		return fmt.Errorf("%w: missing usage asset id", ErrInvalidRateLimit)
+	}
+	if u.UsedAmount == nil || u.UsedAmount.Sign() < 0 {
+		return fmt.Errorf("%w: invalid used amount", ErrInvalidRateLimit)
+	}
+	return nil
+}

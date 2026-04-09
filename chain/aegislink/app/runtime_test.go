@@ -100,6 +100,13 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	if _, ok := loaded.LimitsKeeper.GetLimit(asset.AssetID); !ok {
 		t.Fatalf("expected rate limit to persist")
 	}
+	usage, ok := loaded.LimitsKeeper.CurrentUsage(asset.AssetID, 60)
+	if !ok {
+		t.Fatalf("expected rolling-window usage to persist")
+	}
+	if usage.UsedAmount.Cmp(mustAmount(t, "200000000")) != 0 {
+		t.Fatalf("expected persisted rolling-window usage 200000000, got %s", usage.UsedAmount.String())
+	}
 	if !loaded.PauserKeeper.IsPaused("maintenance") {
 		t.Fatalf("expected paused maintenance flow to persist")
 	}

@@ -12,8 +12,9 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repository now includes both the original narrow verifier and a threshold-verifier path with signer-set rotation on Ethereum.
 - Ethereum is the canonical source of deposit and release events.
 - AegisLink attestations are now tied to explicit signer-set versions, carry cryptographic signer proofs, and bridge verification checks activation, expiry, version mismatch, and signature validity.
-- AegisLink enforces replay protection, registry policy, rate limits, pause controls, and route state transitions.
+- AegisLink enforces replay protection, registry policy, rolling-window rate limits, pause controls, and route state transitions.
 - Governance policy changes now require a configured authority and persist who applied each change.
+- The bridge runtime now has an accounting invariant and visible circuit-breaker path, so corrupted supply cannot keep processing silently.
 - The project does not currently claim a light-client verifier or a trustless Ethereum proof system.
 
 ## What is real today
@@ -71,8 +72,9 @@ The next realism steps are:
 
 ## Hardening now present
 
-- The bridge keeper now has stronger replay and supply-conservation invariant coverage.
+- The bridge keeper now has stronger replay and supply-conservation invariant coverage plus a persisted circuit-breaker path.
 - The route keeper now has explicit recoverable-refund state-machine coverage.
 - The Ethereum gateway now depends on a narrow verifier interface, so the current v1 verifier can be swapped more cleanly for future threshold or light-client implementations.
 - The bridge keeper now tracks versioned signer sets with activation and expiry, so attestation trust assumptions are explicit and queryable.
+- The limits module now persists rolling-window usage, so rate limiting reflects cumulative bridge activity instead of a single-transfer ceiling.
 - Demo-facing status summaries now expose failed claims and destination swap failures instead of only happy-path counts.

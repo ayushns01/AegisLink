@@ -10,10 +10,11 @@ That means:
 
 - Ethereum is the source of canonical deposit and withdrawal events
 - relayers provide evidence, not absolute truth
-- the bridge zone enforces replay protection, rate limits, asset policy, and pause controls
+- the bridge zone enforces replay protection, rolling-window rate limits, asset policy, and pause controls
 - the system depends on the configured attester threshold and active signer set being honest and available
 - the current repo now supports explicit signer-set versioning, cryptographic signer proofs, and rotation instead of assuming one fixed attester shape forever
 - governance policy changes now require a configured authority instead of applying permissionlessly inside the runtime
+- bridge accounting invariants can now trip a circuit breaker that blocks new flow when tracked supply no longer matches accepted claims and withdrawals
 
 ## Security invariants
 
@@ -25,6 +26,7 @@ These rules should always hold:
 - every route to Osmosis is explicitly enabled
 - every pause state is checked before minting, unlocking, or forwarding
 - every supply transition can be explained by on-chain state and accepted claims
+- every bridge window limit accumulates usage over time instead of only checking a single transfer amount
 
 ## What v1 does not guarantee
 
@@ -40,9 +42,11 @@ Do not claim:
 - `registry`
   Controls which assets and routes are enabled.
 - `limits`
-  Throttles bridge volume and route volume.
+  Throttles bridge volume and route volume with persisted rolling-window usage.
 - `pauser`
   Stops sensitive flows during incidents.
+- `bridge circuit breaker`
+  Rejects new bridge activity after an accounting invariant failure until operators investigate and recover.
 - `claim replay store`
   Prevents double execution.
 - `attester set management`

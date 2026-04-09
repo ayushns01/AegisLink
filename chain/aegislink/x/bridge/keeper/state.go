@@ -8,13 +8,15 @@ import (
 )
 
 type StateSnapshot struct {
-	CurrentHeight       uint64                     `json:"current_height"`
-	NextWithdrawalNonce uint64                     `json:"next_withdrawal_nonce"`
-	RejectedClaims      uint64                     `json:"rejected_claims"`
-	SignerSets          []SignerSetSnapshot        `json:"signer_sets"`
-	ProcessedClaims     []ClaimRecordSnapshot      `json:"processed_claims"`
-	SupplyByDenom       map[string]string          `json:"supply_by_denom"`
-	Withdrawals         []WithdrawalRecordSnapshot `json:"withdrawals"`
+	CurrentHeight         uint64                     `json:"current_height"`
+	NextWithdrawalNonce   uint64                     `json:"next_withdrawal_nonce"`
+	RejectedClaims        uint64                     `json:"rejected_claims"`
+	CircuitBreakerTripped bool                       `json:"circuit_breaker_tripped"`
+	LastInvariantError    string                     `json:"last_invariant_error"`
+	SignerSets            []SignerSetSnapshot        `json:"signer_sets"`
+	ProcessedClaims       []ClaimRecordSnapshot      `json:"processed_claims"`
+	SupplyByDenom         map[string]string          `json:"supply_by_denom"`
+	Withdrawals           []WithdrawalRecordSnapshot `json:"withdrawals"`
 }
 
 type SignerSetSnapshot struct {
@@ -47,13 +49,15 @@ type WithdrawalRecordSnapshot struct {
 
 func (k *Keeper) ExportState() StateSnapshot {
 	state := StateSnapshot{
-		CurrentHeight:       k.currentHeight,
-		NextWithdrawalNonce: k.nextWithdrawalNonce,
-		RejectedClaims:      k.rejectedClaims,
-		SignerSets:          make([]SignerSetSnapshot, 0, len(k.signerSets)),
-		ProcessedClaims:     make([]ClaimRecordSnapshot, 0, len(k.processedClaims)),
-		SupplyByDenom:       make(map[string]string, len(k.supplyByDenom)),
-		Withdrawals:         make([]WithdrawalRecordSnapshot, 0, len(k.withdrawals)),
+		CurrentHeight:         k.currentHeight,
+		NextWithdrawalNonce:   k.nextWithdrawalNonce,
+		RejectedClaims:        k.rejectedClaims,
+		CircuitBreakerTripped: k.circuitBreakerTripped,
+		LastInvariantError:    k.lastInvariantError,
+		SignerSets:            make([]SignerSetSnapshot, 0, len(k.signerSets)),
+		ProcessedClaims:       make([]ClaimRecordSnapshot, 0, len(k.processedClaims)),
+		SupplyByDenom:         make(map[string]string, len(k.supplyByDenom)),
+		Withdrawals:           make([]WithdrawalRecordSnapshot, 0, len(k.withdrawals)),
 	}
 
 	for _, signerSet := range k.signerSets {
@@ -98,6 +102,8 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 	k.currentHeight = state.CurrentHeight
 	k.nextWithdrawalNonce = state.NextWithdrawalNonce
 	k.rejectedClaims = state.RejectedClaims
+	k.circuitBreakerTripped = state.CircuitBreakerTripped
+	k.lastInvariantError = state.LastInvariantError
 	if k.nextWithdrawalNonce == 0 {
 		k.nextWithdrawalNonce = 1
 	}
