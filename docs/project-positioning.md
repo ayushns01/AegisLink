@@ -10,12 +10,15 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 
 - AegisLink v1 is a `verifiable-relayer bridge with threshold attestations`.
 - The repository now includes both the original narrow verifier and a threshold-verifier path with signer-set rotation on Ethereum.
+- The Ethereum verifier path now uses EIP-712-style attestation digests, rejects non-low-`s` signatures, and the release flow is guarded against reentrant token callbacks.
 - Ethereum is the canonical source of deposit and release events.
 - AegisLink attestations are now tied to explicit signer-set versions, carry cryptographic signer proofs, and bridge verification checks activation, expiry, version mismatch, and signature validity.
 - AegisLink enforces replay protection, registry policy, rolling-window rate limits, pause controls, and route state transitions.
 - Governance policy changes now require a configured authority and persist who applied each change.
 - The bridge runtime now has an accounting invariant and visible circuit-breaker path, so corrupted supply cannot keep processing silently.
+- The Ethereum verifier/gateway path is intentionally immutable and non-proxy in v1, which keeps the trust story easy to explain and avoids introducing proxy-admin or upgrade-rollback complexity too early.
 - The project does not currently claim a light-client verifier or a trustless Ethereum proof system.
+- The project does not currently claim proxy-based upgradeability for the Ethereum verifier/gateway path.
 
 ## What is real today
 
@@ -83,3 +86,9 @@ The next realism steps are:
 - The bridge keeper now tracks versioned signer sets with activation and expiry, so attestation trust assumptions are explicit and queryable.
 - The limits module now persists rolling-window usage, so rate limiting reflects cumulative bridge activity instead of a single-transfer ceiling.
 - Demo-facing status summaries now expose failed claims and destination swap failures instead of only happy-path counts.
+
+## Upgradeability stance
+
+For v1, AegisLink keeps the Ethereum verifier/gateway path non-proxy on purpose. That makes the system easier to audit, easier to describe in interviews and reviews, and less dependent on upgrade authorities or storage-layout compatibility rules.
+
+If the project ever adopts proxy-based upgradeability in a later version, the tradeoff would be explicit: more operational flexibility in exchange for more trust assumptions, more governance/process overhead, and more room for implementation drift. That is a valid future design space, but it is not part of the v1 positioning.

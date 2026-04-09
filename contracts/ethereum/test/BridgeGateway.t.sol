@@ -20,6 +20,12 @@ interface Vm {
 
 contract BridgeGatewayTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 private constant BRIDGE_ATTESTATION_TYPEHASH =
+        keccak256("BridgeAttestation(bytes32 messageId,bytes32 payloadHash,uint64 expiry)");
+    uint256 private constant SECP256K1N =
+        0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
 
     BridgeGateway private gateway;
     BridgeVerifier private verifier;
@@ -181,6 +187,49 @@ contract BridgeGatewayTest {
 
         vm.expectRevert(BridgeVerifier.InvalidAttestation.selector);
         gateway.release(address(token), payable(address(0xCA11)), amount, messageId, expiry, attestation);
+    }
+
+    function testReleaseTypedDataDigestMatchesEIP712Formula() public view {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        bytes32 messageId = _releaseMessageId(7, amount, expiry);
+        bytes32 payloadHash = gateway.releasePayloadHash(address(token), address(0xCA11), amount, messageId, expiry);
+        bytes32 helperDigest = verifier.attestationDigest(messageId, payloadHash, expiry);
+        bytes32 manualDigest = _bridgeVerifierTypedDigestManually(address(verifier), messageId, payloadHash, expiry);
+
+        if (helperDigest != manualDigest) {
+            revert("typed digest mismatch");
+        }
+    }
+
+    function testReleaseRejectsNonLowSSignature() public {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        bytes32 messageId = _releaseMessageId(8, amount, expiry);
+        bytes memory attestation = _malleateToHighS(_attestation(messageId, amount, expiry, attesterKey));
+
+        vm.expectRevert(BridgeVerifier.InvalidAttestation.selector);
+        gateway.release(address(token), payable(address(0xCA11)), amount, messageId, expiry, attestation);
+    }
+
+    function testReleaseRejectsReentrantTokenCallback() public {
+        MockVerifier mockVerifier = new MockVerifier();
+        BridgeGateway guardedGateway = new BridgeGateway(address(mockVerifier));
+        ReentrantReleaseToken reentrantToken = new ReentrantReleaseToken();
+        guardedGateway.setSupportedAsset(address(reentrantToken), "eth.reentrant", true);
+        reentrantToken.mint(address(guardedGateway), 100);
+
+        reentrantToken.armReentrancy(
+            guardedGateway,
+            bytes32(uint256(2)),
+            address(this),
+            1,
+            uint64(block.timestamp + 1 days),
+            hex"beef"
+        );
+
+        vm.expectRevert(BridgeGateway.ReentrantRelease.selector);
+        guardedGateway.release(address(reentrantToken), payable(address(0xCA11)), 10, bytes32(uint256(1)), uint64(block.timestamp + 1 days), hex"cafe");
     }
 
     function testReleaseRejectsZeroRecipient() public {
@@ -361,7 +410,7 @@ contract BridgeGatewayTest {
     {
         bytes32 payloadHash =
             _releasePayloadHashForAsset(address(gateway), asset, messageId, address(uint160(0xCA11)), amount, expiry);
-        bytes32 digest = keccak256(abi.encode(messageId, payloadHash, expiry));
+        bytes32 digest = verifier.attestationDigest(messageId, payloadHash, expiry);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -371,9 +420,45 @@ contract BridgeGatewayTest {
         returns (bytes memory)
     {
         bytes32 payloadHash = _releasePayloadHash(messageId, address(token), address(uint160(0xCA11)), amount, expiry);
-        bytes32 digest = keccak256(abi.encode(messageId, payloadHash, expiry));
+        bytes32 digest = verifier.attestationDigest(messageId, payloadHash, expiry);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
+    }
+
+    function _bridgeVerifierTypedDigestManually(
+        address verifierAddress,
+        bytes32 messageId,
+        bytes32 payloadHash,
+        uint64 expiry
+    ) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes("AegisLink Bridge Verifier")),
+                keccak256(bytes("1")),
+                block.chainid,
+                verifierAddress
+            )
+        );
+        bytes32 structHash = keccak256(abi.encode(BRIDGE_ATTESTATION_TYPEHASH, messageId, payloadHash, expiry));
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    }
+
+    function _malleateToHighS(bytes memory signature) internal pure returns (bytes memory mutated) {
+        if (signature.length != 65) revert("bad signature length");
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+
+        uint256 highS = SECP256K1N - uint256(s);
+        uint8 flippedV = v == 27 ? 28 : 27;
+        mutated = abi.encodePacked(r, bytes32(highS), flippedV);
     }
 }
 
@@ -487,5 +572,57 @@ contract FeeOnTransferToken {
         uint256 received = amount - fee;
         balanceOf[from] -= amount;
         balanceOf[to] += received;
+    }
+}
+
+contract ReentrantReleaseToken {
+    BridgeGateway private targetGateway;
+    bytes32 private targetMessageId;
+    address private targetRecipient;
+    uint256 private targetAmount;
+    uint64 private targetExpiry;
+    bytes private targetProof;
+    bool private reentrancyArmed;
+
+    mapping(address => uint256) public balanceOf;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function armReentrancy(
+        BridgeGateway gateway_,
+        bytes32 messageId_,
+        address recipient_,
+        uint256 amount_,
+        uint64 expiry_,
+        bytes memory proof_
+    ) external {
+        targetGateway = gateway_;
+        targetMessageId = messageId_;
+        targetRecipient = recipient_;
+        targetAmount = amount_;
+        targetExpiry = expiry_;
+        targetProof = proof_;
+        reentrancyArmed = true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        if (reentrancyArmed) {
+            reentrancyArmed = false;
+            targetGateway.release(address(this), targetRecipient, targetAmount, targetMessageId, targetExpiry, targetProof);
+        }
+        _transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        revert("unused");
+    }
+
+    function _transfer(address from, address to, uint256 amount) internal {
+        require(balanceOf[from] >= amount, "balance");
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
     }
 }

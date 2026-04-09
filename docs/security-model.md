@@ -9,6 +9,8 @@ AegisLink v1 is a `verifiable-relayer bridge with threshold attestations`.
 That means:
 
 - Ethereum is the source of canonical deposit and withdrawal events
+- the Ethereum verifier/gateway path is intentionally immutable and non-proxy in v1, so the first release keeps the trust surface simple and avoids upgrade-admin complexity
+- Ethereum attestation verification now uses typed-data-style digests with low-`s` signature enforcement, and the gateway release path rejects reentrant token callbacks
 - relayers provide evidence, not absolute truth
 - the bridge zone enforces replay protection, rolling-window rate limits, asset policy, and pause controls
 - the system depends on the configured attester threshold and active signer set being honest and available
@@ -36,6 +38,7 @@ Do not claim:
 - permissionless support for arbitrary tokens
 - censorship resistance against a compromised attester majority
 - instant Ethereum finality
+- proxy-based contract upgradeability in v1
 
 ## Main control surfaces
 
@@ -76,3 +79,9 @@ Before any external testnet or public review, the team should be able to answer:
 - [Observability plan](observability.md)
 - [Pause and recovery runbook](runbooks/pause-and-recovery.md)
 - [Upgrade and rollback runbook](runbooks/upgrade-and-rollback.md)
+
+## Upgradeability stance
+
+v1 keeps the Ethereum verifier/gateway path non-proxy on purpose. That choice makes the release easier to reason about, keeps the on-chain trust model explicit, and avoids introducing upgrade-admin or proxy-brick risk before the system has a stronger operational track record.
+
+If a future version ever adopts proxy-based upgradeability, it would change the trust and engineering model in concrete ways: the team would need upgrade authority, storage-layout compatibility rules, initializer/versioning discipline, and a clearer process for deciding when implementation changes are safe. That tradeoff can be reasonable later, but it belongs to a future version rather than v1.

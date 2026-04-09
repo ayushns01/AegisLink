@@ -117,7 +117,7 @@ contract BridgeGatewayInvariantTest {
         returns (bytes memory)
     {
         bytes32 payloadHash = _releasePayloadHash(messageId, amount, expiry);
-        bytes32 digest = keccak256(abi.encode(messageId, payloadHash, expiry));
+        bytes32 digest = verifier.attestationDigest(messageId, payloadHash, expiry);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }

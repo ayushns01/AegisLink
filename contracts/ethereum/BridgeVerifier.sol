@@ -4,6 +4,15 @@ pragma solidity ^0.8.28;
 import "./IBridgeVerifier.sol";
 
 contract BridgeVerifier is IBridgeVerifier {
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 private constant BRIDGE_ATTESTATION_TYPEHASH =
+        keccak256("BridgeAttestation(bytes32 messageId,bytes32 payloadHash,uint64 expiry)");
+    bytes32 private constant NAME_HASH = keccak256("AegisLink Bridge Verifier");
+    bytes32 private constant VERSION_HASH = keccak256("1");
+    uint256 private constant SECP256K1_HALF_N =
+        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
+
     error InvalidAttestation();
     error AttestationExpired();
     error ProofAlreadyUsed();
@@ -58,7 +67,7 @@ contract BridgeVerifier is IBridgeVerifier {
         if (block.timestamp > expiry) revert AttestationExpired();
         if (usedProofs[messageId]) revert ProofAlreadyUsed();
 
-        bytes32 digest = keccak256(abi.encode(messageId, payloadHash, expiry));
+        bytes32 digest = attestationDigest(messageId, payloadHash, expiry);
         signer = _recover(digest, signature);
         if (signer != attester) revert InvalidAttestation();
 
@@ -67,6 +76,17 @@ contract BridgeVerifier is IBridgeVerifier {
 
     function activeSignerSetVersion() external pure override returns (uint64) {
         return 1;
+    }
+
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(EIP712_DOMAIN_TYPEHASH, NAME_HASH, VERSION_HASH, block.chainid, address(this))
+        );
+    }
+
+    function attestationDigest(bytes32 messageId, bytes32 payloadHash, uint64 expiry) public view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(BRIDGE_ATTESTATION_TYPEHASH, messageId, payloadHash, expiry));
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
     }
 
     function _recover(bytes32 digest, bytes calldata signature) internal pure returns (address signer) {
@@ -85,6 +105,7 @@ contract BridgeVerifier is IBridgeVerifier {
             v += 27;
         }
         if (v != 27 && v != 28) revert InvalidAttestation();
+        if (uint256(s) > SECP256K1_HALF_N) revert InvalidAttestation();
 
         signer = ecrecover(digest, v, r, s);
         if (signer == address(0)) revert InvalidAttestation();

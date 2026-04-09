@@ -18,6 +18,7 @@ This repository is meant to show:
 
 - Ethereum deposit observation and release execution run through the live local Anvil path.
 - Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
+- Ethereum verifiers now build EIP-712-style attestation digests, reject non-low-`s` signatures, and the gateway release path is guarded against reentrant token callbacks.
 - AegisLink owns bridge, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, and `query status`.
 - AegisLink now also has a daemon-style single-node block loop shim in `aegislinkd start --daemon` that advances height automatically and drains queued deposit submissions through the application boundary.
 - AegisLink bridge attestations now bind to an explicit signer-set version, carry cryptographic signer proofs, and the bridge keeper can activate, expire, and reject mismatched or invalid signer sets.
@@ -189,6 +190,8 @@ As of April 9, 2026:
 - Phase C of the gap-remediation plan is now complete for the current repo scope: chain state is persisted as prefix-keyed SDK-store records instead of whole-module JSON blobs, disk-backed runtime reloads are covered, and the app exposes a serialized runtime boundary with race-smoke coverage
 - Phase D of the gap-remediation plan is now complete for the current repo scope: bridge and route relayers can run as loop-based daemons with graceful shutdown and temporary-failure backoff, and the repo now has focused Foundry invariant coverage plus Go fuzz coverage for bridge supply and route-refund safety
 - Phase E of the gap-remediation plan is now complete for the current repo scope: AegisLink has a daemon-style single-node block loop with queued deposit delivery through the app boundary, and the dual-runtime route path now uses Hermes-shaped local packet relay and acknowledgement verbs plus explicit `ibc-link.json` metadata in both runtime homes
+- Phase F of the gap-remediation plan is now complete for the current repo scope: the Ethereum verifier path now uses typed-data-style digests, rejects non-low-`s` signatures, the gateway release flow is reentrancy-guarded, and the v1 upgradeability stance is documented explicitly as immutable or non-proxy by design
+- the gap-remediation plan is now complete for the current repo scope
 - Phase 1 of the fuller route-harness plan is complete
 - Phase 3 runtime and operator surfaces now include structured startup and run logs plus clearer runtime validation
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters

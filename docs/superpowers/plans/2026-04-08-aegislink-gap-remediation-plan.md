@@ -585,6 +585,12 @@ git commit -m "feat: route assets over real local IBC"
 
 ## Phase F: Solidity Security Follow-through
 
+Status as of April 9, 2026:
+
+- Task F1 is complete for the current repo scope: the Ethereum verifier path now uses typed-data-style digests, both verifier contracts reject non-low-`s` signatures, and the gateway release path is guarded against reentrant token callbacks.
+- Task F2 is complete for the current repo scope: the repo now documents an explicit v1 stance that the Ethereum verifier or gateway path remains immutable and non-proxy, with proxy-based upgradeability deferred to a future version if ever adopted.
+- Phase F is complete for the current repo scope.
+
 ### Task F1: Add typed-data signing, stricter signature checks, and release hardening
 
 **Files:**
@@ -594,21 +600,21 @@ git commit -m "feat: route assets over real local IBC"
 - Modify: `contracts/ethereum/test/BridgeGateway.t.sol`
 - Modify: `contracts/ethereum/test/ThresholdBridgeVerifier.t.sol`
 
-- [ ] **Step 1: Write failing Solidity hardening tests**
+- [x] **Step 1: Write failing Solidity hardening tests**
 
 Cover:
 - low-s signatures only
 - EIP-712 typed digest compatibility
 - reentrancy attempt on release path is blocked
 
-- [ ] **Step 2: Run focused Foundry tests**
+- [x] **Step 2: Run focused Foundry tests**
 
 Run: `cd contracts/ethereum && forge test --match-test 'test.*(Typed|LowS|Reentrant)'`
 Expected: FAIL because those checks are not fully enforced today.
 
-- [ ] **Step 3: Implement minimal contract hardening**
+- [x] **Step 3: Implement minimal contract hardening**
 
-- [ ] **Step 4: Re-run Foundry tests**
+- [x] **Step 4: Re-run Foundry tests**
 
 Run: `cd contracts/ethereum && forge test --offline`
 Expected: PASS
@@ -627,7 +633,7 @@ git commit -m "feat: harden ethereum verifier and release flow"
 - Modify: `docs/project-positioning.md`
 - Optional modify: `contracts/ethereum/` if upgradeability is actually adopted
 
-- [ ] **Step 1: Write the decision note**
+- [x] **Step 1: Write the decision note**
 
 Document:
 - why immutable verifier binding is acceptable or not for v1

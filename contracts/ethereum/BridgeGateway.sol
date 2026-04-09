@@ -22,6 +22,7 @@ contract BridgeGateway {
     error NonCanonicalToken(address asset);
     error InvalidVerifier();
     error TransferFailed();
+    error ReentrantRelease();
 
     struct AssetConfig {
         string assetId;
@@ -32,6 +33,7 @@ contract BridgeGateway {
     IBridgeVerifier public immutable verifier;
     bool public paused;
     uint256 public nextNonce = 1;
+    bool private releaseEntered;
 
     mapping(address => AssetConfig) private supportedAssets;
 
@@ -113,6 +115,13 @@ contract BridgeGateway {
         emit DepositInitiated(depositId, messageId, nonce, asset, config.assetId, amount, recipient, expiry);
     }
 
+    modifier nonReentrantRelease() {
+        if (releaseEntered) revert ReentrantRelease();
+        releaseEntered = true;
+        _;
+        releaseEntered = false;
+    }
+
     function release(
         address asset,
         address recipient,
@@ -120,7 +129,7 @@ contract BridgeGateway {
         bytes32 messageId,
         uint64 expiry,
         bytes calldata signature
-    ) external whenNotPaused returns (bytes32 releaseId) {
+    ) external whenNotPaused nonReentrantRelease returns (bytes32 releaseId) {
         if (!supportedAssets[asset].supported) revert UnsupportedAsset(asset);
         if (amount == 0) revert InvalidAmount();
         if (recipient == address(0)) revert InvalidRecipient();

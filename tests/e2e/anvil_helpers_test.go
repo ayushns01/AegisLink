@@ -342,7 +342,16 @@ func mustParseHexUint64(t *testing.T, value string) uint64 {
 	return parsed.Uint64()
 }
 
-func signWithdrawalReleaseAttestation(t *testing.T, gateway, asset, recipient string, amount *big.Int, messageID string, expiry uint64) []byte {
+func signWithdrawalReleaseAttestation(
+	t *testing.T,
+	verifier,
+	gateway,
+	asset,
+	recipient string,
+	amount *big.Int,
+	messageID string,
+	expiry uint64,
+) []byte {
 	t.Helper()
 
 	payloadInput := castAbiEncode(
@@ -357,9 +366,34 @@ func signWithdrawalReleaseAttestation(t *testing.T, gateway, asset, recipient st
 		fmt.Sprintf("%d", expiry),
 	)
 	payloadHash := castKeccak(t, payloadInput)
-	digestInput := castAbiEncode(t, "f(bytes32,bytes32,uint64)", messageID, payloadHash, fmt.Sprintf("%d", expiry))
-	digest := castKeccak(t, digestInput)
+	digest := bridgeVerifierTypedDigest(t, verifier, messageID, payloadHash, expiry)
 	return castWalletSignHash(t, anvilFirstAccountPrivateKey, digest)
+}
+
+func bridgeVerifierTypedDigest(t *testing.T, verifier, messageID, payloadHash string, expiry uint64) string {
+	t.Helper()
+
+	domainTypeHash := castKeccak(t, "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
+	nameHash := castKeccak(t, "AegisLink Bridge Verifier")
+	versionHash := castKeccak(t, "1")
+	domainInput := castAbiEncode(
+		t,
+		"f(bytes32,bytes32,bytes32,uint256,address)",
+		domainTypeHash,
+		nameHash,
+		versionHash,
+		"11155111",
+		verifier,
+	)
+	domainSeparator := castKeccak(t, domainInput)
+
+	typeHash := castKeccak(t, "BridgeAttestation(bytes32 messageId,bytes32 payloadHash,uint64 expiry)")
+	structInput := castAbiEncode(t, "f(bytes32,bytes32,bytes32,uint64)", typeHash, messageID, payloadHash, fmt.Sprintf("%d", expiry))
+	structHash := castKeccak(t, structInput)
+	return castKeccak(
+		t,
+		"0x1901"+strings.TrimPrefix(domainSeparator, "0x")+strings.TrimPrefix(structHash, "0x"),
+	)
 }
 
 func predictWithdrawalMessageID(height, nonce uint64, assetID, recipient string, amount *big.Int) string {

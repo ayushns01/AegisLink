@@ -4,6 +4,15 @@ pragma solidity ^0.8.28;
 import "./IBridgeVerifier.sol";
 
 contract ThresholdBridgeVerifier is IBridgeVerifier {
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 private constant THRESHOLD_ATTESTATION_TYPEHASH =
+        keccak256("ThresholdBridgeAttestation(bytes32 messageId,bytes32 payloadHash,uint64 expiry,uint64 signerSetVersion)");
+    bytes32 private constant NAME_HASH = keccak256("AegisLink Threshold Bridge Verifier");
+    bytes32 private constant VERSION_HASH = keccak256("1");
+    uint256 private constant SECP256K1_HALF_N =
+        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
+
     error InvalidAttestation();
     error AttestationExpired();
     error ProofAlreadyUsed();
@@ -70,7 +79,7 @@ contract ThresholdBridgeVerifier is IBridgeVerifier {
         uint32 threshold = signerSetThresholds[signerSetVersion];
         if (threshold == 0) revert InvalidSignerSetVersion();
 
-        bytes32 digest = keccak256(abi.encode(messageId, payloadHash, expiry, signerSetVersion));
+        bytes32 digest = attestationDigest(messageId, payloadHash, expiry, signerSetVersion);
         address[] memory recoveredSigners = new address[](signatures.length);
 
         uint256 uniqueSigners;
@@ -99,6 +108,23 @@ contract ThresholdBridgeVerifier is IBridgeVerifier {
 
     function isSignerInSet(uint64 version, address signer) external view returns (bool) {
         return signerSetMembers[version][signer];
+    }
+
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(EIP712_DOMAIN_TYPEHASH, NAME_HASH, VERSION_HASH, block.chainid, address(this))
+        );
+    }
+
+    function attestationDigest(bytes32 messageId, bytes32 payloadHash, uint64 expiry, uint64 signerSetVersion)
+        public
+        view
+        returns (bytes32)
+    {
+        bytes32 structHash = keccak256(
+            abi.encode(THRESHOLD_ATTESTATION_TYPEHASH, messageId, payloadHash, expiry, signerSetVersion)
+        );
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
     }
 
     function _storeSignerSet(uint64 version, address[] memory signers_, uint32 threshold_) internal {
@@ -132,6 +158,7 @@ contract ThresholdBridgeVerifier is IBridgeVerifier {
             v += 27;
         }
         if (v != 27 && v != 28) revert InvalidAttestation();
+        if (uint256(s) > SECP256K1_HALF_N) revert InvalidAttestation();
 
         signer = ecrecover(digest, v, r, s);
         if (signer == address(0)) revert InvalidAttestation();

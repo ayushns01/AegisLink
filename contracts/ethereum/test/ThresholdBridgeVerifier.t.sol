@@ -16,6 +16,12 @@ interface Vm {
 
 contract ThresholdBridgeVerifierTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 private constant THRESHOLD_ATTESTATION_TYPEHASH =
+        keccak256("ThresholdBridgeAttestation(bytes32 messageId,bytes32 payloadHash,uint64 expiry,uint64 signerSetVersion)");
+    uint256 private constant SECP256K1N =
+        0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
 
     ThresholdBridgeVerifier private verifier;
     BridgeGateway private gateway;
@@ -112,6 +118,37 @@ contract ThresholdBridgeVerifierTest {
         gateway.release(address(token), recipient, amount, newMessageId, expiry, newProof);
     }
 
+    function testThresholdTypedDataDigestMatchesEIP712Formula() public view {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        address recipient = address(0xCA11);
+        bytes32 messageId = _releaseMessageId(address(gateway), address(token), recipient, 6, amount, expiry);
+        uint64 signerSetVersion = verifier.activeSignerSetVersion();
+        bytes32 payloadHash = gateway.releasePayloadHash(address(token), recipient, amount, messageId, expiry);
+        bytes32 helperDigest = verifier.attestationDigest(messageId, payloadHash, expiry, signerSetVersion);
+        bytes32 manualDigest =
+            _thresholdVerifierTypedDigestManually(address(verifier), messageId, payloadHash, expiry, signerSetVersion);
+
+        if (helperDigest != manualDigest) {
+            revert("threshold typed digest mismatch");
+        }
+    }
+
+    function testThresholdReleaseRejectsNonLowSSignature() public {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        address recipient = address(0xCA11);
+        bytes32 messageId = _releaseMessageId(address(gateway), address(token), recipient, 7, amount, expiry);
+
+        uint256[] memory keys = _firstThresholdKeys();
+        bytes memory proof = _proof(messageId, recipient, amount, expiry, keys);
+        (uint64 signerSetVersion, bytes[] memory signatures) = abi.decode(proof, (uint64, bytes[]));
+        signatures[0] = _malleateToHighS(signatures[0]);
+
+        vm.expectRevert(ThresholdBridgeVerifier.InvalidAttestation.selector);
+        gateway.release(address(token), recipient, amount, messageId, expiry, abi.encode(signerSetVersion, signatures));
+    }
+
     function _proof(bytes32 messageId, address recipient, uint256 amount, uint64 expiry, uint256[] memory signerKeys)
         internal
         returns (bytes memory)
@@ -127,13 +164,11 @@ contract ThresholdBridgeVerifierTest {
         uint64 signerSetVersion,
         uint256[] memory signerKeys
     ) internal returns (bytes memory) {
-        bytes32 digest = keccak256(
-            abi.encode(
-                messageId,
-                gateway.releasePayloadHash(address(token), recipient, amount, messageId, expiry),
-                expiry,
-                signerSetVersion
-            )
+        bytes32 digest = verifier.attestationDigest(
+            messageId,
+            gateway.releasePayloadHash(address(token), recipient, amount, messageId, expiry),
+            expiry,
+            signerSetVersion
         );
 
         bytes[] memory signatures = new bytes[](signerKeys.length);
@@ -143,6 +178,45 @@ contract ThresholdBridgeVerifierTest {
         }
 
         return abi.encode(signerSetVersion, signatures);
+    }
+
+    function _thresholdVerifierTypedDigestManually(
+        address verifierAddress,
+        bytes32 messageId,
+        bytes32 payloadHash,
+        uint64 expiry,
+        uint64 signerSetVersion
+    ) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes("AegisLink Threshold Bridge Verifier")),
+                keccak256(bytes("1")),
+                block.chainid,
+                verifierAddress
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(THRESHOLD_ATTESTATION_TYPEHASH, messageId, payloadHash, expiry, signerSetVersion)
+        );
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    }
+
+    function _malleateToHighS(bytes memory signature) internal pure returns (bytes memory mutated) {
+        if (signature.length != 65) revert("bad signature length");
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+
+        uint256 highS = SECP256K1N - uint256(s);
+        uint8 flippedV = v == 27 ? 28 : 27;
+        mutated = abi.encodePacked(r, bytes32(highS), flippedV);
     }
 
     function _releaseMessageId(

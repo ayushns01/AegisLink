@@ -297,7 +297,16 @@ func TestFullLiveBridgeLoopReleasesBackToEthereum(t *testing.T) {
 
 	recipient := rpcAccounts(t, anvil.rpcURL)[2]
 	expectedMessageID := predictWithdrawalMessageID(60, 1, claim.AssetID, recipient, claim.Amount)
-	signature := signWithdrawalReleaseAttestation(t, contracts.Gateway, contracts.Token, recipient, claim.Amount, expectedMessageID, 10000000000)
+	signature := signWithdrawalReleaseAttestation(
+		t,
+		contracts.Verifier,
+		contracts.Gateway,
+		contracts.Token,
+		recipient,
+		claim.Amount,
+		expectedMessageID,
+		10000000000,
+	)
 
 	app.SetCurrentHeight(60)
 	withdrawal, err := app.BridgeKeeper.ExecuteWithdrawal(claim.AssetID, claim.Amount, recipient, 10000000000, signature)
