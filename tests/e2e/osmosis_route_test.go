@@ -607,7 +607,7 @@ func TestRouteRelayerMarksTransferFailedWhenRouteActionIsUnsupported(t *testing.
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1badmemo", 140, "stake:uosmo")
+	transfer, err := app.IBCRouterKeeper.InitiateTransfer("eth.usdc", mustBigAmount(t, "25000000"), "osmo1badmemo", 140, "farm:uosmo")
 	if err != nil {
 		t.Fatalf("initiate transfer: %v", err)
 	}
