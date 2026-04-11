@@ -733,6 +733,7 @@ func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 
 	runtimeFlags := addRuntimeFlags(flags)
 	submissionFile := flags.String("submission-file", "", "path to claim+attestation json")
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "submit to a running demo node via its ready-state file")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -740,15 +741,26 @@ func txSubmitDepositClaim(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing submission file")
 	}
 
+	claim, attestation, err := loadSubmission(*submissionFile)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		result, err := networked.SubmitDepositClaim(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		}, claim, attestation)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, bridgecli.SubmitDepositClaimResponse(result))
+	}
+
 	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
 	defer closeApp(a)
-	claim, attestation, err := loadSubmission(*submissionFile)
-	if err != nil {
-		return err
-	}
 	service := app.NewBridgeTxService(a)
 	result, err := service.SubmitDepositClaim(claim, attestation)
 	if err != nil {
@@ -766,6 +778,7 @@ func txQueueDepositClaim(args []string, stdout io.Writer) error {
 
 	runtimeFlags := addRuntimeFlags(flags)
 	submissionFile := flags.String("submission-file", "", "path to claim+attestation json")
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "submit to a running demo node via its ready-state file")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -773,15 +786,26 @@ func txQueueDepositClaim(args []string, stdout io.Writer) error {
 		return fmt.Errorf("missing submission file")
 	}
 
+	claim, attestation, err := loadSubmission(*submissionFile)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		result, err := networked.SubmitQueueDepositClaim(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		}, claim, attestation)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, result)
+	}
+
 	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
 		return err
 	}
 	defer closeApp(a)
-	claim, attestation, err := loadSubmission(*submissionFile)
-	if err != nil {
-		return err
-	}
 	service := app.NewBridgeTxService(a)
 	if err := service.QueueDepositClaim(claim, attestation); err != nil {
 		return err
@@ -866,6 +890,7 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 	flags.SetOutput(io.Discard)
 
 	runtimeFlags := addRuntimeFlags(flags)
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "submit to a running demo node via its ready-state file")
 	routeID := flags.String("route-id", "", "route profile identifier")
 	assetID := flags.String("asset-id", "", "asset identifier to route")
 	amountRaw := flags.String("amount", "", "transfer amount")
@@ -891,6 +916,23 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 	amount, err := parseBase10Amount(*amountRaw)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		transfer, err := networked.SubmitInitiateIBCTransfer(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		}, networked.InitiateIBCTransferPayload{
+			RouteID:       *routeID,
+			AssetID:       *assetID,
+			Amount:        amount.String(),
+			Receiver:      *receiver,
+			TimeoutHeight: *timeoutHeight,
+			Memo:          *memo,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, transfer)
 	}
 	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {

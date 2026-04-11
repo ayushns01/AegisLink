@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 
@@ -98,6 +99,31 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 			Height: height,
 			Value:  encoded,
 		}, nil
+	case "/claim":
+		messageID := strings.TrimSpace(string(req.Data))
+		if messageID == "" {
+			return &abcitypes.ResponseQuery{
+				Code:   1,
+				Log:    "missing claim query message id",
+				Height: height,
+			}, nil
+		}
+		record, ok := aegisapp.NewBridgeQueryService(a.app).GetClaim(messageID)
+		if !ok {
+			return &abcitypes.ResponseQuery{
+				Code:   1,
+				Log:    "claim not found",
+				Height: height,
+			}, nil
+		}
+		encoded, err := json.Marshal(record)
+		if err != nil {
+			return nil, err
+		}
+		return &abcitypes.ResponseQuery{
+			Height: height,
+			Value:  encoded,
+		}, nil
 	default:
 		return &abcitypes.ResponseQuery{
 			Code:   1,
@@ -107,9 +133,32 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 	}
 }
 
+func (a *ABCIApplication) CheckTx(_ context.Context, req *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
+	if _, err := decodeDemoNodeTx(req.Tx); err != nil {
+		return &abcitypes.ResponseCheckTx{
+			Code: 1,
+			Log:  err.Error(),
+		}, nil
+	}
+	return &abcitypes.ResponseCheckTx{Code: 0}, nil
+}
+
 func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	targetHeight := uint64(req.Height)
 	current := a.app.Status().CurrentHeight
+
+	txResults := make([]*abcitypes.ExecTxResult, 0, len(req.Txs))
+	for _, tx := range req.Txs {
+		result, err := a.applyDemoNodeTx(tx)
+		if err != nil {
+			txResults = append(txResults, &abcitypes.ExecTxResult{
+				Code: 1,
+				Log:  err.Error(),
+			})
+			continue
+		}
+		txResults = append(txResults, result)
+	}
 
 	switch {
 	case targetHeight == 0:
@@ -126,11 +175,6 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 		return nil, err
 	}
 	a.appHash = hash
-
-	txResults := make([]*abcitypes.ExecTxResult, 0, len(req.Txs))
-	for range req.Txs {
-		txResults = append(txResults, &abcitypes.ExecTxResult{Code: 0})
-	}
 
 	return &abcitypes.ResponseFinalizeBlock{
 		AppHash:   append([]byte(nil), hash...),
@@ -154,6 +198,59 @@ func hashABCIStatus(status aegisapp.Status) ([]byte, error) {
 	}
 	sum := sha256.Sum256(encoded)
 	return sum[:], nil
+}
+
+func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResult, error) {
+	tx, err := decodeDemoNodeTx(txBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	var result any
+	switch tx.Type {
+	case "queue_deposit_claim":
+		claim, attestation, err := depositClaimAndAttestationFromPayload(*tx.QueueDepositClaim)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.app.QueueDepositClaim(claim, attestation); err != nil {
+			return nil, err
+		}
+		result = map[string]any{
+			"status":     "queued",
+			"message_id": claim.Identity.MessageID,
+			"asset_id":   claim.AssetID,
+			"amount":     claim.Amount.String(),
+		}
+	case "initiate_ibc_transfer":
+		payload, amount, err := decodeInitiateIBCTransferPayload(*tx.InitiateIBCTransfer)
+		if err != nil {
+			return nil, err
+		}
+		transfer, err := a.applyIBCTransferPayload(payload, amount)
+		if err != nil {
+			return nil, err
+		}
+		result = transferJSONResponse(transfer)
+	default:
+		return nil, fmt.Errorf("unsupported demo node tx type %q", tx.Type)
+	}
+
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	return &abcitypes.ExecTxResult{
+		Code: 0,
+		Data: encoded,
+	}, nil
+}
+
+func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPayload, amount *big.Int) (ibcrouterkeeper.TransferRecord, error) {
+	if strings.TrimSpace(payload.RouteID) != "" {
+		return a.app.InitiateIBCTransferWithProfile(payload.RouteID, payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
+	}
+	return a.app.InitiateIBCTransfer(payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
 }
 
 func transferViewsFromRecords(transfers []ibcrouterkeeper.TransferRecord) []TransferView {

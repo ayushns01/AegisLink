@@ -663,6 +663,7 @@ func TestRunDemoNodeQueuesDepositClaimOverHTTPAndAppliesItOnTick(t *testing.T) {
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
 	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "10")
 	defer stopDemoNodeProcess(t, cmd, logs)
+	_ = mustReadReadyRPCAddress(t, readyPath)
 
 	var ready struct {
 		RPCAddress string `json:"rpc_address"`
@@ -766,6 +767,7 @@ func TestRunDemoNodeInitiatesIBCTransferOverHTTPAndListsTransfers(t *testing.T) 
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
 	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "0")
 	defer stopDemoNodeProcess(t, cmd, logs)
+	_ = mustReadReadyRPCAddress(t, readyPath)
 
 	var ready struct {
 		RPCAddress string `json:"rpc_address"`
@@ -1987,6 +1989,19 @@ func waitForReadyFile(t *testing.T, path string, target any) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for ready file %s", path)
+}
+
+func mustReadReadyRPCAddress(t *testing.T, path string) string {
+	t.Helper()
+
+	var ready struct {
+		RPCAddress string `json:"rpc_address"`
+	}
+	waitForReadyFile(t, path, &ready)
+	if ready.RPCAddress == "" {
+		t.Fatalf("expected rpc address in ready file %s", path)
+	}
+	return ready.RPCAddress
 }
 
 func waitForHTTPJSON(t *testing.T, endpoint string, target any, satisfied func() bool) {

@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
+	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 )
 
 type TransferView struct {
@@ -28,29 +27,31 @@ type TransferView struct {
 }
 
 func QueryBalances(ctx context.Context, cfg Config, address string) ([]bankkeeper.BalanceRecord, error) {
-	ready, err := readReadyState(cfg)
-	if err != nil {
-		return nil, err
-	}
-
 	var balances []bankkeeper.BalanceRecord
-	if err := getJSON(ctx, "http://"+ready.RPCAddress+"/balances?address="+url.QueryEscape(strings.TrimSpace(address)), &balances); err != nil {
+	if err := abciQueryJSON(ctx, cfg, "/balances", []byte(strings.TrimSpace(address)), &balances); err != nil {
 		return nil, err
 	}
 	return balances, nil
 }
 
 func QueryTransfers(ctx context.Context, cfg Config) ([]TransferView, error) {
-	ready, err := readReadyState(cfg)
-	if err != nil {
-		return nil, err
-	}
-
 	var transfers []TransferView
-	if err := getJSON(ctx, "http://"+ready.RPCAddress+"/transfers", &transfers); err != nil {
+	if err := abciQueryJSON(ctx, cfg, "/transfers", nil, &transfers); err != nil {
 		return nil, err
 	}
 	return transfers, nil
+}
+
+func QueryClaim(ctx context.Context, cfg Config, messageID string) (bridgekeeper.ClaimRecordSnapshot, bool, error) {
+	var claim bridgekeeper.ClaimRecordSnapshot
+	err := abciQueryJSON(ctx, cfg, "/claim", []byte(strings.TrimSpace(messageID)), &claim)
+	if err != nil {
+		if strings.Contains(err.Error(), "claim not found") {
+			return bridgekeeper.ClaimRecordSnapshot{}, false, nil
+		}
+		return bridgekeeper.ClaimRecordSnapshot{}, false, err
+	}
+	return claim, true, nil
 }
 
 func readReadyState(cfg Config) (ReadyState, error) {
@@ -69,21 +70,24 @@ func readReadyState(cfg Config) (ReadyState, error) {
 	return ready, nil
 }
 
-func getJSON(ctx context.Context, endpoint string, target any) error {
-	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
+func abciQueryJSON(ctx context.Context, cfg Config, path string, data []byte, target any) error {
+	ready, err := readReadyState(cfg)
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client, err := rpchttp.New("http://"+strings.TrimSpace(ready.CometRPCAddress), "/websocket")
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status %d from %s", resp.StatusCode, endpoint)
+	resp, err := client.ABCIQuery(ctx, path, data)
+	if err != nil {
+		return err
 	}
-	return json.NewDecoder(resp.Body).Decode(target)
+	if resp.Response.Code != 0 {
+		return fmt.Errorf("abci query %s failed: %s", path, resp.Response.Log)
+	}
+	if target == nil || len(resp.Response.Value) == 0 {
+		return nil
+	}
+	return json.Unmarshal(resp.Response.Value, target)
 }

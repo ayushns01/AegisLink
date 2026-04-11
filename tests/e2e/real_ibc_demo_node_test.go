@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
+	"github.com/ayushns01/aegislink/chain/aegislink/networked"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	abcicli "github.com/cometbft/cometbft/abci/client"
@@ -174,31 +173,28 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 	claim.DestinationChainID = "aegislink-public-testnet-1"
 	attestation := testAttestationForClaim(t, claim)
 
-	resp, err := http.Post(
-		"http://"+ready.RPCAddress+"/tx/queue-deposit-claim",
-		"application/json",
-		bytes.NewReader(marshalE2ESubmissionPayload(t, claim, attestation)),
-	)
+	queueResult, err := networked.SubmitQueueDepositClaim(context.Background(), networked.Config{
+		HomeDir:   homeDir,
+		ReadyFile: readyPath,
+	}, claim, attestation)
 	if err != nil {
-		t.Fatalf("post queued deposit claim: %v", err)
+		t.Fatalf("submit queued deposit claim over comet rpc: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected queued claim success, got %d body=%s", resp.StatusCode, string(body))
-	}
-
-	var queueResult struct {
+	var queued struct {
 		Status string `json:"status"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&queueResult); err != nil {
+	encodedQueued, err := json.Marshal(queueResult)
+	if err != nil {
+		t.Fatalf("marshal queue result: %v", err)
+	}
+	if err := json.Unmarshal(encodedQueued, &queued); err != nil {
 		t.Fatalf("decode queue response: %v", err)
 	}
-	if queueResult.Status != "queued" {
+	if queued.Status != "queued" {
 		t.Fatalf("expected queued response, got %+v", queueResult)
 	}
 
-	waitForDemoNodeBalances(t, ready.RPCAddress, recipient, "ueth", claim.Amount.String())
+	waitForDemoNodeBalances(t, homeDir, readyPath, recipient, "ueth", claim.Amount.String())
 
 	balanceOutput := runGoCommandWithLocalCache(
 		t,
@@ -226,37 +222,18 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 		t.Fatalf("unexpected demo-node balances output: %+v", balances)
 	}
 
-	transferPayload := map[string]any{
-		"asset_id":       "eth",
-		"amount":         claim.Amount.String(),
-		"receiver":       "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
-		"timeout_height": 120,
-		"memo":           "real-ibc-demo",
-	}
-	encoded, err := json.Marshal(transferPayload)
+	transfer, err := networked.SubmitInitiateIBCTransfer(context.Background(), networked.Config{
+		HomeDir:   homeDir,
+		ReadyFile: readyPath,
+	}, networked.InitiateIBCTransferPayload{
+		AssetID:       "eth",
+		Amount:        claim.Amount.String(),
+		Receiver:      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+		TimeoutHeight: 120,
+		Memo:          "real-ibc-demo",
+	})
 	if err != nil {
-		t.Fatalf("marshal transfer payload: %v", err)
-	}
-	transferResp, err := http.Post(
-		"http://"+ready.RPCAddress+"/tx/initiate-ibc-transfer",
-		"application/json",
-		bytes.NewReader(encoded),
-	)
-	if err != nil {
-		t.Fatalf("post initiate transfer: %v", err)
-	}
-	defer transferResp.Body.Close()
-	if transferResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(transferResp.Body)
-		t.Fatalf("expected initiate transfer success, got %d body=%s", transferResp.StatusCode, string(body))
-	}
-
-	var transfer struct {
-		TransferID string `json:"transfer_id"`
-		Status     string `json:"status"`
-	}
-	if err := json.NewDecoder(transferResp.Body).Decode(&transfer); err != nil {
-		t.Fatalf("decode transfer response: %v", err)
+		t.Fatalf("submit initiate transfer over comet rpc: %v", err)
 	}
 	if transfer.TransferID == "" || transfer.Status != "pending" {
 		t.Fatalf("unexpected transfer response: %+v", transfer)
@@ -397,87 +374,20 @@ func readReadyFileE2E(t *testing.T, path string) struct {
 	return ready
 }
 
-func waitForDemoNodeBalances(t *testing.T, rpcAddress, address, denom, amount string) {
+func waitForDemoNodeBalances(t *testing.T, homeDir, readyPath, address, denom, amount string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://" + rpcAddress + "/balances?address=" + address)
-		if err == nil {
-			var balances []struct {
-				Denom  string `json:"denom"`
-				Amount string `json:"amount"`
-			}
-			if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&balances) == nil {
-				_ = resp.Body.Close()
-				if len(balances) == 1 && balances[0].Denom == denom && balances[0].Amount == amount {
-					return
-				}
-			} else {
-				_ = resp.Body.Close()
-			}
+		balances, err := networked.QueryBalances(context.Background(), networked.Config{
+			HomeDir:   homeDir,
+			ReadyFile: readyPath,
+		}, address)
+		if err == nil && len(balances) == 1 && balances[0].Denom == denom && balances[0].Amount == amount {
+			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for balance %s %s at %s", denom, amount, address)
-}
-
-func marshalE2ESubmissionPayload(t *testing.T, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) []byte {
-	t.Helper()
-
-	payload := struct {
-		Claim struct {
-			Kind               string `json:"kind"`
-			SourceAssetKind    string `json:"source_asset_kind,omitempty"`
-			SourceChainID      string `json:"source_chain_id"`
-			SourceContract     string `json:"source_contract"`
-			SourceTxHash       string `json:"source_tx_hash"`
-			SourceLogIndex     uint64 `json:"source_log_index"`
-			Nonce              uint64 `json:"nonce"`
-			MessageID          string `json:"message_id"`
-			DestinationChainID string `json:"destination_chain_id"`
-			AssetID            string `json:"asset_id"`
-			Amount             string `json:"amount"`
-			Recipient          string `json:"recipient"`
-			Deadline           uint64 `json:"deadline"`
-		} `json:"claim"`
-		Attestation struct {
-			MessageID        string                         `json:"message_id"`
-			PayloadHash      string                         `json:"payload_hash"`
-			Signers          []string                       `json:"signers"`
-			Proofs           []bridgetypes.AttestationProof `json:"proofs"`
-			Threshold        uint32                         `json:"threshold"`
-			Expiry           uint64                         `json:"expiry"`
-			SignerSetVersion uint64                         `json:"signer_set_version"`
-		} `json:"attestation"`
-	}{}
-
-	payload.Claim.Kind = string(claim.Identity.Kind)
-	payload.Claim.SourceAssetKind = claim.Identity.SourceAssetKind
-	payload.Claim.SourceChainID = claim.Identity.SourceChainID
-	payload.Claim.SourceContract = claim.Identity.SourceContract
-	payload.Claim.SourceTxHash = claim.Identity.SourceTxHash
-	payload.Claim.SourceLogIndex = claim.Identity.SourceLogIndex
-	payload.Claim.Nonce = claim.Identity.Nonce
-	payload.Claim.MessageID = claim.Identity.MessageID
-	payload.Claim.DestinationChainID = claim.DestinationChainID
-	payload.Claim.AssetID = claim.AssetID
-	payload.Claim.Amount = claim.Amount.String()
-	payload.Claim.Recipient = claim.Recipient
-	payload.Claim.Deadline = claim.Deadline
-
-	payload.Attestation.MessageID = attestation.MessageID
-	payload.Attestation.PayloadHash = attestation.PayloadHash
-	payload.Attestation.Signers = append([]string(nil), attestation.Signers...)
-	payload.Attestation.Proofs = append([]bridgetypes.AttestationProof(nil), attestation.Proofs...)
-	payload.Attestation.Threshold = attestation.Threshold
-	payload.Attestation.Expiry = attestation.Expiry
-	payload.Attestation.SignerSetVersion = attestation.SignerSetVersion
-
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal e2e submission payload: %v", err)
-	}
-	return encoded
 }
 
 func initSDKDemoNodeHome(t *testing.T, homeDir string) aegisapp.Config {
