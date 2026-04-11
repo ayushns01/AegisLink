@@ -1002,6 +1002,7 @@ func txApplyRoutePolicyUpdateProposal(args []string, stdout io.Writer) error {
 type submissionFilePayload struct {
 	Claim struct {
 		Kind               string `json:"kind"`
+		SourceAssetKind    string `json:"source_asset_kind,omitempty"`
 		SourceChainID      string `json:"source_chain_id"`
 		SourceContract     string `json:"source_contract"`
 		SourceTxHash       string `json:"source_tx_hash"`
@@ -1042,13 +1043,14 @@ func loadSubmission(path string) (bridgetypes.DepositClaim, bridgetypes.Attestat
 
 	claim := bridgetypes.DepositClaim{
 		Identity: bridgetypes.ClaimIdentity{
-			Kind:           bridgetypes.ClaimKind(payload.Claim.Kind),
-			SourceChainID:  payload.Claim.SourceChainID,
-			SourceContract: payload.Claim.SourceContract,
-			SourceTxHash:   payload.Claim.SourceTxHash,
-			SourceLogIndex: payload.Claim.SourceLogIndex,
-			Nonce:          payload.Claim.Nonce,
-			MessageID:      payload.Claim.MessageID,
+			Kind:            bridgetypes.ClaimKind(payload.Claim.Kind),
+			SourceAssetKind: payload.Claim.SourceAssetKind,
+			SourceChainID:   payload.Claim.SourceChainID,
+			SourceContract:  payload.Claim.SourceContract,
+			SourceTxHash:    payload.Claim.SourceTxHash,
+			SourceLogIndex:  payload.Claim.SourceLogIndex,
+			Nonce:           payload.Claim.Nonce,
+			MessageID:       payload.Claim.MessageID,
 		},
 		DestinationChainID: payload.Claim.DestinationChainID,
 		AssetID:            payload.Claim.AssetID,

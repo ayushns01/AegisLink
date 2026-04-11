@@ -23,6 +23,7 @@ type Config struct {
 	EVMConfirmations            uint64
 	CosmosConfirmations         uint64
 	EVMRPCURL                   string
+	EVMVerifierAddress          string
 	EVMGatewayAddress           string
 	ReplayStorePath             string
 	EVMStatePath                string
@@ -49,6 +50,7 @@ func LoadFromEnv() Config {
 		EVMConfirmations:            uint64(getInt("AEGISLINK_RELAYER_EVM_CONFIRMATIONS", 2)),
 		CosmosConfirmations:         uint64(getInt("AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS", 1)),
 		EVMRPCURL:                   getString("AEGISLINK_RELAYER_EVM_RPC_URL", ""),
+		EVMVerifierAddress:          getString("AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS", ""),
 		EVMGatewayAddress:           getString("AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS", ""),
 		ReplayStorePath:             getString("AEGISLINK_RELAYER_REPLAY_STORE_PATH", ""),
 		EVMStatePath:                getString("AEGISLINK_RELAYER_EVM_STATE_PATH", defaultRuntimePath("evm-state.json")),

@@ -2,7 +2,9 @@ package cosmos
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -13,10 +15,26 @@ func TestCommandClaimSinkInvokesSubmitDepositClaimTx(t *testing.T) {
 	var called bool
 	var gotName string
 	var gotArgs []string
+	var capturedClaim persistedDepositClaim
 	runner := func(_ context.Context, name string, args ...string) ([]byte, error) {
 		called = true
 		gotName = name
 		gotArgs = append([]string(nil), args...)
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] != "--submission-file" {
+				continue
+			}
+			data, err := os.ReadFile(args[i+1])
+			if err != nil {
+				t.Fatalf("read submission file: %v", err)
+			}
+			var payload persistedClaimSubmission
+			if err := json.Unmarshal(data, &payload); err != nil {
+				t.Fatalf("decode submission file: %v", err)
+			}
+			capturedClaim = payload.Claim
+			break
+		}
 		return []byte(`{"status":"accepted","message_id":"message-1"}`), nil
 	}
 
@@ -37,11 +55,17 @@ func TestCommandClaimSinkInvokesSubmitDepositClaimTx(t *testing.T) {
 	if !strings.Contains(joined, "tx submit-deposit-claim") {
 		t.Fatalf("expected tx submit-deposit-claim invocation, got %q", joined)
 	}
-	if !strings.Contains(joined, "--state-path /tmp/state.json") {
-		t.Fatalf("expected state path flag, got %q", joined)
+	if !strings.Contains(joined, "--home /tmp/home") {
+		t.Fatalf("expected home flag to be preserved, got %q", joined)
+	}
+	if strings.Contains(joined, "--state-path /tmp/state.json") {
+		t.Fatalf("expected state path flag to be omitted when --home is present, got %q", joined)
 	}
 	if !strings.Contains(joined, "--submission-file") {
 		t.Fatalf("expected submission file flag, got %q", joined)
+	}
+	if capturedClaim.SourceAssetKind != claim.Identity.SourceAssetKind {
+		t.Fatalf("expected source asset kind %q, got %q", claim.Identity.SourceAssetKind, capturedClaim.SourceAssetKind)
 	}
 }
 

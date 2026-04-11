@@ -2,6 +2,7 @@ package cosmos
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,5 +95,16 @@ func TestFileClaimSinkPersistsClaimAndAttestation(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatalf("expected persisted claim submission")
+	}
+
+	var outbox persistedClaimOutbox
+	if err := json.Unmarshal(data, &outbox); err != nil {
+		t.Fatalf("decode outbox: %v", err)
+	}
+	if len(outbox.Submissions) != 1 {
+		t.Fatalf("expected one persisted submission, got %d", len(outbox.Submissions))
+	}
+	if outbox.Submissions[0].Claim.SourceAssetKind != claim.Identity.SourceAssetKind {
+		t.Fatalf("expected source asset kind %q, got %q", claim.Identity.SourceAssetKind, outbox.Submissions[0].Claim.SourceAssetKind)
 	}
 }

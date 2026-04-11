@@ -84,6 +84,9 @@ func TestRPCLogSourceObservesLiveAnvilDeposit(t *testing.T) {
 	if !strings.EqualFold(event.AssetAddress, token) {
 		t.Fatalf("expected asset address %q, got %q", token, event.AssetAddress)
 	}
+	if event.SourceAssetKind != "erc20" {
+		t.Fatalf("expected source asset kind erc20, got %q", event.SourceAssetKind)
+	}
 	if event.AssetID != "eth.usdc" {
 		t.Fatalf("expected asset id eth.usdc, got %q", event.AssetID)
 	}
@@ -104,6 +107,66 @@ func TestRPCLogSourceObservesLiveAnvilDeposit(t *testing.T) {
 	}
 	if event.DepositID == "" || event.MessageID == "" {
 		t.Fatalf("expected deposit and message ids to be populated")
+	}
+}
+
+func TestRPCLogSourceObservesLiveAnvilNativeETHDeposit(t *testing.T) {
+	t.Parallel()
+
+	port := reservePort(t)
+	rpcURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "anvil", "--silent", "--port", fmt.Sprintf("%d", port), "--chain-id", "11155111")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start anvil: %v", err)
+	}
+	defer func() {
+		cancel()
+		_ = cmd.Wait()
+	}()
+
+	waitForRPC(t, rpcURL)
+
+	accounts := rpcAccounts(t, rpcURL)
+	owner := accounts[0]
+	user := accounts[1]
+
+	repo := repoRoot(t)
+	verifier := deployContract(t, rpcURL, owner, filepath.Join(repo, "contracts/ethereum/out/BridgeVerifier.sol/BridgeVerifier.json"), "constructor(address)", owner)
+	gateway := deployContract(t, rpcURL, owner, filepath.Join(repo, "contracts/ethereum/out/BridgeGateway.sol/BridgeGateway.json"), "constructor(address)", verifier)
+	sendTx(t, rpcURL, owner, verifier, castCalldata(t, "setGateway(address)", gateway))
+	receipt := sendTxWithValue(t, rpcURL, user, gateway, castCalldata(t, "depositETH(string,uint64)", "cosmos1recipient", "10000000000"), "1000000000000000000")
+
+	source := NewRPCLogSource(rpcURL, gateway)
+	latest, err := source.LatestBlock(context.Background())
+	if err != nil {
+		t.Fatalf("latest block: %v", err)
+	}
+	events, err := source.DepositEvents(context.Background(), 0, latest)
+	if err != nil {
+		t.Fatalf("deposit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one observed native deposit event, got %d", len(events))
+	}
+
+	event := events[0]
+	if event.SourceAssetKind != "native_eth" {
+		t.Fatalf("expected source asset kind native_eth, got %q", event.SourceAssetKind)
+	}
+	if !isZeroHexAddress(event.AssetAddress) {
+		t.Fatalf("expected zero-address native asset, got %q", event.AssetAddress)
+	}
+	if event.AssetID != "eth" {
+		t.Fatalf("expected asset id eth, got %q", event.AssetID)
+	}
+	if event.Amount.String() != "1000000000000000000" {
+		t.Fatalf("expected amount 1000000000000000000, got %s", event.Amount.String())
+	}
+	if !strings.EqualFold(event.TxHash, receipt.TransactionHash) {
+		t.Fatalf("expected tx hash %q, got %q", receipt.TransactionHash, event.TxHash)
 	}
 }
 
@@ -176,6 +239,29 @@ func sendTx(t *testing.T, rpcURL, from, to, data string) txReceipt {
 	}
 	if to != "" {
 		tx["to"] = to
+	}
+
+	hash := rpcCallResult[string](t, rpcURL, "eth_sendTransaction", []any{tx})
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		receipt := rpcCallResult[*txReceipt](t, rpcURL, "eth_getTransactionReceipt", []any{hash})
+		if receipt != nil {
+			return *receipt
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("transaction %s was not mined", hash)
+	return txReceipt{}
+}
+
+func sendTxWithValue(t *testing.T, rpcURL, from, to, data, value string) txReceipt {
+	t.Helper()
+
+	tx := map[string]any{
+		"from":  from,
+		"to":    to,
+		"data":  data,
+		"value": value,
 	}
 
 	hash := rpcCallResult[string](t, rpcURL, "eth_sendTransaction", []any{tx})

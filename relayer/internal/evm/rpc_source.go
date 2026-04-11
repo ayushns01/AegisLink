@@ -10,6 +10,8 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
 
 const depositInitiatedTopic = "0xf9d606ceab83667329b57cc5f8977bd61f1496d82bb7a9d99586d24402a56a8c"
@@ -109,21 +111,26 @@ func decodeDepositEvent(log rpcLog, sourceChainID string) (DepositEvent, error) 
 	if err != nil {
 		return DepositEvent{}, err
 	}
+	sourceAssetKind := bridgetypes.SourceAssetKindERC20
+	if isZeroHexAddress(asset) {
+		sourceAssetKind = bridgetypes.SourceAssetKindNativeETH
+	}
 
 	return DepositEvent{
-		BlockNumber:    blockNumber,
-		SourceChainID:  sourceChainID,
-		SourceContract: log.Address,
-		TxHash:         log.TransactionHash,
-		LogIndex:       logIndex,
-		Nonce:          nonce,
-		DepositID:      log.Topics[1],
-		MessageID:      log.Topics[2],
-		AssetAddress:   asset,
-		AssetID:        assetID,
-		Amount:         amount,
-		Recipient:      recipient,
-		Expiry:         expiry,
+		BlockNumber:     blockNumber,
+		SourceChainID:   sourceChainID,
+		SourceContract:  log.Address,
+		TxHash:          log.TransactionHash,
+		LogIndex:        logIndex,
+		Nonce:           nonce,
+		DepositID:       log.Topics[1],
+		MessageID:       log.Topics[2],
+		SourceAssetKind: sourceAssetKind,
+		AssetAddress:    asset,
+		AssetID:         assetID,
+		Amount:          amount,
+		Recipient:       recipient,
+		Expiry:          expiry,
 	}, nil
 }
 

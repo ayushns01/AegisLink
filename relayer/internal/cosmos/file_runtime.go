@@ -54,6 +54,7 @@ type persistedClaimSubmission struct {
 
 type persistedDepositClaim struct {
 	Kind               string `json:"kind"`
+	SourceAssetKind    string `json:"source_asset_kind,omitempty"`
 	SourceChainID      string `json:"source_chain_id"`
 	SourceContract     string `json:"source_contract"`
 	SourceTxHash       string `json:"source_tx_hash"`
@@ -68,13 +69,13 @@ type persistedDepositClaim struct {
 }
 
 type persistedAttestation struct {
-	MessageID        string                       `json:"message_id"`
-	PayloadHash      string                       `json:"payload_hash"`
-	Signers          []string                     `json:"signers"`
+	MessageID        string                         `json:"message_id"`
+	PayloadHash      string                         `json:"payload_hash"`
+	Signers          []string                       `json:"signers"`
 	Proofs           []bridgetypes.AttestationProof `json:"proofs"`
-	Threshold        uint32                       `json:"threshold"`
-	Expiry           uint64                       `json:"expiry"`
-	SignerSetVersion uint64                       `json:"signer_set_version"`
+	Threshold        uint32                         `json:"threshold"`
+	Expiry           uint64                         `json:"expiry"`
+	SignerSetVersion uint64                         `json:"signer_set_version"`
 }
 
 func NewFileWithdrawalSource(path string) *FileWithdrawalSource {
@@ -152,6 +153,7 @@ func (s *FileClaimSink) SubmitDepositClaim(ctx context.Context, claim bridgetype
 	outbox.Submissions = append(outbox.Submissions, persistedClaimSubmission{
 		Claim: persistedDepositClaim{
 			Kind:               string(claim.Identity.Kind),
+			SourceAssetKind:    claim.Identity.SourceAssetKind,
 			SourceChainID:      claim.Identity.SourceChainID,
 			SourceContract:     claim.Identity.SourceContract,
 			SourceTxHash:       claim.Identity.SourceTxHash,

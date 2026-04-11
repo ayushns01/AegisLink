@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
@@ -72,13 +73,14 @@ func (s *CommandWithdrawalSource) LatestHeight(ctx context.Context) (uint64, err
 }
 
 func (s *CommandWithdrawalSource) Withdrawals(ctx context.Context, fromHeight, toHeight uint64) ([]Withdrawal, error) {
+	commandArgs, runtimeArgs := splitRuntimeArgs(s.baseArgs)
 	args := []string{
 		"query", "withdrawals",
-		"--state-path", s.statePath,
 		"--from-height", strconv.FormatUint(fromHeight, 10),
 		"--to-height", strconv.FormatUint(toHeight, 10),
 	}
-	payload, err := s.run(ctx, s.command, append(append([]string(nil), s.baseArgs...), args...)...)
+	args = appendRuntimeArgs(args, runtimeArgs, s.statePath)
+	payload, err := s.run(ctx, s.command, append(commandArgs, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,11 +102,12 @@ func (s *CommandWithdrawalSource) Withdrawals(ctx context.Context, fromHeight, t
 }
 
 func (s *CommandWithdrawalSource) runQuery(ctx context.Context, subcommand string) ([]byte, error) {
-	args := append(append([]string(nil), s.baseArgs...),
+	commandArgs, runtimeArgs := splitRuntimeArgs(s.baseArgs)
+	args := []string{
 		"query", subcommand,
-		"--state-path", s.statePath,
-	)
-	return s.run(ctx, s.command, args...)
+	}
+	args = appendRuntimeArgs(args, runtimeArgs, s.statePath)
+	return s.run(ctx, s.command, append(commandArgs, args...)...)
 }
 
 func (s *CommandClaimSink) SubmitDepositClaim(ctx context.Context, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) error {
@@ -122,6 +125,7 @@ func (s *CommandClaimSink) SubmitDepositClaim(ctx context.Context, claim bridget
 	payload := persistedClaimSubmission{
 		Claim: persistedDepositClaim{
 			Kind:               string(claim.Identity.Kind),
+			SourceAssetKind:    claim.Identity.SourceAssetKind,
 			SourceChainID:      claim.Identity.SourceChainID,
 			SourceContract:     claim.Identity.SourceContract,
 			SourceTxHash:       claim.Identity.SourceTxHash,
@@ -152,13 +156,59 @@ func (s *CommandClaimSink) SubmitDepositClaim(ctx context.Context, claim bridget
 		return err
 	}
 
-	args := append(append([]string(nil), s.baseArgs...),
+	commandArgs, runtimeArgs := splitRuntimeArgs(s.baseArgs)
+	args := []string{
 		"tx", "submit-deposit-claim",
-		"--state-path", s.statePath,
 		"--submission-file", submissionPath,
-	)
-	_, err = s.run(ctx, s.command, args...)
+	}
+	args = appendRuntimeArgs(args, runtimeArgs, s.statePath)
+	_, err = s.run(ctx, s.command, append(commandArgs, args...)...)
 	return err
+}
+
+func splitRuntimeArgs(baseArgs []string) ([]string, []string) {
+	commandArgs := make([]string, 0, len(baseArgs))
+	runtimeArgs := make([]string, 0, 6)
+	for i := 0; i < len(baseArgs); i++ {
+		arg := strings.TrimSpace(baseArgs[i])
+		if runtimeFlagArity(arg) == 1 && i+1 < len(baseArgs) {
+			runtimeArgs = append(runtimeArgs, baseArgs[i], baseArgs[i+1])
+			i++
+			continue
+		}
+		commandArgs = append(commandArgs, baseArgs[i])
+	}
+	return commandArgs, runtimeArgs
+}
+
+func appendRuntimeArgs(args, runtimeArgs []string, statePath string) []string {
+	args = append(args, runtimeArgs...)
+	if strings.TrimSpace(statePath) == "" || commandArgsContainFlag(runtimeArgs, "--home") || commandArgsContainFlag(runtimeArgs, "--state-path") {
+		return args
+	}
+	return append(args, "--state-path", strings.TrimSpace(statePath))
+}
+
+func commandArgsContainFlag(args []string, flagName string) bool {
+	flagName = strings.TrimSpace(flagName)
+	if flagName == "" {
+		return false
+	}
+	for _, arg := range args {
+		if strings.TrimSpace(arg) == flagName {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeFlagArity(arg string) int {
+	switch strings.TrimSpace(arg) {
+	case "--home", "--config-path", "--state-path", "--genesis-path", "--runtime-mode":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {

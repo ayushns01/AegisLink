@@ -28,24 +28,26 @@ func (e TemporaryError) Unwrap() error { return e.Err }
 func (e TemporaryError) Temporary() bool { return true }
 
 type DepositEvent struct {
-	BlockNumber    uint64
-	SourceChainID  string
-	SourceContract string
-	TxHash         string
-	LogIndex       uint64
-	Nonce          uint64
-	DepositID      string
-	MessageID      string
-	AssetAddress   string
-	AssetID        string
-	Amount         *big.Int
-	Recipient      string
-	Expiry         uint64
+	BlockNumber     uint64
+	SourceChainID   string
+	SourceContract  string
+	TxHash          string
+	LogIndex        uint64
+	Nonce           uint64
+	DepositID       string
+	MessageID       string
+	SourceAssetKind string
+	AssetAddress    string
+	AssetID         string
+	Amount          *big.Int
+	Recipient       string
+	Expiry          uint64
 }
 
 func (e DepositEvent) ReplayKey() string {
 	return bridgetypes.ReplayKey(
 		bridgetypes.ClaimKindDeposit,
+		e.SourceAssetKind,
 		e.SourceChainID,
 		e.SourceContract,
 		e.TxHash,
@@ -55,13 +57,21 @@ func (e DepositEvent) ReplayKey() string {
 }
 
 func (e DepositEvent) Claim(destinationChainID string) bridgetypes.DepositClaim {
+	sourceAssetKind := e.SourceAssetKind
+	if sourceAssetKind == "" {
+		sourceAssetKind = bridgetypes.SourceAssetKindERC20
+		if isZeroHexAddress(e.AssetAddress) {
+			sourceAssetKind = bridgetypes.SourceAssetKindNativeETH
+		}
+	}
 	identity := bridgetypes.ClaimIdentity{
-		Kind:           bridgetypes.ClaimKindDeposit,
-		SourceChainID:  e.SourceChainID,
-		SourceContract: e.SourceContract,
-		SourceTxHash:   e.TxHash,
-		SourceLogIndex: e.LogIndex,
-		Nonce:          e.Nonce,
+		Kind:            bridgetypes.ClaimKindDeposit,
+		SourceAssetKind: sourceAssetKind,
+		SourceChainID:   e.SourceChainID,
+		SourceContract:  e.SourceContract,
+		SourceTxHash:    e.TxHash,
+		SourceLogIndex:  e.LogIndex,
+		Nonce:           e.Nonce,
 	}
 	identity.MessageID = identity.DerivedMessageID()
 

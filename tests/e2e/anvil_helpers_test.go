@@ -110,6 +110,11 @@ func createAnvilDeposit(t *testing.T, rpcURL string, contracts chainContracts, a
 	return sendTx(t, rpcURL, contracts.User, contracts.Gateway, castCalldata(t, "deposit(address,uint256,string,uint64)", contracts.Token, amount, recipient, expiry))
 }
 
+func createAnvilNativeDeposit(t *testing.T, rpcURL string, contracts chainContracts, amount, recipient, expiry string) txReceipt {
+	t.Helper()
+	return sendTxWithValue(t, rpcURL, contracts.User, contracts.Gateway, castCalldata(t, "depositETH(string,uint64)", recipient, expiry), amount)
+}
+
 func reservePort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -162,6 +167,29 @@ func sendTx(t *testing.T, rpcURL, from, to, data string) txReceipt {
 	}
 	if to != "" {
 		tx["to"] = to
+	}
+
+	hash := rpcCallResult[string](t, rpcURL, "eth_sendTransaction", []any{tx})
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		receipt := rpcCallResult[*txReceipt](t, rpcURL, "eth_getTransactionReceipt", []any{hash})
+		if receipt != nil {
+			return *receipt
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("transaction %s was not mined", hash)
+	return txReceipt{}
+}
+
+func sendTxWithValue(t *testing.T, rpcURL, from, to, data, value string) txReceipt {
+	t.Helper()
+
+	tx := map[string]any{
+		"from":  from,
+		"to":    to,
+		"data":  data,
+		"value": value,
 	}
 
 	hash := rpcCallResult[string](t, rpcURL, "eth_sendTransaction", []any{tx})

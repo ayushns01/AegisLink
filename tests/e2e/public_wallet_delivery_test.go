@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,26 @@ func TestPublicWalletDelivery(t *testing.T) {
 func seedPublicWalletAssets(t *testing.T, app *aegisapp.App, recipient string) error {
 	t.Helper()
 
+	if err := registerPublicBridgeAssets(t, app); err != nil {
+		return err
+	}
+
+	nativeClaim := depositClaim(t, bridgetypes.SourceAssetKindNativeETH, "", "eth", "0xnative-deposit", 1, 1, recipient, "1000000000000000000")
+	if err := submitClaim(t, app, nativeClaim); err != nil {
+		return err
+	}
+
+	erc20Claim := depositClaim(t, bridgetypes.SourceAssetKindERC20, "0xusdc", "eth.usdc", "0xerc20-deposit", 2, 2, recipient, "25000000")
+	if err := submitClaim(t, app, erc20Claim); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func registerPublicBridgeAssets(t *testing.T, app *aegisapp.App) error {
+	t.Helper()
+
 	nativeETH := registrytypes.Asset{
 		AssetID:         "eth",
 		SourceChainID:   "11155111",
@@ -134,18 +155,130 @@ func seedPublicWalletAssets(t *testing.T, app *aegisapp.App, recipient string) e
 	}); err != nil {
 		return err
 	}
-
-	nativeClaim := depositClaim(t, bridgetypes.SourceAssetKindNativeETH, "", "eth", "0xnative-deposit", 1, 1, recipient, "1000000000000000000")
-	if err := submitClaim(t, app, nativeClaim); err != nil {
-		return err
-	}
-
-	erc20Claim := depositClaim(t, bridgetypes.SourceAssetKindERC20, "0xusdc", "eth.usdc", "0xerc20-deposit", 2, 2, recipient, "25000000")
-	if err := submitClaim(t, app, erc20Claim); err != nil {
-		return err
-	}
-
 	return nil
+}
+
+func TestPublicWalletDeliveryViaPublicBridgeRelayer(t *testing.T) {
+	t.Parallel()
+
+	repo := repoRoot(t)
+	homeDir := filepath.Join(t.TempDir(), "public-wallet-relayer-home")
+	cfg, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-public-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false)
+	if err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("load runtime: %v", err)
+	}
+	if err := registerPublicBridgeAssets(t, app); err != nil {
+		t.Fatalf("register public assets: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save runtime: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close runtime: %v", err)
+	}
+
+	anvil := startAnvilRuntime(t)
+	contracts := deployBridgeContractsToAnvil(t, anvil.rpcURL)
+	recipient := sdk.AccAddress([]byte("wallet-bridge-i2")).String()
+	nativeReceipt := createAnvilNativeDeposit(t, anvil.rpcURL, contracts, "1000000000000000000", recipient, "10000000000")
+	erc20Receipt := createAnvilDeposit(t, anvil.rpcURL, contracts, "25000000", recipient, "10000000000")
+
+	attestationPath := filepath.Join(t.TempDir(), "public-attestations.json")
+	writeAttestationVotes(t, attestationPath,
+		relayedDepositClaim(t, bridgetypes.SourceAssetKindNativeETH, contracts.Gateway, "eth", nativeReceipt.TransactionHash, parseHexUint64(t, nativeReceipt.Logs[0].LogIndex), 1, recipient, "1000000000000000000", 10000000000),
+		relayedDepositClaim(t, bridgetypes.SourceAssetKindERC20, contracts.Gateway, "eth.usdc", erc20Receipt.TransactionHash, parseHexUint64(t, erc20Receipt.Logs[0].LogIndex), 2, recipient, "25000000", 10000000000),
+	)
+
+	replayStore := filepath.Join(t.TempDir(), "public-relayer-replay.json")
+	output := runGoCommandWithLocalCacheAndEnv(t, repo, map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        "aegislink-public-1",
+		"AEGISLINK_RELAYER_EVM_RPC_URL":            anvil.rpcURL,
+		"AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS":   contracts.Verifier,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":    contracts.Gateway,
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "0",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "1",
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      replayStore,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": attestationPath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd --home " + homeDir,
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   "",
+	}, "run", "./relayer/cmd/public-bridge-relayer")
+	if !strings.Contains(output, "run_complete") {
+		t.Fatalf("expected relayer success log, got:\n%s", output)
+	}
+
+	reloaded, err := aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("reload runtime: %v", err)
+	}
+
+	balances, err := reloaded.WalletBalances(recipient)
+	if err != nil {
+		t.Fatalf("wallet balances: %v", err)
+	}
+	if len(balances) != 2 {
+		t.Fatalf("expected two wallet balances after relayer run, got %d (%+v)", len(balances), balances)
+	}
+	gotByDenom := make(map[string]string, len(balances))
+	for _, balance := range balances {
+		gotByDenom[balance.Denom] = balance.Amount
+	}
+	if gotByDenom["ueth"] != "1000000000000000000" {
+		t.Fatalf("expected bridged ETH balance, got %+v", gotByDenom)
+	}
+	if gotByDenom["uethusdc"] != "25000000" {
+		t.Fatalf("expected bridged ERC-20 balance, got %+v", gotByDenom)
+	}
+	closeApp(t, reloaded)
+
+	secondOutput := runGoCommandWithLocalCacheAndEnv(t, repo, map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        "aegislink-public-1",
+		"AEGISLINK_RELAYER_EVM_RPC_URL":            anvil.rpcURL,
+		"AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS":   contracts.Verifier,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":    contracts.Gateway,
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "0",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "1",
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      replayStore,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": attestationPath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd --home " + homeDir,
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   "",
+	}, "run", "./relayer/cmd/public-bridge-relayer")
+	if !strings.Contains(secondOutput, "run_complete") {
+		t.Fatalf("expected second relayer success log, got:\n%s", secondOutput)
+	}
+
+	reloaded, err = aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("reload runtime after replay pass: %v", err)
+	}
+	defer closeApp(t, reloaded)
+
+	again, err := reloaded.WalletBalances(recipient)
+	if err != nil {
+		t.Fatalf("wallet balances after replay pass: %v", err)
+	}
+	if len(again) != 2 {
+		t.Fatalf("expected two wallet balances after replay pass, got %d (%+v)", len(again), again)
+	}
+	againByDenom := make(map[string]string, len(again))
+	for _, balance := range again {
+		againByDenom[balance.Denom] = balance.Amount
+	}
+	if againByDenom["ueth"] != gotByDenom["ueth"] || againByDenom["uethusdc"] != gotByDenom["uethusdc"] {
+		t.Fatalf("expected replay-safe wallet balances, got %+v after %+v", againByDenom, gotByDenom)
+	}
 }
 
 func submitClaim(t *testing.T, app *aegisapp.App, claim bridgetypes.DepositClaim) error {
@@ -157,6 +290,11 @@ func submitClaim(t *testing.T, app *aegisapp.App, claim bridgetypes.DepositClaim
 }
 
 func depositClaim(t *testing.T, sourceAssetKind, sourceContract, assetID, txHash string, logIndex, nonce uint64, recipient, amount string) bridgetypes.DepositClaim {
+	t.Helper()
+	return relayedDepositClaim(t, sourceAssetKind, sourceContract, assetID, txHash, logIndex, nonce, recipient, amount, 120)
+}
+
+func relayedDepositClaim(t *testing.T, sourceAssetKind, sourceContract, assetID, txHash string, logIndex, nonce uint64, recipient, amount string, deadline uint64) bridgetypes.DepositClaim {
 	t.Helper()
 
 	identity := bridgetypes.ClaimIdentity{
@@ -176,7 +314,7 @@ func depositClaim(t *testing.T, sourceAssetKind, sourceContract, assetID, txHash
 		AssetID:            assetID,
 		Amount:             mustWalletAmount(t, amount),
 		Recipient:          recipient,
-		Deadline:           120,
+		Deadline:           deadline,
 	}
 }
 
@@ -235,6 +373,11 @@ func testCosmosWalletAddress() string {
 
 func runGoCommandWithLocalCache(t *testing.T, dir string, args ...string) string {
 	t.Helper()
+	return runGoCommandWithLocalCacheAndEnv(t, dir, nil, args...)
+}
+
+func runGoCommandWithLocalCacheAndEnv(t *testing.T, dir string, extraEnv map[string]string, args ...string) string {
+	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -246,6 +389,9 @@ func runGoCommandWithLocalCache(t *testing.T, dir string, args ...string) string
 		"GOCACHE=/tmp/aegislink-gocache",
 		"GOMODCACHE=/Users/ayushns01/go/pkg/mod",
 	)
+	for key, value := range extraEnv {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -255,4 +401,60 @@ func runGoCommandWithLocalCache(t *testing.T, dir string, args ...string) string
 		t.Fatalf("command failed: go %s\n%s", strings.Join(args, " "), output)
 	}
 	return string(output)
+}
+
+func closeApp(t *testing.T, app *aegisapp.App) {
+	t.Helper()
+	if err := app.Close(); err != nil {
+		t.Fatalf("close app: %v", err)
+	}
+}
+
+func parseHexUint64(t *testing.T, value string) uint64 {
+	t.Helper()
+
+	trimmed := strings.TrimPrefix(strings.TrimSpace(value), "0x")
+	if trimmed == "" {
+		trimmed = "0"
+	}
+	parsed, err := strconv.ParseUint(trimmed, 16, 64)
+	if err != nil {
+		t.Fatalf("parse hex uint64 %q: %v", value, err)
+	}
+	return parsed
+}
+
+func writeAttestationVotes(t *testing.T, path string, claims ...bridgetypes.DepositClaim) {
+	t.Helper()
+
+	type persistedVote struct {
+		MessageID   string `json:"message_id"`
+		PayloadHash string `json:"payload_hash"`
+		Signer      string `json:"signer"`
+		Expiry      uint64 `json:"expiry"`
+	}
+	type persistedVotes struct {
+		Votes []persistedVote `json:"votes"`
+	}
+
+	signers := bridgetypes.DefaultHarnessSignerAddresses()[:2]
+	state := persistedVotes{}
+	for _, claim := range claims {
+		for _, signer := range signers {
+			state.Votes = append(state.Votes, persistedVote{
+				MessageID:   claim.Identity.MessageID,
+				PayloadHash: claim.Digest(),
+				Signer:      signer,
+				Expiry:      claim.Deadline,
+			})
+		}
+	}
+
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("marshal attestation votes: %v", err)
+	}
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatalf("write attestation votes: %v", err)
+	}
 }

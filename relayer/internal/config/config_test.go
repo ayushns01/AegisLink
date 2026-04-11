@@ -61,6 +61,20 @@ func TestLoadFromEnvParsesEthereumRPCSourceConfig(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvParsesEVMBridgeAddresses(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS", "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+	t.Setenv("AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS", "0x1234567890abcdef1234567890abcdef12345678")
+
+	cfg := LoadFromEnv()
+
+	if cfg.EVMVerifierAddress != "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" {
+		t.Fatalf("expected verifier address to parse, got %q", cfg.EVMVerifierAddress)
+	}
+	if cfg.EVMGatewayAddress != "0x1234567890abcdef1234567890abcdef12345678" {
+		t.Fatalf("expected gateway address to parse, got %q", cfg.EVMGatewayAddress)
+	}
+}
+
 func TestLoadFromEnvParsesAttestationSignerKeys(t *testing.T) {
 	t.Setenv("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS", "0x01 0x02")
 

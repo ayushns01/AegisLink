@@ -19,6 +19,7 @@ This repository is meant to show:
 - Ethereum deposit observation and release execution run through the live local Anvil path.
 - The real-wallet bridge roadmap is now underway: registry assets distinguish native ETH from ERC-20 custody, the Ethereum gateway supports native ETH deposit and release locally, and AegisLink mints canonical bridged denoms such as `ueth` and `uethusdc`.
 - The first public AegisLink testnet scaffold now exists too: `scripts/testnet/bootstrap_aegislink_testnet.sh` boots a reproducible single-validator SDK-store home, and the repo ships operator and network config artifacts under `deploy/testnet/aegislink/`.
+- The first public Sepolia deposit scaffold now exists too: `scripts/testnet/deploy_sepolia_bridge.sh` and `scripts/testnet/register_bridge_assets.sh` produce public-testnet-shaped bridge metadata, and `public-bridge-relayer` can deliver both native ETH and ERC-20 deposits into real AegisLink wallet balances through the live RPC log path.
 - Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
 - Ethereum verifiers now build EIP-712-style attestation digests, reject non-low-`s` signatures, and the gateway release path is guarded against reentrant token callbacks.
 - AegisLink owns bridge, bank, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, `query status`, and wallet balance queries.
@@ -202,6 +203,7 @@ As of April 9, 2026:
 - the next roadmap focus is deeper realism beyond the completed phase set: pushing AegisLink from the current daemon shim toward a fuller networked CometBFT or BaseApp runtime, replacing the current Hermes-shaped local bridge with fuller real IBC-Go or Hermes-backed networking, and validating the monitoring stack on a machine that has Docker installed
 - the public-wallet bridge plan is now in progress too: Phase G is implemented locally with native-ETH-aware asset metadata, native ETH gateway custody, and canonical bridged mint or burn logic on AegisLink, and Phase H1 is now implemented locally with bank-backed Bech32 wallet balances, `query balances`, and reload-safe persistence
 - the public-wallet bridge plan is now in progress too: Phase G is implemented locally with native-ETH-aware asset metadata, native ETH gateway custody, and canonical bridged mint or burn logic on AegisLink, Phase H1 is implemented locally with bank-backed Bech32 wallet balances, `query balances`, and reload-safe persistence, and Phase H2 now adds a reproducible single-validator public-testnet scaffold plus operator-facing config and runbook assets
+- Phase I of the public-wallet bridge plan is now implemented for the current repo scope too: Sepolia-shaped deployment and asset-registration scripts are in place, the relayer config now accepts deployed verifier or gateway addresses, and `public-bridge-relayer` is covered by local e2e proofs that deliver both native ETH and ERC-20 deposits into real AegisLink wallet balances through the command-backed runtime path
 
 The current repo shape is:
 

@@ -337,6 +337,8 @@ git commit -m "feat: bootstrap public aegislink testnet"
 
 ## Phase I: Sepolia-to-Cosmos Public Flow
 
+Status for current repo scope: implemented and locally verified through Anvil-backed Sepolia-shaped deployment, relayer, and wallet-delivery tests. Real Sepolia credentials and deployment are still required for a live public demo.
+
 ### Task I1: Deploy and register public bridge assets
 
 **Files:**
@@ -345,23 +347,23 @@ git commit -m "feat: bootstrap public aegislink testnet"
 - Modify: `relayer/internal/config/config.go`
 - Test: `tests/e2e/sepolia_bridge_smoke_test.go`
 
-- [ ] **Step 1: Write failing deployment-config tests**
+- [x] **Step 1: Write failing deployment-config tests**
 
 Cover:
 - Sepolia bridge deployment outputs contract addresses
 - relayer config accepts deployed verifier and gateway addresses
 - asset-registration script writes both ETH and ERC-20 registry entries
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestSepoliaBridgeSmoke'`
 Expected: FAIL because public deployment scripts are missing.
 
-- [ ] **Step 3: Implement minimal deployment and registration scripts**
+- [x] **Step 3: Implement minimal deployment and registration scripts**
 
 Make them idempotent enough for repeated public-devnet deployment.
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestSepoliaBridgeSmoke'`
 Expected: PASS
@@ -381,19 +383,19 @@ git commit -m "feat: deploy public sepolia bridge assets"
 - Create: `relayer/cmd/public-bridge-relayer/main.go`
 - Test: `tests/e2e/public_wallet_delivery_test.go`
 
-- [ ] **Step 1: Write failing public-deposit tests**
+- [x] **Step 1: Write failing public-deposit tests**
 
 Cover:
 - Sepolia ETH deposit reaches a configured Cosmos wallet
 - Sepolia ERC-20 deposit reaches a configured Cosmos wallet
 - relayer records asset class correctly
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestPublicWalletDelivery'`
 Expected: FAIL because the live relayer path is not yet wired to public deployment state.
 
-- [ ] **Step 3: Implement minimal public bridge relayer**
+- [x] **Step 3: Implement minimal public bridge relayer**
 
 Keep:
 - one source chain
@@ -401,7 +403,7 @@ Keep:
 - no route swap logic
 - just canonical asset delivery
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestPublicWalletDelivery'`
 Expected: PASS
