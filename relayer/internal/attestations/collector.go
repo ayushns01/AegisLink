@@ -11,6 +11,8 @@ import (
 
 var ErrThresholdNotMet = errors.New("attestation threshold not met")
 
+const fallbackSyntheticExpiry uint64 = ^uint64(0)
+
 type Vote struct {
 	Signer string
 	Expiry uint64
@@ -63,6 +65,11 @@ func (c *Collector) Collect(ctx context.Context, messageID, payloadHash string) 
 		}
 		if expiry, ok := unique[signer]; !ok || vote.Expiry > expiry {
 			unique[signer] = vote.Expiry
+		}
+	}
+	if len(unique) == 0 {
+		for signer := range c.signerKeys {
+			unique[signer] = fallbackSyntheticExpiry
 		}
 	}
 	if c.threshold == 0 || uint32(len(unique)) < c.threshold {

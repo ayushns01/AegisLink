@@ -61,3 +61,32 @@ func TestKeeperRejectsInvalidBech32Address(t *testing.T) {
 		t.Fatalf("expected invalid address error, got %v", err)
 	}
 }
+
+func TestKeeperDebitsBalancesAndPersistsAcrossReload(t *testing.T) {
+	t.Parallel()
+
+	store, keys := testutil.NewInMemoryCommitMultiStore(t, "bank")
+	k, err := NewStoreKeeper(store, keys["bank"])
+	if err != nil {
+		t.Fatalf("new store keeper: %v", err)
+	}
+
+	address := sdk.AccAddress([]byte("wallet-bridge-unit-test")).String()
+	if err := k.Credit(address, "ueth", big.NewInt(100)); err != nil {
+		t.Fatalf("credit ueth: %v", err)
+	}
+	if err := k.Debit(address, "ueth", big.NewInt(40)); err != nil {
+		t.Fatalf("debit ueth: %v", err)
+	}
+	if got := k.BalanceOf(address, "ueth"); got.String() != "60" {
+		t.Fatalf("expected ueth balance 60, got %s", got.String())
+	}
+
+	reloaded, err := NewStoreKeeper(store, keys["bank"])
+	if err != nil {
+		t.Fatalf("reload keeper: %v", err)
+	}
+	if got := reloaded.BalanceOf(address, "ueth"); got.String() != "60" {
+		t.Fatalf("expected persisted ueth balance 60, got %s", got.String())
+	}
+}

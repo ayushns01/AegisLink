@@ -107,6 +107,26 @@ func TestBridgeTxServiceRollsBackDepositWhenWalletCreditFails(t *testing.T) {
 	}
 }
 
+func TestBridgeTxServiceExecuteWithdrawalDebitsOwnerBalance(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	claim := sampleDepositClaim()
+	attestation := sampleAttestation(claim)
+	if _, err := app.SubmitDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+
+	service := NewBridgeTxService(app)
+	if _, err := service.ExecuteWithdrawal(claim.Recipient, claim.AssetID, big.NewInt(25000000), "0xrecipient", 120, []byte("proof")); err != nil {
+		t.Fatalf("execute withdrawal: %v", err)
+	}
+
+	if got := app.BankKeeper.BalanceOf(claim.Recipient, "uethusdc"); got.Sign() != 0 {
+		t.Fatalf("expected owner balance to burn to zero, got %s", got.String())
+	}
+}
+
 func TestIBCRouterQueryServiceListsRoutesAndTransfers(t *testing.T) {
 	app := New()
 	seedBridgeRuntime(t, app)

@@ -31,6 +31,8 @@ type publicBridgeConfig struct {
 	EVMRPCURL                   string
 	EVMVerifierAddress          string
 	EVMGatewayAddress           string
+	EVMReleaseSignerPrivateKey  string
+	EVMReleaseSignerAddress     string
 	ReplayStorePath             string
 	EVMStatePath                string
 	AttestationStatePath        string
@@ -65,7 +67,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	evmSource := evm.NewRPCLogSource(cfg.EVMRPCURL, cfg.EVMGatewayAddress)
-	releaseTarget := evm.NewRPCReleaseTarget(cfg.EVMRPCURL, cfg.EVMGatewayAddress)
+	releaseTarget := evm.NewRPCReleaseTargetWithSigner(cfg.EVMRPCURL, cfg.EVMGatewayAddress, cfg.EVMReleaseSignerPrivateKey, cfg.EVMReleaseSignerAddress)
 	withdrawalSource := cosmos.NewCommandWithdrawalSource(cfg.AegisLinkCommand, cfg.AegisLinkCommandArgs, cfg.AegisLinkStatePath)
 	claimSink := cosmos.NewCommandClaimSink(cfg.AegisLinkCommand, cfg.AegisLinkCommandArgs, cfg.AegisLinkStatePath)
 
@@ -85,6 +87,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			EVMRPCURL:                   cfg.EVMRPCURL,
 			EVMVerifierAddress:          cfg.EVMVerifierAddress,
 			EVMGatewayAddress:           cfg.EVMGatewayAddress,
+			EVMReleaseSignerPrivateKey:  cfg.EVMReleaseSignerPrivateKey,
+			EVMReleaseSignerAddress:     cfg.EVMReleaseSignerAddress,
 			ReplayStorePath:             cfg.ReplayStorePath,
 			EVMStatePath:                cfg.EVMStatePath,
 			AttestationStatePath:        cfg.AttestationStatePath,
@@ -150,6 +154,8 @@ func buildPublicBridgeConfig(cfg config.Config) (publicBridgeConfig, error) {
 		EVMRPCURL:                   strings.TrimSpace(cfg.EVMRPCURL),
 		EVMVerifierAddress:          strings.TrimSpace(cfg.EVMVerifierAddress),
 		EVMGatewayAddress:           strings.TrimSpace(cfg.EVMGatewayAddress),
+		EVMReleaseSignerPrivateKey:  strings.TrimSpace(cfg.EVMReleaseSignerPrivateKey),
+		EVMReleaseSignerAddress:     strings.TrimSpace(cfg.EVMReleaseSignerAddress),
 		ReplayStorePath:             strings.TrimSpace(cfg.ReplayStorePath),
 		EVMStatePath:                strings.TrimSpace(cfg.EVMStatePath),
 		AttestationStatePath:        strings.TrimSpace(cfg.AttestationStatePath),

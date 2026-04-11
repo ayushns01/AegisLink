@@ -25,6 +25,8 @@ type Config struct {
 	EVMRPCURL                   string
 	EVMVerifierAddress          string
 	EVMGatewayAddress           string
+	EVMReleaseSignerPrivateKey  string
+	EVMReleaseSignerAddress     string
 	ReplayStorePath             string
 	EVMStatePath                string
 	AttestationStatePath        string
@@ -52,6 +54,8 @@ func LoadFromEnv() Config {
 		EVMRPCURL:                   getString("AEGISLINK_RELAYER_EVM_RPC_URL", ""),
 		EVMVerifierAddress:          getString("AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS", ""),
 		EVMGatewayAddress:           getString("AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS", ""),
+		EVMReleaseSignerPrivateKey:  getStringAny([]string{"AEGISLINK_RELAYER_EVM_RELEASE_SIGNER_PRIVATE_KEY", "AEGISLINK_RELAYER_EVM_RELEASE_PRIVATE_KEY"}, ""),
+		EVMReleaseSignerAddress:     getStringAny([]string{"AEGISLINK_RELAYER_EVM_RELEASE_SIGNER_ADDRESS", "AEGISLINK_RELAYER_EVM_RELEASE_ADDRESS"}, ""),
 		ReplayStorePath:             getString("AEGISLINK_RELAYER_REPLAY_STORE_PATH", ""),
 		EVMStatePath:                getString("AEGISLINK_RELAYER_EVM_STATE_PATH", defaultRuntimePath("evm-state.json")),
 		AttestationStatePath:        getString("AEGISLINK_RELAYER_ATTESTATION_STATE_PATH", defaultRuntimePath("attestations.json")),
@@ -67,6 +71,15 @@ func LoadFromEnv() Config {
 func getString(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return fallback
+}
+
+func getStringAny(keys []string, fallback string) string {
+	for _, key := range keys {
+		if value := os.Getenv(strings.TrimSpace(key)); value != "" {
+			return value
+		}
 	}
 	return fallback
 }

@@ -1,5 +1,7 @@
 .worktrees/
 worktrees/
+.env.local
+.env.*.local
 contracts/ethereum/out/
 contracts/ethereum/cache/
 contracts/ethereum/broadcast/

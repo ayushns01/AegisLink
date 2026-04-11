@@ -388,7 +388,7 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	}
 
 	app.SetCurrentHeight(60)
-	withdrawal, err := app.ExecuteWithdrawal(claim.AssetID, claim.Amount, "0xrecipient", 120, []byte("threshold-proof"))
+	withdrawal, err := app.ExecuteWithdrawal(claim.Recipient, claim.AssetID, claim.Amount, "0xrecipient", 120, []byte("threshold-proof"))
 	if err != nil {
 		t.Fatalf("execute runtime withdrawal: %v", err)
 	}
@@ -680,7 +680,7 @@ func runGoCommand(t *testing.T, dir string, extraEnv map[string]string, args ...
 	}
 	cmd.Env = append(cmd.Env,
 		"GOCACHE="+filepath.Join(cacheRoot, "gocache"),
-		"GOMODCACHE="+filepath.Join(cacheRoot, "gomodcache"),
+		"GOMODCACHE=/Users/ayushns01/go/pkg/mod",
 	)
 	for key, value := range extraEnv {
 		cmd.Env = append(cmd.Env, key+"="+value)

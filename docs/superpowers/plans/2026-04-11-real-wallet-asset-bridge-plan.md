@@ -417,6 +417,8 @@ git commit -m "feat: deliver sepolia assets to cosmos wallets"
 
 ## Phase J: Reverse Redeem Back to Sepolia
 
+Status for current repo scope: implemented and locally verified against Anvil-backed Sepolia-shaped deployments. Native ETH and ERC-20 public-wallet deposits can now be redeemed back to Ethereum through the `public-bridge-relayer` path, and replayed release attempts are rejected.
+
 ### Task J1: Add public redeem flow for ETH and ERC-20
 
 **Files:**
@@ -490,6 +492,8 @@ git commit -m "docs: publish public bridge demo path"
 ```
 
 ## Optional Phase K: Real Osmosis Wallet Delivery
+
+Status for current repo scope: scaffolded, not live. The repo now has an explicit `deploy/testnet/ibc` landing zone and a guarded e2e seam for future public Osmosis delivery, but it does not claim Hermes or real Osmosis wallet connectivity yet.
 
 Only do this if the requirement is specifically:
 `Sepolia ETH or ERC-20 -> real Osmosis wallet`

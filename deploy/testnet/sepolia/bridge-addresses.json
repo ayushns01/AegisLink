@@ -1,0 +1,7 @@
+{
+  "chain_id": "11155111",
+  "deployer_address": "0x2977e40f9FD046840ED10c09fbf5F0DC63A09f1d",
+  "verifier_address": "0xB44f06A0187D554f4d5847AD62014014962E73fc",
+  "gateway_address": "0x37ecd127529B14253C8a858976e22c4671c6Bd1E",
+  "output_path": "deploy/testnet/sepolia/bridge-addresses.json"
+}

@@ -78,6 +78,27 @@ func TestCollectorCollectRejectsWhenThresholdNotMet(t *testing.T) {
 	}
 }
 
+func TestCollectorCollectFallsBackToLocalSignerKeysWhenVoteFileIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	source := &stubSource{}
+	collector := NewCollector(source, 2, 1, bridgetypes.DefaultHarnessSignerPrivateKeys()[:3])
+
+	attestation, err := collector.Collect(context.Background(), "message-1", "payload-1")
+	if err != nil {
+		t.Fatalf("expected local signer fallback to succeed, got error: %v", err)
+	}
+	if attestation.Threshold != 2 {
+		t.Fatalf("expected threshold 2, got %d", attestation.Threshold)
+	}
+	if attestation.Expiry == 0 {
+		t.Fatalf("expected non-zero expiry, got %d", attestation.Expiry)
+	}
+	if len(attestation.Signers) != 2 || len(attestation.Proofs) != 2 {
+		t.Fatalf("expected threshold-sized fallback attestation, got %+v", attestation)
+	}
+}
+
 type stubSource struct {
 	votes       []Vote
 	messageID   string

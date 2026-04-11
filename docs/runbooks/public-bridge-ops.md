@@ -9,13 +9,13 @@ This is a reproducible single-validator public devnet scaffold. It is useful for
 - bootstrapping a wallet-query-capable AegisLink home
 - loading operator bridge settings consistently
 - rehearsing the first public wallet-delivery flow
+- rehearsing the first public redeem-back-to-Sepolia flow
 - preparing Sepolia-shaped bridge deployment metadata and relayer wiring
 
 It is not yet:
 
 - a multi-validator public network
-- live Sepolia delivery
-- public IBC connectivity
+- real public IBC connectivity to Osmosis
 
 ## Bootstrap
 
@@ -39,32 +39,41 @@ go run ./chain/aegislink/cmd/aegislinkd query balances --home /tmp/aegislink-pub
 
 ## Sepolia bridge scaffold
 
+Start from the checked-in env examples:
+
+```bash
+cp .env.sepolia.deploy.local.example .env.sepolia.deploy.local
+cp .env.public-bridge.local.example .env.public-bridge.local
+```
+
+Those `*.local` files are ignored by git, so keep your real keys there and do not commit them.
+
 Set your public-testnet RPC and signer locally, then produce bridge metadata:
 
 ```bash
-AEGISLINK_SEPOLIA_RPC_URL=https://your-sepolia-rpc \
-AEGISLINK_SEPOLIA_PRIVATE_KEY=0xyourprivatekey \
+set -a; source .env.sepolia.deploy.local; set +a
 scripts/testnet/deploy_sepolia_bridge.sh
 
-AEGISLINK_SEPOLIA_ERC20_ADDRESS=0xyourtoken \
+set -a; source .env.sepolia.deploy.local; set +a
 scripts/testnet/register_bridge_assets.sh
+
+scripts/testnet/seed_public_bridge_assets.sh /tmp/aegislink-public-home
 ```
 
 That gives you:
 
 - deployed verifier and gateway addresses in `deploy/testnet/sepolia/bridge-addresses.json`
-- an ETH plus ERC-20 registry fixture in `deploy/testnet/sepolia/bridge-assets.json`
+- an ETH-only or ETH-plus-ERC-20 registry fixture in `deploy/testnet/sepolia/bridge-assets.json`
+- a bootstrapped AegisLink home whose asset registry and limits match that bridge fixture
+
+If `AEGISLINK_SEPOLIA_ERC20_ADDRESS` is unset, the registry and seed step only load native ETH. That is the simplest first live path.
 
 ## Public relayer flow
 
-Once the AegisLink home and Sepolia bridge metadata exist, the public relayer entrypoint is:
+Once the AegisLink home and seeded Sepolia bridge metadata exist, the public relayer entrypoint is:
 
 ```bash
-AEGISLINK_RELAYER_EVM_RPC_URL=https://your-sepolia-rpc \
-AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS=0xyourverifier \
-AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS=0xyourgateway \
-AEGISLINK_RELAYER_AEGISLINK_CMD=go \
-AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS="run ./chain/aegislink/cmd/aegislinkd --home /tmp/aegislink-public-home" \
+set -a; source .env.public-bridge.local; set +a
 go run ./relayer/cmd/public-bridge-relayer
 ```
 
@@ -72,7 +81,16 @@ This current repo scope is verified locally against Anvil-backed Sepolia-shaped 
 
 - native ETH wallet delivery
 - ERC-20 wallet delivery
+- native ETH redeem back to Sepolia
+- ERC-20 redeem back to Sepolia
 - replay-safe reruns through the relayer replay store
+
+If you want the relayer to execute Sepolia release transactions during redeem, set one of these locally before sourcing `.env.public-bridge.local`:
+
+- `AEGISLINK_RELAYER_EVM_RELEASE_SIGNER_PRIVATE_KEY`
+- `AEGISLINK_RELAYER_EVM_RELEASE_PRIVATE_KEY`
+
+The `...SIGNER_...` form is the canonical name in the codebase. The shorter alias exists so older local env files still work.
 
 ## Intended endpoints
 

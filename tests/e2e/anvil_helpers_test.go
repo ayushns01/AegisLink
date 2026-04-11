@@ -328,6 +328,12 @@ func tokenBalanceOf(t *testing.T, rpcURL, token, account string) *big.Int {
 	return parseHexBigInt(t, raw)
 }
 
+func nativeBalanceOf(t *testing.T, rpcURL, account string) *big.Int {
+	t.Helper()
+	raw := rpcCallResult[string](t, rpcURL, "eth_getBalance", []any{account, "latest"})
+	return parseHexBigInt(t, raw)
+}
+
 func verifierUsedProof(t *testing.T, rpcURL, verifier, messageID string) bool {
 	t.Helper()
 	raw := ethCall(t, rpcURL, verifier, castCalldata(t, "usedProofs(bytes32)", messageID))

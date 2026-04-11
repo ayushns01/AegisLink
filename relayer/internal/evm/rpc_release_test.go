@@ -83,6 +83,57 @@ func TestRPCReleaseTargetExecutesLiveGatewayRelease(t *testing.T) {
 	}
 }
 
+func TestRPCReleaseTargetExecutesLiveGatewayReleaseWithPrivateKey(t *testing.T) {
+	t.Parallel()
+
+	port := reservePort(t)
+	rpcURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "anvil", "--silent", "--port", fmt.Sprintf("%d", port), "--chain-id", "11155111")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start anvil: %v", err)
+	}
+	defer func() {
+		cancel()
+		_ = cmd.Wait()
+	}()
+
+	waitForRPC(t, rpcURL)
+
+	accounts := rpcAccounts(t, rpcURL)
+	owner := accounts[0]
+	recipient := accounts[2]
+
+	repo := repoRoot(t)
+	verifier := deployContract(t, rpcURL, owner, filepath.Join(repo, "contracts/ethereum/out/BridgeVerifier.sol/BridgeVerifier.json"), "constructor(address)", owner)
+	gateway := deployContract(t, rpcURL, owner, filepath.Join(repo, "contracts/ethereum/out/BridgeGateway.sol/BridgeGateway.json"), "constructor(address)", verifier)
+	sendTx(t, rpcURL, owner, verifier, castCalldata(t, "setGateway(address)", gateway))
+	sendTxWithValue(t, rpcURL, owner, gateway, castCalldata(t, "depositETH(string,uint64)", "cosmos1gateway-fund", "10000000000"), "25000000")
+
+	messageID := castKeccak(t, "native-release-1")
+	amount := big.NewInt(25000000)
+	expiry := uint64(10000000000)
+	signature := signReleaseAttestation(t, verifier, gateway, "0x0000000000000000000000000000000000000000", recipient, amount, messageID, expiry)
+
+	target := NewRPCReleaseTargetWithSigner(rpcURL, gateway, anvilFirstAccountPrivateKey, "")
+	txHash, err := target.ReleaseWithdrawal(context.Background(), ReleaseRequest{
+		MessageID:    messageID,
+		AssetAddress: "0x0000000000000000000000000000000000000000",
+		Amount:       amount,
+		Recipient:    recipient,
+		Deadline:     expiry,
+		Signature:    signature,
+	})
+	if err != nil {
+		t.Fatalf("release withdrawal with private key: %v", err)
+	}
+	if strings.TrimSpace(txHash) == "" {
+		t.Fatal("expected release transaction hash")
+	}
+}
+
 func signReleaseAttestation(
 	t *testing.T,
 	verifier,

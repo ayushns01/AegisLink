@@ -13,9 +13,91 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestRPCLogSourceChunksLargeLogRanges(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu     sync.Mutex
+		ranges [][2]string
+	)
+
+	source := NewRPCLogSource("http://rpc.test", "0x37ecd127529B14253C8a858976e22c4671c6Bd1E")
+	source.client = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			defer r.Body.Close()
+
+			var request struct {
+				Method string            `json:"method"`
+				Params []json.RawMessage `json:"params"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode rpc request: %v", err)
+			}
+
+			var body string
+			switch request.Method {
+			case "eth_chainId":
+				body = `{"jsonrpc":"2.0","id":1,"result":"0xaa36a7"}`
+			case "eth_getLogs":
+				var filter map[string]any
+				if err := json.Unmarshal(request.Params[0], &filter); err != nil {
+					t.Fatalf("decode getLogs params: %v", err)
+				}
+				mu.Lock()
+				ranges = append(ranges, [2]string{
+					filter["fromBlock"].(string),
+					filter["toBlock"].(string),
+				})
+				mu.Unlock()
+				body = `{"jsonrpc":"2.0","id":1,"result":[]}`
+			default:
+				t.Fatalf("unexpected rpc method %q", request.Method)
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		}),
+	}
+	events, err := source.DepositEvents(context.Background(), 100, 125)
+	if err != nil {
+		t.Fatalf("deposit events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no events, got %d", len(events))
+	}
+
+	mu.Lock()
+	got := append([][2]string(nil), ranges...)
+	mu.Unlock()
+
+	want := [][2]string{
+		{"0x64", "0x6d"},
+		{"0x6e", "0x77"},
+		{"0x78", "0x7d"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d eth_getLogs calls, got %d (%+v)", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected range %v at call %d, got %v", want[i], i, got[i])
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestRPCLogSourceObservesLiveAnvilDeposit(t *testing.T) {
 	t.Parallel()

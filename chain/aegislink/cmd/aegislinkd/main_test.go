@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func TestRunInitCreatesRuntimeHomeArtifacts(t *testing.T) {
@@ -737,6 +737,7 @@ func TestRunTxExecuteWithdrawalPersistsWithdrawalAndBurnsSupply(t *testing.T) {
 	if err := run([]string{
 		"tx", "execute-withdrawal",
 		"--state-path", statePath,
+		"--owner-address", claim.Recipient,
 		"--asset-id", claim.AssetID,
 		"--amount", "25000000",
 		"--recipient", "0xrecipient",

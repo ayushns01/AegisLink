@@ -75,6 +75,34 @@ func TestLoadFromEnvParsesEVMBridgeAddresses(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvParsesEVMReleaseSignerConfig(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_EVM_RELEASE_SIGNER_PRIVATE_KEY", "0x01")
+	t.Setenv("AEGISLINK_RELAYER_EVM_RELEASE_SIGNER_ADDRESS", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+	cfg := LoadFromEnv()
+
+	if cfg.EVMReleaseSignerPrivateKey != "0x01" {
+		t.Fatalf("expected release signer private key to parse, got %q", cfg.EVMReleaseSignerPrivateKey)
+	}
+	if cfg.EVMReleaseSignerAddress != "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("expected release signer address to parse, got %q", cfg.EVMReleaseSignerAddress)
+	}
+}
+
+func TestLoadFromEnvAcceptsReleaseSignerAliases(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_EVM_RELEASE_PRIVATE_KEY", "0x02")
+	t.Setenv("AEGISLINK_RELAYER_EVM_RELEASE_ADDRESS", "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	cfg := LoadFromEnv()
+
+	if cfg.EVMReleaseSignerPrivateKey != "0x02" {
+		t.Fatalf("expected release private key alias to parse, got %q", cfg.EVMReleaseSignerPrivateKey)
+	}
+	if cfg.EVMReleaseSignerAddress != "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("expected release address alias to parse, got %q", cfg.EVMReleaseSignerAddress)
+	}
+}
+
 func TestLoadFromEnvParsesAttestationSignerKeys(t *testing.T) {
 	t.Setenv("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS", "0x01 0x02")
 

@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "source_chain_id": "aegislink-public-testnet-1",
+  "destination_chain_id": "osmosis-testnet",
+  "provider": "hermes",
+  "wallet_prefix": "osmo",
+  "channel_id": "",
+  "port_id": "transfer",
+  "notes": "Phase K scaffold only. Fill real client, connection, and channel metadata when live public IBC is actually configured."
+}

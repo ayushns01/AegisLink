@@ -111,6 +111,11 @@ func seedPublicWalletAssets(t *testing.T, app *aegisapp.App, recipient string) e
 
 func registerPublicBridgeAssets(t *testing.T, app *aegisapp.App) error {
 	t.Helper()
+	return registerPublicBridgeAssetsWithERC20Address(t, app, "0xusdc")
+}
+
+func registerPublicBridgeAssetsWithERC20Address(t *testing.T, app *aegisapp.App, erc20Address string) error {
+	t.Helper()
 
 	nativeETH := registrytypes.Asset{
 		AssetID:         "eth",
@@ -130,7 +135,7 @@ func registerPublicBridgeAssets(t *testing.T, app *aegisapp.App) error {
 		AssetID:            "eth.usdc",
 		SourceChainID:      "11155111",
 		SourceAssetKind:    registrytypes.SourceAssetKindERC20,
-		SourceAssetAddress: "0xusdc",
+		SourceAssetAddress: erc20Address,
 		Denom:              "uethusdc",
 		Decimals:           6,
 		DisplayName:        "USD Coin",
@@ -401,6 +406,35 @@ func runGoCommandWithLocalCacheAndEnv(t *testing.T, dir string, extraEnv map[str
 		t.Fatalf("command failed: go %s\n%s", strings.Join(args, " "), output)
 	}
 	return string(output)
+}
+
+type goCommandResult struct {
+	Stdout string
+	Err    error
+}
+
+func runGoCommandWithLocalCacheAllowError(t *testing.T, dir string, args ...string) goCommandResult {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = dir
+	cmd.Env = append([]string{}, os.Environ()...)
+	cmd.Env = append(cmd.Env,
+		"GOCACHE=/tmp/aegislink-gocache",
+		"GOMODCACHE=/Users/ayushns01/go/pkg/mod",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("command timed out: go %s\n%s", strings.Join(args, " "), output)
+	}
+	return goCommandResult{
+		Stdout: string(output),
+		Err:    err,
+	}
 }
 
 func closeApp(t *testing.T, app *aegisapp.App) {

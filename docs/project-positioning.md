@@ -41,6 +41,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now also includes a minimal governance module, so asset enablement, rate-limit updates, and route-policy updates can flow through an authority-gated recorded proposal path instead of direct keeper edits.
 - The route layer now supports a second concrete action beyond swaps: profile-constrained `stake` actions can execute on the dual-runtime path with recipient and validator-path hints, while unsupported actions still fail through explicit destination receipts.
 - The repo now also includes a first public-testnet scaffold for AegisLink, with a reproducible bootstrap script, operator bridge settings, and documented local RPC/gRPC endpoints for wallet-balance inspection.
+- The repo now also proves a public-wallet bridge loop against a Sepolia-shaped deployment path: native ETH and ERC-20 deposits can mint balances to a real Bech32 wallet on AegisLink and redeem those balances back to Ethereum through the public relayer path.
 
 ## What is still a local harness
 
@@ -49,6 +50,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The destination side is now a bootstrapped local runtime with its own config, state, and local IBC link metadata, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
 - The public AegisLink testnet scaffold is still a single-validator local devnet bootstrap, not a hosted or externally peered public network yet.
 - The route path is realistic enough to exercise packet lifecycle and destination execution through Hermes-shaped local commands, but it is still a controlled local environment rather than real proof-backed IBC transport.
+- Public Osmosis wallet delivery is still only scaffolded. The repo now has an explicit `deploy/testnet/ibc` landing zone and a guarded e2e seam for Phase K, but it does not claim live Hermes or Osmosis testnet connectivity yet.
 
 ## Why this still matters
 
@@ -62,6 +64,7 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
+- `The public-wallet path now proves Sepolia-shaped deposit and redeem loops into a real Bech32 wallet on AegisLink, while public Osmosis delivery remains a future IBC step.`
 - `The roadmap from here is deeper networked chain realism and fuller IBC-Go or Hermes realism, with the current daemon and dual-runtime seams acting as the transition layer.`
 
 Avoid phrasing like:

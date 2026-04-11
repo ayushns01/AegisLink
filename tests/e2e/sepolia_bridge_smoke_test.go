@@ -3,7 +3,9 @@ package e2e
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -96,6 +98,39 @@ func TestSepoliaBridgeSmoke(t *testing.T) {
 	secondAssetsFile := mustReadFile(t, assetsOutputPath)
 	if firstAssetsFile != secondAssetsFile {
 		t.Fatalf("expected bridge asset registry to be stable across repeated runs")
+	}
+}
+
+func TestRegisterBridgeAssetsRejectsInvalidERC20Address(t *testing.T) {
+	repo := repoRoot(t)
+	tempDir := t.TempDir()
+	deployOutputPath := filepath.Join(tempDir, "bridge-addresses.json")
+	assetsOutputPath := filepath.Join(tempDir, "bridge-assets.json")
+	deployFixture := `{
+  "chain_id": "11155111",
+  "deployer_address": "0x2977e40f9FD046840ED10c09fbf5F0DC63A09f1d",
+  "verifier_address": "0xB44f06A0187D554f4d5847AD62014014962E73fc",
+  "gateway_address": "0x37ecd127529B14253C8a858976e22c4671c6Bd1E"
+}`
+	if err := os.WriteFile(deployOutputPath, []byte(deployFixture), 0o644); err != nil {
+		t.Fatalf("write deploy fixture: %v", err)
+	}
+
+	cmd := exec.Command("bash", "scripts/testnet/register_bridge_assets.sh")
+	cmd.Dir = repo
+	cmd.Env = append([]string{}, os.Environ()...)
+	cmd.Env = append(cmd.Env,
+		"AEGISLINK_SEPOLIA_DEPLOY_OUTPUT="+deployOutputPath,
+		"AEGISLINK_SEPOLIA_ASSET_REGISTRY="+assetsOutputPath,
+		"AEGISLINK_SEPOLIA_ERC20_ADDRESS=0xyour_test_erc20_address",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected invalid ERC-20 placeholder to be rejected, got success:\n%s", output)
+	}
+	if !strings.Contains(string(output), "invalid AEGISLINK_SEPOLIA_ERC20_ADDRESS") {
+		t.Fatalf("expected invalid ERC-20 address error, got:\n%s", output)
 	}
 }
 

@@ -371,10 +371,65 @@ func (a *App) rollbackDepositClaimState(
 	return nil
 }
 
-func (a *App) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (bridgekeeper.WithdrawalRecord, error) {
+func (a *App) ExecuteWithdrawal(ownerAddress, assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (bridgekeeper.WithdrawalRecord, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.BridgeKeeper.ExecuteWithdrawal(assetID, amount, recipient, deadline, signature)
+
+	normalizedOwner, err := a.BankKeeper.NormalizeAddress(ownerAddress)
+	if err != nil {
+		return bridgekeeper.WithdrawalRecord{}, err
+	}
+
+	bridgeState := a.BridgeKeeper.ExportState()
+	bankState := a.BankKeeper.ExportState()
+	limitsState := a.LimitsKeeper.ExportState()
+
+	withdrawal, err := a.BridgeKeeper.ExecuteWithdrawal(assetID, amount, recipient, deadline, signature)
+	if err != nil {
+		return bridgekeeper.WithdrawalRecord{}, err
+	}
+
+	asset, ok := a.RegistryKeeper.GetAsset(assetID)
+	if !ok {
+		if rollbackErr := a.rollbackWithdrawalState(bridgeState, bankState, limitsState); rollbackErr != nil {
+			return bridgekeeper.WithdrawalRecord{}, errors.Join(err, rollbackErr)
+		}
+		return bridgekeeper.WithdrawalRecord{}, bridgekeeper.ErrUnknownAsset
+	}
+	if err := a.BankKeeper.Debit(normalizedOwner, asset.Denom, withdrawal.Amount); err != nil {
+		if rollbackErr := a.rollbackWithdrawalState(bridgeState, bankState, limitsState); rollbackErr != nil {
+			return bridgekeeper.WithdrawalRecord{}, errors.Join(err, rollbackErr)
+		}
+		return bridgekeeper.WithdrawalRecord{}, err
+	}
+
+	return withdrawal, nil
+}
+
+func (a *App) rollbackWithdrawalState(
+	bridgeState bridgekeeper.StateSnapshot,
+	bankState bankkeeper.StateSnapshot,
+	limitsState limitskeeper.StateSnapshot,
+) error {
+	if err := a.BridgeKeeper.ImportState(bridgeState); err != nil {
+		return err
+	}
+	if err := a.BankKeeper.ImportState(bankState); err != nil {
+		return err
+	}
+	if err := a.LimitsKeeper.ImportState(limitsState); err != nil {
+		return err
+	}
+	for _, flush := range []func() error{
+		a.BridgeKeeper.Flush,
+		a.BankKeeper.Flush,
+		a.LimitsKeeper.Flush,
+	} {
+		if err := flush(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) Withdrawals(fromHeight, toHeight uint64) []bridgekeeper.WithdrawalRecord {

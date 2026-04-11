@@ -15,6 +15,7 @@ import (
 )
 
 const depositInitiatedTopic = "0xf9d606ceab83667329b57cc5f8977bd61f1496d82bb7a9d99586d24402a56a8c"
+const maxDepositLogRange = uint64(10)
 
 type RPCLogSource struct {
 	rpcURL         string
@@ -55,30 +56,51 @@ func (s *RPCLogSource) DepositEvents(ctx context.Context, fromBlock, toBlock uin
 		return nil, err
 	}
 
-	rawLogs, err := s.rpcCall(ctx, "eth_getLogs", []any{map[string]any{
-		"fromBlock": toHexUint64(fromBlock),
-		"toBlock":   toHexUint64(toBlock),
-		"address":   s.gatewayAddress,
-		"topics":    []string{depositInitiatedTopic},
-	}})
-	if err != nil {
-		return nil, err
-	}
-
-	var logs []rpcLog
-	if err := json.Unmarshal(rawLogs, &logs); err != nil {
-		return nil, err
-	}
-
-	events := make([]DepositEvent, 0, len(logs))
-	for _, log := range logs {
-		event, err := decodeDepositEvent(log, chainID.String())
+	events := make([]DepositEvent, 0)
+	for start := fromBlock; start <= toBlock; {
+		end := chunkedLogRangeEnd(start, toBlock)
+		rawLogs, err := s.rpcCall(ctx, "eth_getLogs", []any{map[string]any{
+			"fromBlock": toHexUint64(start),
+			"toBlock":   toHexUint64(end),
+			"address":   s.gatewayAddress,
+			"topics":    []string{depositInitiatedTopic},
+		}})
 		if err != nil {
 			return nil, err
 		}
-		events = append(events, event)
+
+		var logs []rpcLog
+		if err := json.Unmarshal(rawLogs, &logs); err != nil {
+			return nil, err
+		}
+
+		for _, log := range logs {
+			event, err := decodeDepositEvent(log, chainID.String())
+			if err != nil {
+				return nil, err
+			}
+			events = append(events, event)
+		}
+		if end == ^uint64(0) || end >= toBlock {
+			break
+		}
+		start = end + 1
 	}
 	return events, nil
+}
+
+func chunkedLogRangeEnd(fromBlock, toBlock uint64) uint64 {
+	if toBlock <= fromBlock {
+		return toBlock
+	}
+	if maxDepositLogRange <= 1 {
+		return fromBlock
+	}
+	maxEnd := fromBlock + maxDepositLogRange - 1
+	if maxEnd < fromBlock || maxEnd > toBlock {
+		return toBlock
+	}
+	return maxEnd
 }
 
 type rpcLog struct {

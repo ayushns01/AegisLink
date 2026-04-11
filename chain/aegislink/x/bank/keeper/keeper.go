@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrInvalidAddress = errors.New("invalid wallet address")
-	ErrInvalidDenom   = errors.New("invalid denom")
-	ErrInvalidAmount  = errors.New("invalid balance amount")
+	ErrInvalidAddress      = errors.New("invalid wallet address")
+	ErrInvalidDenom        = errors.New("invalid denom")
+	ErrInvalidAmount       = errors.New("invalid balance amount")
+	ErrInsufficientBalance = errors.New("insufficient balance")
 )
 
 type BalanceRecord struct {
@@ -97,6 +98,38 @@ func (k *Keeper) Credit(address, denom string, amount *big.Int) error {
 		k.balances[normalizedAddress][normalizedDenom] = big.NewInt(0)
 	}
 	k.balances[normalizedAddress][normalizedDenom].Add(k.balances[normalizedAddress][normalizedDenom], normalizedAmount)
+	return k.persist()
+}
+
+func (k *Keeper) Debit(address, denom string, amount *big.Int) error {
+	normalizedAddress := strings.TrimSpace(address)
+	if normalizedAddress == "" {
+		return ErrInvalidAddress
+	}
+	normalizedDenom, err := normalizeDenom(denom)
+	if err != nil {
+		return err
+	}
+	normalizedAmount, err := normalizeAmount(amount)
+	if err != nil {
+		return err
+	}
+
+	denoms, ok := k.balances[normalizedAddress]
+	if !ok {
+		return ErrInsufficientBalance
+	}
+	current, ok := denoms[normalizedDenom]
+	if !ok || current.Cmp(normalizedAmount) < 0 {
+		return ErrInsufficientBalance
+	}
+	current.Sub(current, normalizedAmount)
+	if current.Sign() == 0 {
+		delete(denoms, normalizedDenom)
+	}
+	if len(denoms) == 0 {
+		delete(k.balances, normalizedAddress)
+	}
 	return k.persist()
 }
 

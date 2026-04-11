@@ -1,0 +1,18 @@
+{
+  "chain_id": "11155111",
+  "verifier_address": "0xB44f06A0187D554f4d5847AD62014014962E73fc",
+  "gateway_address": "0x37ecd127529B14253C8a858976e22c4671c6Bd1E",
+  "assets": [
+
+    {
+      "asset_id": "eth",
+      "source_chain_id": "11155111",
+      "source_asset_kind": "native_eth",
+      "denom": "ueth",
+      "decimals": 18,
+      "display_name": "Ether",
+      "display_symbol": "ETH",
+      "enabled": true
+    }
+  ]
+}

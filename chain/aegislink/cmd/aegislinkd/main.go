@@ -619,6 +619,7 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	flags.SetOutput(io.Discard)
 
 	runtimeFlags := addRuntimeFlags(flags)
+	ownerAddress := flags.String("owner-address", "", "wallet owner bech32 address")
 	assetID := flags.String("asset-id", "", "asset identifier to withdraw")
 	amountRaw := flags.String("amount", "", "withdrawal amount")
 	recipient := flags.String("recipient", "", "ethereum recipient address")
@@ -627,6 +628,9 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	height := flags.Uint64("height", 0, "optional runtime block height override")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*ownerAddress) == "" {
+		return fmt.Errorf("missing owner address")
 	}
 	if strings.TrimSpace(*assetID) == "" {
 		return fmt.Errorf("missing asset id")
@@ -663,7 +667,7 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	}
 
 	service := app.NewBridgeTxService(a)
-	withdrawal, err := service.ExecuteWithdrawal(*assetID, amount, *recipient, *deadline, signature)
+	withdrawal, err := service.ExecuteWithdrawal(*ownerAddress, *assetID, amount, *recipient, *deadline, signature)
 	if err != nil {
 		return err
 	}

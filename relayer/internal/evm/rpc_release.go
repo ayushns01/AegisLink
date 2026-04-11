@@ -12,14 +12,21 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"golang.org/x/crypto/sha3"
 )
 
 const releaseSelector = "3418e653"
 
 type RPCReleaseTarget struct {
-	rpcURL         string
-	gatewayAddress string
-	client         *http.Client
+	rpcURL                  string
+	gatewayAddress          string
+	releaseSignerPrivateKey string
+	releaseSignerAddress    string
+	client                  *http.Client
 }
 
 type rpcTransactionReceipt struct {
@@ -28,10 +35,16 @@ type rpcTransactionReceipt struct {
 }
 
 func NewRPCReleaseTarget(rpcURL, gatewayAddress string) *RPCReleaseTarget {
+	return NewRPCReleaseTargetWithSigner(rpcURL, gatewayAddress, "", "")
+}
+
+func NewRPCReleaseTargetWithSigner(rpcURL, gatewayAddress, releaseSignerPrivateKey, releaseSignerAddress string) *RPCReleaseTarget {
 	return &RPCReleaseTarget{
-		rpcURL:         strings.TrimSpace(rpcURL),
-		gatewayAddress: strings.TrimSpace(gatewayAddress),
-		client:         http.DefaultClient,
+		rpcURL:                  strings.TrimSpace(rpcURL),
+		gatewayAddress:          strings.TrimSpace(gatewayAddress),
+		releaseSignerPrivateKey: strings.TrimSpace(releaseSignerPrivateKey),
+		releaseSignerAddress:    strings.TrimSpace(releaseSignerAddress),
+		client:                  http.DefaultClient,
 	}
 }
 
@@ -43,15 +56,23 @@ func (t *RPCReleaseTarget) ReleaseWithdrawal(ctx context.Context, request Releas
 		return "", ErrReleaseUnavailable
 	}
 
-	sender, err := t.senderAccount()
-	if err != nil {
-		return "", err
-	}
 	data, err := encodeReleaseCalldata(request)
 	if err != nil {
 		return "", err
 	}
 
+	if t.releaseSignerPrivateKey != "" {
+		txHash, err := t.releaseWithdrawalWithSigner(ctx, request, data)
+		if err != nil {
+			return "", err
+		}
+		return txHash, nil
+	}
+
+	sender, err := t.senderAccount(ctx)
+	if err != nil {
+		return "", err
+	}
 	txHashRaw, err := t.rpcCall(ctx, "eth_sendTransaction", []any{map[string]any{
 		"from": sender,
 		"to":   t.gatewayAddress,
@@ -74,8 +95,56 @@ func (t *RPCReleaseTarget) ReleaseWithdrawal(ctx context.Context, request Releas
 	return txHash, nil
 }
 
-func (t *RPCReleaseTarget) senderAccount() (string, error) {
-	raw, err := t.rpcCall(context.Background(), "eth_accounts", []any{})
+func (t *RPCReleaseTarget) releaseWithdrawalWithSigner(ctx context.Context, request ReleaseRequest, data string) (string, error) {
+	sender, err := t.releaseSenderAddress()
+	if err != nil {
+		return "", err
+	}
+	chainID, err := t.chainID(ctx)
+	if err != nil {
+		return "", err
+	}
+	nonce, err := t.transactionNonce(ctx, sender)
+	if err != nil {
+		return "", err
+	}
+	gasPrice, err := t.gasPrice(ctx)
+	if err != nil {
+		return "", err
+	}
+	rawTx, err := signLegacyTransaction(chainID, nonce, gasPrice, big.NewInt(500000), t.gatewayAddress, data, t.releaseSignerPrivateKey)
+	if err != nil {
+		return "", err
+	}
+	txHashRaw, err := t.rpcCall(ctx, "eth_sendRawTransaction", []any{rawTx})
+	if err != nil {
+		return "", err
+	}
+	var txHash string
+	if err := json.Unmarshal(txHashRaw, &txHash); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(txHash) == "" {
+		return "", errors.New("missing transaction hash")
+	}
+	if err := t.waitForReceipt(ctx, txHash); err != nil {
+		return "", err
+	}
+	return txHash, nil
+}
+
+func (t *RPCReleaseTarget) releaseSenderAddress() (string, error) {
+	if trimmed := strings.TrimSpace(t.releaseSignerAddress); trimmed != "" {
+		return trimmed, nil
+	}
+	if strings.TrimSpace(t.releaseSignerPrivateKey) == "" {
+		return "", errors.New("missing release signer private key")
+	}
+	return bridgetypes.SignerAddressFromPrivateKeyHex(t.releaseSignerPrivateKey)
+}
+
+func (t *RPCReleaseTarget) senderAccount(ctx context.Context) (string, error) {
+	raw, err := t.rpcCall(ctx, "eth_accounts", []any{})
 	if err != nil {
 		return "", err
 	}
@@ -87,6 +156,42 @@ func (t *RPCReleaseTarget) senderAccount() (string, error) {
 		return "", errors.New("no unlocked ethereum accounts available")
 	}
 	return accounts[0], nil
+}
+
+func (t *RPCReleaseTarget) chainID(ctx context.Context) (*big.Int, error) {
+	raw, err := t.rpcCall(ctx, "eth_chainId", []any{})
+	if err != nil {
+		return nil, err
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, err
+	}
+	return parseHexBigIntString(encoded)
+}
+
+func (t *RPCReleaseTarget) transactionNonce(ctx context.Context, sender string) (*big.Int, error) {
+	raw, err := t.rpcCall(ctx, "eth_getTransactionCount", []any{sender, "pending"})
+	if err != nil {
+		return nil, err
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, err
+	}
+	return parseHexBigIntString(encoded)
+}
+
+func (t *RPCReleaseTarget) gasPrice(ctx context.Context) (*big.Int, error) {
+	raw, err := t.rpcCall(ctx, "eth_gasPrice", []any{})
+	if err != nil {
+		return nil, err
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, err
+	}
+	return parseHexBigIntString(encoded)
 }
 
 func (t *RPCReleaseTarget) waitForReceipt(ctx context.Context, txHash string) error {
@@ -195,6 +300,135 @@ func decodeHexBytes(value string, expectedLen int) ([]byte, error) {
 		return nil, err
 	}
 	return decoded, nil
+}
+
+func signLegacyTransaction(chainID, nonce, gasPrice, gasLimit *big.Int, to, data, privateKeyHex string) (string, error) {
+	privateKey, err := parsePrivateKeyHex(privateKeyHex)
+	if err != nil {
+		return "", err
+	}
+	encodedTo, err := decodeHexBytes(to, 20)
+	if err != nil {
+		return "", fmt.Errorf("encode recipient: %w", err)
+	}
+
+	signingPayload := rlpEncodeList(
+		rlpEncodeBigInt(nonce),
+		rlpEncodeBigInt(gasPrice),
+		rlpEncodeBigInt(gasLimit),
+		rlpEncodeBytes(encodedTo),
+		rlpEncodeBigInt(big.NewInt(0)),
+		rlpEncodeBytes(mustDecodeHex(data)),
+		rlpEncodeBigInt(chainID),
+		rlpEncodeBigInt(big.NewInt(0)),
+		rlpEncodeBigInt(big.NewInt(0)),
+	)
+	digest := keccak256(signingPayload)
+	sig := ecdsa.SignCompact(privateKey, digest, false)
+	if len(sig) != 65 {
+		return "", fmt.Errorf("unexpected compact signature length %d", len(sig))
+	}
+	recoveryCode := sig[0] - 27
+	v := new(big.Int).Mul(chainID, big.NewInt(2))
+	v.Add(v, big.NewInt(int64(35+recoveryCode)))
+	signedPayload := rlpEncodeList(
+		rlpEncodeBigInt(nonce),
+		rlpEncodeBigInt(gasPrice),
+		rlpEncodeBigInt(gasLimit),
+		rlpEncodeBytes(encodedTo),
+		rlpEncodeBigInt(big.NewInt(0)),
+		rlpEncodeBytes(mustDecodeHex(data)),
+		rlpEncodeBigInt(v),
+		rlpEncodeBigInt(new(big.Int).SetBytes(sig[1:33])),
+		rlpEncodeBigInt(new(big.Int).SetBytes(sig[33:65])),
+	)
+	return "0x" + hex.EncodeToString(signedPayload), nil
+}
+
+func mustDecodeHex(value string) []byte {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(value), "0x")
+	if trimmed == "" {
+		return nil
+	}
+	decoded, err := hex.DecodeString(trimmed)
+	if err != nil {
+		panic(err)
+	}
+	return decoded
+}
+
+func rlpEncodeBigInt(value *big.Int) []byte {
+	if value == nil || value.Sign() <= 0 {
+		return []byte{0x80}
+	}
+	return rlpEncodeBytes(value.Bytes())
+}
+
+func rlpEncodeBytes(value []byte) []byte {
+	if len(value) == 1 && value[0] < 0x80 {
+		return append([]byte(nil), value[0])
+	}
+	if len(value) <= 55 {
+		out := make([]byte, 1+len(value))
+		out[0] = byte(0x80 + len(value))
+		copy(out[1:], value)
+		return out
+	}
+	length := rlpEncodeLength(len(value), 0xb7)
+	return append(length, value...)
+}
+
+func rlpEncodeList(values ...[]byte) []byte {
+	payloadLen := 0
+	for _, value := range values {
+		payloadLen += len(value)
+	}
+	payload := make([]byte, 0, payloadLen)
+	for _, value := range values {
+		payload = append(payload, value...)
+	}
+	if len(payload) <= 55 {
+		out := make([]byte, 1+len(payload))
+		out[0] = byte(0xc0 + len(payload))
+		copy(out[1:], payload)
+		return out
+	}
+	return append(rlpEncodeLength(len(payload), 0xf7), payload...)
+}
+
+func rlpEncodeLength(length int, offset byte) []byte {
+	if length == 0 {
+		return []byte{offset}
+	}
+	encoded := make([]byte, 0, 9)
+	value := length
+	for value > 0 {
+		encoded = append([]byte{byte(value & 0xff)}, encoded...)
+		value >>= 8
+	}
+	return append([]byte{offset + byte(len(encoded))}, encoded...)
+}
+
+func keccak256(data []byte) []byte {
+	digest := sha3.NewLegacyKeccak256()
+	_, _ = digest.Write(data)
+	return digest.Sum(nil)
+}
+
+func parsePrivateKeyHex(privateKeyHex string) (*secp256k1.PrivateKey, error) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(privateKeyHex), "0x")
+	if trimmed == "" {
+		return nil, errors.New("missing release signer private key")
+	}
+	decoded, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("decode release signer private key: %w", err)
+	}
+	privateKey := secp256k1.PrivKeyFromBytes(decoded)
+	if privateKey.Key.IsZero() {
+		return nil, errors.New("release signer private key is zero")
+	}
+	return privateKey, nil
 }
 
 func (t *RPCReleaseTarget) rpcCall(ctx context.Context, method string, params []any) (json.RawMessage, error) {

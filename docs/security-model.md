@@ -24,6 +24,7 @@ These rules should always hold:
 
 - every accepted claim has one deterministic claim ID
 - every mint, burn, and unlock path is auditable
+- every public redeem burns the bridged representation before release and leaves a retryable withdrawal record until Sepolia release succeeds
 - every supported asset exists in the registry before use
 - every route to Osmosis is explicitly enabled
 - every pause state is checked before minting, unlocking, or forwarding
@@ -38,6 +39,7 @@ Do not claim:
 - permissionless support for arbitrary tokens
 - censorship resistance against a compromised attester majority
 - instant Ethereum finality
+- live public Osmosis wallet delivery today
 - proxy-based contract upgradeability in v1
 
 ## Main control surfaces

@@ -74,9 +74,16 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	}
 
 	app.SetCurrentHeight(60)
-	withdrawal, err := app.ExecuteWithdrawal(claim.AssetID, claim.Amount, "0xrecipient", 120, []byte("threshold-proof"))
+	withdrawalOwner := sdk.AccAddress([]byte("withdrawal-owner-runtime-test")).String()
+	if err := app.BankKeeper.Credit(withdrawalOwner, "uethusdc", claim.Amount); err != nil {
+		t.Fatalf("seed withdrawal owner balance: %v", err)
+	}
+	withdrawal, err := app.ExecuteWithdrawal(withdrawalOwner, claim.AssetID, claim.Amount, "0xrecipient", 120, []byte("threshold-proof"))
 	if err != nil {
 		t.Fatalf("execute withdrawal: %v", err)
+	}
+	if got := app.BankKeeper.BalanceOf(withdrawalOwner, "uethusdc"); got.Sign() != 0 {
+		t.Fatalf("expected withdrawal owner balance to be debited, got %s", got.String())
 	}
 	transfer, err := app.IBCRouterKeeper.InitiateTransfer(asset.AssetID, mustAmount(t, "50000000"), "osmo1recipient", 140, "swap")
 	if err != nil {
