@@ -17,7 +17,7 @@ func ReplayKey(kind ClaimKind, sourceAssetKind, sourceChainID, sourceContract, s
 func canonicalIdentityBytes(kind ClaimKind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64) []byte {
 	var buf bytes.Buffer
 	writeCanonicalString(&buf, string(kind))
-	writeCanonicalString(&buf, sourceAssetKind)
+	writeCanonicalString(&buf, canonicalReplaySourceAssetKind(sourceAssetKind))
 	writeCanonicalString(&buf, sourceChainID)
 	writeCanonicalString(&buf, sourceContract)
 	writeCanonicalString(&buf, sourceTxHash)
@@ -48,6 +48,17 @@ func canonicalClaimBytes(kind ClaimKind, sourceAssetKind, sourceChainID, sourceC
 	buf.Write(numeric[:])
 
 	return buf.Bytes()
+}
+
+func canonicalReplaySourceAssetKind(sourceAssetKind string) string {
+	switch strings.TrimSpace(sourceAssetKind) {
+	case "", SourceAssetKindERC20:
+		return ""
+	case SourceAssetKindNativeETH:
+		return SourceAssetKindNativeETH
+	default:
+		return strings.TrimSpace(sourceAssetKind)
+	}
 }
 
 func writeCanonicalString(buf *bytes.Buffer, value string) {

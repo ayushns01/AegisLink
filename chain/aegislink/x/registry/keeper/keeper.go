@@ -72,6 +72,9 @@ func (k *Keeper) RegisterAsset(asset registrytypes.Asset) error {
 	if _, exists := k.assets[key]; exists {
 		return ErrAssetAlreadyExists
 	}
+	if err := k.ensureDestinationDenomAvailable(stored, key); err != nil {
+		return err
+	}
 
 	k.assets[key] = stored
 	return k.persist()
@@ -117,7 +120,11 @@ func (k *Keeper) ImportAssets(assets []registrytypes.Asset) error {
 		if err := stored.ValidateBasic(); err != nil {
 			return err
 		}
-		k.assets[assetKey(stored.AssetID)] = stored
+		key := assetKey(stored.AssetID)
+		if err := k.ensureDestinationDenomAvailable(stored, key); err != nil {
+			return err
+		}
+		k.assets[key] = stored
 	}
 	return k.persist()
 }
@@ -176,6 +183,18 @@ func deriveAssetMetadata(asset registrytypes.Asset) registrytypes.Asset {
 	return asset
 }
 
+func (k *Keeper) ensureDestinationDenomAvailable(asset registrytypes.Asset, key string) error {
+	for existingKey, existingAsset := range k.assets {
+		if existingKey == key {
+			continue
+		}
+		if strings.EqualFold(existingAsset.DestinationDenom, asset.DestinationDenom) {
+			return ErrAssetAlreadyExists
+		}
+	}
+	return nil
+}
+
 func deriveDestinationDenom(asset registrytypes.Asset) string {
 	prefix := assetPrefixFromAssetID(asset.AssetID)
 	if prefix == "" {
@@ -230,8 +249,15 @@ func (k *Keeper) loadFromPrefixStore() error {
 	return k.prefixStore.LoadAll(assetPrefix, func() any {
 		return &registrytypes.Asset{}
 	}, func(_ string, value any) error {
-		asset := canonicalAsset(*(value.(*registrytypes.Asset)))
-		k.assets[assetKey(asset.AssetID)] = asset
+		asset := deriveAssetMetadata(canonicalAsset(*(value.(*registrytypes.Asset))))
+		if err := asset.ValidateBasic(); err != nil {
+			return err
+		}
+		key := assetKey(asset.AssetID)
+		if err := k.ensureDestinationDenomAvailable(asset, key); err != nil {
+			return err
+		}
+		k.assets[key] = asset
 		return nil
 	})
 }

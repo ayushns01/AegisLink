@@ -1,9 +1,11 @@
 package keeper
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/ayushns01/aegislink/chain/aegislink/testutil"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
 
@@ -95,6 +97,71 @@ func TestDestinationDenomIsDerivedDeterministically(t *testing.T) {
 	secondStored, _ := secondKeeper.GetAsset(second.AssetID)
 	if firstStored.DestinationDenom != secondStored.DestinationDenom {
 		t.Fatalf("expected deterministic destination denom, got %q and %q", firstStored.DestinationDenom, secondStored.DestinationDenom)
+	}
+}
+
+func TestRegisterAssetRejectsDerivedDenomCollisions(t *testing.T) {
+	keeper := NewKeeper()
+
+	first := registrytypes.Asset{
+		AssetID:            "eth.us-dc",
+		SourceChainID:      "ethereum-1",
+		SourceAssetKind:    registrytypes.SourceAssetKindERC20,
+		SourceAssetAddress: "0xabc123",
+		DisplaySymbol:      "US-DC",
+		Decimals:           6,
+		Enabled:            true,
+	}
+	second := registrytypes.Asset{
+		AssetID:            "eth.us_dc",
+		SourceChainID:      "ethereum-1",
+		SourceAssetKind:    registrytypes.SourceAssetKindERC20,
+		SourceAssetAddress: "0xdef456",
+		DisplaySymbol:      "US_DC",
+		Decimals:           6,
+		Enabled:            true,
+	}
+
+	if err := keeper.RegisterAsset(first); err != nil {
+		t.Fatalf("expected first registration to succeed, got %v", err)
+	}
+	if err := keeper.RegisterAsset(second); !errors.Is(err, ErrAssetAlreadyExists) {
+		t.Fatalf("expected derived denom collision error, got %v", err)
+	}
+}
+
+func TestStoreKeeperLoadsLegacyPrefixAssetWithDerivedMetadata(t *testing.T) {
+	store, keys := testutil.NewInMemoryCommitMultiStore(t, "registry")
+
+	legacy := registrytypes.Asset{
+		AssetID:        "eth.usdc",
+		SourceChainID:  "ethereum-sepolia",
+		SourceContract: "0xabc123",
+		Denom:          "uethusdc",
+		Decimals:       6,
+		DisplayName:    "Ethereum USDC",
+		Enabled:        true,
+	}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("marshal legacy asset: %v", err)
+	}
+	store.GetKVStore(keys["registry"]).Set([]byte("asset/eth.usdc"), raw)
+
+	keeper, err := NewStoreKeeper(store, keys["registry"])
+	if err != nil {
+		t.Fatalf("expected store-backed keeper to load legacy asset, got %v", err)
+	}
+
+	stored, ok := keeper.GetAsset(legacy.AssetID)
+	if !ok {
+		t.Fatalf("expected asset %q after reload", legacy.AssetID)
+	}
+	if stored.DestinationDenom != "uethusdc" {
+		t.Fatalf("expected derived destination denom uethusdc, got %q", stored.DestinationDenom)
+	}
+	if stored.Denom != stored.DestinationDenom {
+		t.Fatalf("expected denom %q, got %q", stored.DestinationDenom, stored.Denom)
 	}
 }
 

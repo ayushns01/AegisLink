@@ -114,6 +114,38 @@ func TestClaimIdentityValidateBasic(t *testing.T) {
 	})
 }
 
+func TestLegacyAndExplicitERC20ClaimsShareCanonicalHashes(t *testing.T) {
+	legacy := validLegacyClaimIdentity(ClaimKindDeposit)
+	explicit := validClaimIdentity(ClaimKindDeposit)
+
+	if legacy.ReplayKey() != explicit.ReplayKey() {
+		t.Fatalf("expected replay key compatibility, got %q and %q", legacy.ReplayKey(), explicit.ReplayKey())
+	}
+	if legacy.DerivedMessageID() != explicit.DerivedMessageID() {
+		t.Fatalf("expected message id compatibility, got %q and %q", legacy.DerivedMessageID(), explicit.DerivedMessageID())
+	}
+
+	legacyClaim := DepositClaim{
+		Identity:           legacy,
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustAmount("100000000000000000000"),
+		Recipient:          "cosmos1recipient",
+		Deadline:           99,
+	}
+	explicitClaim := DepositClaim{
+		Identity:           explicit,
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth.usdc",
+		Amount:             mustAmount("100000000000000000000"),
+		Recipient:          "cosmos1recipient",
+		Deadline:           99,
+	}
+	if legacyClaim.Digest() != explicitClaim.Digest() {
+		t.Fatalf("expected digest compatibility, got %q and %q", legacyClaim.Digest(), explicitClaim.Digest())
+	}
+}
+
 func TestDepositClaimValidateBasic(t *testing.T) {
 	claim := DepositClaim{
 		Identity:           validClaimIdentity(ClaimKindDeposit),
