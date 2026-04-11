@@ -17,6 +17,7 @@ This repository is meant to show:
 ## What is real today
 
 - Ethereum deposit observation and release execution run through the live local Anvil path.
+- The real-wallet bridge roadmap is now underway: registry assets distinguish native ETH from ERC-20 custody, the Ethereum gateway supports native ETH deposit and release locally, and AegisLink mints canonical bridged denoms such as `ueth` and `uethusdc`.
 - Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
 - Ethereum verifiers now build EIP-712-style attestation digests, reject non-low-`s` signatures, and the gateway release path is guarded against reentrant token callbacks.
 - AegisLink owns bridge, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, and `query status`.
@@ -89,6 +90,7 @@ Use these to build or review the project step by step:
 - [Final stretch plan](docs/superpowers/plans/2026-04-05-aegislink-final-stretch-plan.md)
 - [Future realism plan](docs/superpowers/plans/2026-04-06-aegislink-future-realism-plan.md)
 - [Gap remediation plan](docs/superpowers/plans/2026-04-08-aegislink-gap-remediation-plan.md)
+- [Real wallet asset bridge plan](docs/superpowers/plans/2026-04-11-real-wallet-asset-bridge-plan.md)
 - [Initial implementation plan, historical](docs/superpowers/plans/2026-03-28-eth-cosmos-aegislink-implementation.md)
 
 Use these for operational and launch thinking:
@@ -197,6 +199,7 @@ As of April 9, 2026:
 - Phase 4 hardening now adds stronger replay and supply invariants, a narrow verifier interface, and demo-facing failure counters
 - the routed side now has explicit packet, execution, and acknowledgement lifecycle state
 - the next roadmap focus is deeper realism beyond the completed phase set: pushing AegisLink from the current daemon shim toward a fuller networked CometBFT or BaseApp runtime, replacing the current Hermes-shaped local bridge with fuller real IBC-Go or Hermes-backed networking, and validating the monitoring stack on a machine that has Docker installed
+- the public-wallet bridge plan is now in progress too: Phase G is implemented locally with native-ETH-aware asset metadata, native ETH gateway custody, and canonical bridged mint or burn logic on AegisLink
 
 The current repo shape is:
 

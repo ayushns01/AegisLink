@@ -237,13 +237,14 @@ func (k *Keeper) ExecuteWithdrawal(assetID string, amount *big.Int, recipient st
 		return WithdrawalRecord{}, err
 	}
 
-	currentSupply, ok := k.supplyByDenom[asset.Denom]
+	denom := bridgeDenomForAsset(asset)
+	currentSupply, ok := k.supplyByDenom[denom]
 	if !ok || currentSupply.Cmp(amount) < 0 {
 		return WithdrawalRecord{}, ErrInsufficientSupply
 	}
 
-	record := k.newWithdrawalRecord(assetID, asset.SourceContract, amount, recipient, deadline, signature)
-	if err := k.burnRepresentation(asset.Denom, amount); err != nil {
+	record := k.newWithdrawalRecord(assetID, sourceAssetAddressForWithdrawal(asset), amount, recipient, deadline, signature)
+	if err := k.burnRepresentation(denom, amount); err != nil {
 		return WithdrawalRecord{}, err
 	}
 	k.withdrawals = append(k.withdrawals, record)

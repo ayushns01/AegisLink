@@ -33,6 +33,26 @@ func TestExecuteDepositClaimAcceptsValidInboundClaimOnce(t *testing.T) {
 	}
 }
 
+func TestExecuteDepositClaimMintsNativeETHCanonicalDenom(t *testing.T) {
+	keeper, claim, attestation, _, _, _ := newNativeKeeperFixture(t)
+
+	result, err := keeper.ExecuteDepositClaim(claim, attestation)
+	if err != nil {
+		t.Fatalf("expected native ETH claim to succeed, got %v", err)
+	}
+	if result.Status != ClaimStatusAccepted {
+		t.Fatalf("expected accepted status, got %q", result.Status)
+	}
+	if result.Denom != "ueth" {
+		t.Fatalf("expected denom ueth, got %q", result.Denom)
+	}
+
+	supply := keeper.SupplyForDenom("ueth")
+	if supply.Cmp(claim.Amount) != 0 {
+		t.Fatalf("expected supply %s, got %s", claim.Amount.String(), supply.String())
+	}
+}
+
 func TestExecuteDepositClaimRejectsDuplicateClaim(t *testing.T) {
 	keeper, claim, attestation, _, _, _ := newKeeperFixture(t)
 
@@ -161,6 +181,26 @@ func TestExecuteWithdrawalBurnsSupplyAndRecordsWithdrawal(t *testing.T) {
 	}
 }
 
+func TestExecuteWithdrawalForNativeETHUsesCanonicalZeroAddress(t *testing.T) {
+	keeper, claim, attestation, _, _, _ := newNativeKeeperFixture(t)
+
+	if _, err := keeper.ExecuteDepositClaim(claim, attestation); err != nil {
+		t.Fatalf("expected native ETH deposit claim to succeed, got %v", err)
+	}
+
+	keeper.SetCurrentHeight(75)
+	withdrawal, err := keeper.ExecuteWithdrawal("eth", mustAmount("200000000000000000"), "0xrecipient", 160, []byte("proof"))
+	if err != nil {
+		t.Fatalf("expected native ETH withdrawal to succeed, got %v", err)
+	}
+	if withdrawal.AssetAddress != "0x0000000000000000000000000000000000000000" {
+		t.Fatalf("expected canonical native ETH zero address, got %q", withdrawal.AssetAddress)
+	}
+	if supply := keeper.SupplyForDenom("ueth"); supply.Cmp(mustAmount("800000000000000000")) != 0 {
+		t.Fatalf("expected remaining native ETH supply 800000000000000000, got %s", supply.String())
+	}
+}
+
 func TestExecuteWithdrawalRejectsWithoutMintedSupply(t *testing.T) {
 	keeper, _, _, _, _, _ := newKeeperFixture(t)
 	keeper.SetCurrentHeight(60)
@@ -271,6 +311,47 @@ func TestBridgeSupplyConservationAcrossDepositAndWithdrawalSequence(t *testing.T
 	}
 }
 
+func TestBridgeAccountingSeparatesNativeETHAndERC20Supply(t *testing.T) {
+	t.Parallel()
+
+	keeper, erc20Claim, erc20Attestation, registry, limits, _ := newKeeperFixture(t)
+	nativeClaim := validNativeDepositClaim()
+	nativeAttestation := validAttestation(nativeClaim)
+
+	if err := registry.RegisterAsset(registrytypes.Asset{
+		AssetID:         "eth",
+		SourceChainID:   "ethereum-11155111",
+		SourceAssetKind: registrytypes.SourceAssetKindNativeETH,
+		DisplayName:     "Ether",
+		DisplaySymbol:   "ETH",
+		Decimals:        18,
+		Enabled:         true,
+	}); err != nil {
+		t.Fatalf("expected native asset registration to succeed, got %v", err)
+	}
+	if err := limits.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth",
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount("100000000000000000000"),
+	}); err != nil {
+		t.Fatalf("expected native rate limit registration to succeed, got %v", err)
+	}
+
+	if _, err := keeper.ExecuteDepositClaim(erc20Claim, erc20Attestation); err != nil {
+		t.Fatalf("expected ERC-20 deposit claim to succeed, got %v", err)
+	}
+	if _, err := keeper.ExecuteDepositClaim(nativeClaim, nativeAttestation); err != nil {
+		t.Fatalf("expected native ETH deposit claim to succeed, got %v", err)
+	}
+
+	if supply := keeper.SupplyForDenom("uethusdc"); supply.Cmp(erc20Claim.Amount) != 0 {
+		t.Fatalf("expected ERC-20 supply %s, got %s", erc20Claim.Amount.String(), supply.String())
+	}
+	if supply := keeper.SupplyForDenom("ueth"); supply.Cmp(nativeClaim.Amount) != 0 {
+		t.Fatalf("expected native ETH supply %s, got %s", nativeClaim.Amount.String(), supply.String())
+	}
+}
+
 func TestBridgeAccountingInvariantRejectsTamperedSupplyAndTripsCircuitBreaker(t *testing.T) {
 	t.Parallel()
 
@@ -346,6 +427,42 @@ func newKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgety
 	return keeper, claim, attestation, registry, limits, pauser
 }
 
+func newNativeKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgetypes.Attestation, *registrykeeper.Keeper, *limitskeeper.Keeper, *pauserkeeper.Keeper) {
+	t.Helper()
+
+	registry := registrykeeper.NewKeeper()
+	limits := limitskeeper.NewKeeper()
+	pauser := pauserkeeper.NewKeeper()
+
+	asset := registrytypes.Asset{
+		AssetID:         "eth",
+		SourceChainID:   "ethereum-11155111",
+		SourceAssetKind: registrytypes.SourceAssetKindNativeETH,
+		DisplayName:     "Ether",
+		DisplaySymbol:   "ETH",
+		Decimals:        18,
+		Enabled:         true,
+	}
+	if err := registry.RegisterAsset(asset); err != nil {
+		t.Fatalf("expected native asset registration to succeed, got %v", err)
+	}
+	if err := limits.SetLimit(limittypes.RateLimit{
+		AssetID:       asset.AssetID,
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount("100000000000000000000"),
+	}); err != nil {
+		t.Fatalf("expected native rate limit registration to succeed, got %v", err)
+	}
+
+	keeper := NewKeeper(registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	keeper.SetCurrentHeight(50)
+
+	claim := validNativeDepositClaim()
+	attestation := validAttestation(claim)
+
+	return keeper, claim, attestation, registry, limits, pauser
+}
+
 func validDepositClaim() bridgetypes.DepositClaim {
 	identity := bridgetypes.ClaimIdentity{
 		Kind:           bridgetypes.ClaimKindDeposit,
@@ -363,6 +480,27 @@ func validDepositClaim() bridgetypes.DepositClaim {
 		AssetID:            "eth.usdc",
 		Amount:             mustAmount("100000000"),
 		Recipient:          "cosmos1recipient",
+		Deadline:           100,
+	}
+}
+
+func validNativeDepositClaim() bridgetypes.DepositClaim {
+	identity := bridgetypes.ClaimIdentity{
+		Kind:            bridgetypes.ClaimKindDeposit,
+		SourceAssetKind: bridgetypes.SourceAssetKindNativeETH,
+		SourceChainID:   "ethereum-11155111",
+		SourceTxHash:    "0xfeedbeef",
+		SourceLogIndex:  9,
+		Nonce:           2,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+
+	return bridgetypes.DepositClaim{
+		Identity:           identity,
+		DestinationChainID: "aegislink-1",
+		AssetID:            "eth",
+		Amount:             mustAmount("1000000000000000000"),
+		Recipient:          "cosmos1nativeeth",
 		Deadline:           100,
 	}
 }

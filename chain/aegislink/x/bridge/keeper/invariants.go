@@ -24,12 +24,13 @@ func (k *Keeper) CheckAccountingInvariant() error {
 		if !ok {
 			return k.tripCircuit(fmt.Errorf("%w: missing asset metadata for withdrawal asset %s", ErrAccountingInvariantBroken, withdrawal.AssetID))
 		}
-		if _, ok := expected[asset.Denom]; !ok {
-			expected[asset.Denom] = big.NewInt(0)
+		denom := bridgeDenomForAsset(asset)
+		if _, ok := expected[denom]; !ok {
+			expected[denom] = big.NewInt(0)
 		}
-		expected[asset.Denom].Sub(expected[asset.Denom], withdrawal.Amount)
-		if expected[asset.Denom].Sign() < 0 {
-			return k.tripCircuit(fmt.Errorf("%w: negative expected supply for denom %s", ErrAccountingInvariantBroken, asset.Denom))
+		expected[denom].Sub(expected[denom], withdrawal.Amount)
+		if expected[denom].Sign() < 0 {
+			return k.tripCircuit(fmt.Errorf("%w: negative expected supply for asset %s denom %s", ErrAccountingInvariantBroken, withdrawal.AssetID, denom))
 		}
 	}
 

@@ -2,10 +2,13 @@ package keeper
 
 import (
 	"math/big"
+	"strings"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
+
+const canonicalNativeETHAddress = "0x0000000000000000000000000000000000000000"
 
 type ClaimRecord struct {
 	MessageID string
@@ -27,10 +30,11 @@ type WithdrawalRecord struct {
 }
 
 func (k *Keeper) acceptDepositClaim(claimKey string, claim bridgetypes.DepositClaim, asset registrytypes.Asset) ClaimResult {
-	k.mintRepresentation(asset.Denom, claim.Amount)
+	denom := bridgeDenomForAsset(asset)
+	k.mintRepresentation(denom, claim.Amount)
 	k.processedClaims[claimKey] = ClaimRecord{
 		MessageID: claim.Identity.MessageID,
-		Denom:     asset.Denom,
+		Denom:     denom,
 		AssetID:   claim.AssetID,
 		Amount:    cloneAmount(claim.Amount),
 		Status:    ClaimStatusAccepted,
@@ -39,7 +43,7 @@ func (k *Keeper) acceptDepositClaim(claimKey string, claim bridgetypes.DepositCl
 	return ClaimResult{
 		Status:    ClaimStatusAccepted,
 		MessageID: claim.Identity.MessageID,
-		Denom:     asset.Denom,
+		Denom:     denom,
 		Amount:    cloneAmount(claim.Amount),
 	}
 }
@@ -74,6 +78,26 @@ func cloneWithdrawalRecord(record WithdrawalRecord) WithdrawalRecord {
 		Deadline:     record.Deadline,
 		Signature:    append([]byte(nil), record.Signature...),
 	}
+}
+
+func bridgeDenomForAsset(asset registrytypes.Asset) string {
+	if denom := strings.TrimSpace(asset.DestinationDenom); denom != "" {
+		return denom
+	}
+	return strings.TrimSpace(asset.Denom)
+}
+
+func sourceAssetAddressForWithdrawal(asset registrytypes.Asset) string {
+	if address := strings.TrimSpace(asset.SourceAssetAddress); address != "" {
+		return address
+	}
+	if address := strings.TrimSpace(asset.SourceContract); address != "" {
+		return address
+	}
+	if asset.SourceAssetKind == registrytypes.SourceAssetKindNativeETH {
+		return canonicalNativeETHAddress
+	}
+	return ""
 }
 
 func cloneAmount(amount *big.Int) *big.Int {
