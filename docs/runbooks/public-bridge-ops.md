@@ -92,6 +92,44 @@ If you want the relayer to execute Sepolia release transactions during redeem, s
 
 The `...SIGNER_...` form is the canonical name in the codebase. The shorter alias exists so older local env files still work.
 
+## Phase K scaffold
+
+The future public Osmosis-delivery path has a separate, disabled-by-default env file:
+
+```bash
+cp .env.public-ibc.local.example .env.public-ibc.local
+set -a; source .env.public-ibc.local; set +a
+```
+
+Bootstrap the manifest and seed the AegisLink route profile like this:
+
+```bash
+scripts/testnet/bootstrap_public_ibc.sh
+scripts/testnet/seed_public_ibc_route.sh /tmp/aegislink-public-home
+go run ./chain/aegislink/cmd/aegislinkd query route-profiles --home /tmp/aegislink-public-home
+```
+
+Once the profile exists, the current repo can also prove the profile-based initiation path locally:
+
+```bash
+go run ./chain/aegislink/cmd/aegislinkd tx initiate-ibc-transfer \
+  --home /tmp/aegislink-public-home \
+  --route-id osmosis-public-wallet \
+  --asset-id eth \
+  --amount 1000000000000000 \
+  --receiver osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8 \
+  --timeout-height 120
+```
+
+That file and bootstrap flow are only scaffolds for the future public IBC path. They keep:
+
+- `AEGISLINK_ENABLE_REAL_IBC=0` until a live Hermes or IBC-Go path exists
+- local AegisLink and Osmosis home placeholders
+- a future route-relayer command shape
+- a manifest pointer to `deploy/testnet/ibc/osmosis-wallet-delivery.json`
+
+Use it to document the eventual public IBC bootstrap, not to claim live Osmosis wallet delivery today.
+
 ## Intended endpoints
 
 - RPC: `http://127.0.0.1:26657`

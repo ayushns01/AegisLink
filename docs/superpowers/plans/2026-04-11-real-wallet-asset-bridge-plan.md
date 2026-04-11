@@ -493,7 +493,7 @@ git commit -m "docs: publish public bridge demo path"
 
 ## Optional Phase K: Real Osmosis Wallet Delivery
 
-Status for current repo scope: scaffolded, not live. The repo now has an explicit `deploy/testnet/ibc` landing zone and a guarded e2e seam for future public Osmosis delivery, but it does not claim Hermes or real Osmosis wallet connectivity yet.
+Status for current repo scope: scaffolded, not live. The repo now has an explicit `deploy/testnet/ibc` landing zone, env-driven bootstrap scripts that turn the public bridge registry into AegisLink route profiles, and guarded e2e seams for future public Osmosis delivery, but it does not claim Hermes or real Osmosis wallet connectivity yet.
 
 Only do this if the requirement is specifically:
 `Sepolia ETH or ERC-20 -> real Osmosis wallet`

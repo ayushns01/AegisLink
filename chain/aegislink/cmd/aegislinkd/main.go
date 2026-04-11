@@ -86,6 +86,8 @@ func runQuery(args []string, stdout, stderr io.Writer) error {
 		return querySignerSets(args[1:], stdout)
 	case "routes":
 		return queryRoutes(args[1:], stdout)
+	case "route-profiles":
+		return queryRouteProfiles(args[1:], stdout)
 	case "transfers":
 		return queryTransfers(args[1:], stdout)
 	case "withdrawals":
@@ -521,6 +523,24 @@ func queryRoutes(args []string, stdout io.Writer) error {
 	return writeJSON(stdout, ibcroutercli.RoutesResponse(routes).Routes)
 }
 
+func queryRouteProfiles(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("route-profiles", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+
+	return writeJSON(stdout, a.RouteProfiles())
+}
+
 func queryTransfers(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("transfers", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -683,6 +703,7 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 	flags.SetOutput(io.Discard)
 
 	runtimeFlags := addRuntimeFlags(flags)
+	routeID := flags.String("route-id", "", "route profile identifier")
 	assetID := flags.String("asset-id", "", "asset identifier to route")
 	amountRaw := flags.String("amount", "", "transfer amount")
 	receiver := flags.String("receiver", "", "destination receiver")
@@ -713,7 +734,12 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 		return err
 	}
 	defer closeApp(a)
-	transfer, err := a.InitiateIBCTransfer(*assetID, amount, *receiver, *timeoutHeight, *memo)
+	var transfer ibcrouterkeeper.TransferRecord
+	if strings.TrimSpace(*routeID) != "" {
+		transfer, err = a.InitiateIBCTransferWithProfile(*routeID, *assetID, amount, *receiver, *timeoutHeight, *memo)
+	} else {
+		transfer, err = a.InitiateIBCTransfer(*assetID, amount, *receiver, *timeoutHeight, *memo)
+	}
 	if err != nil {
 		return err
 	}

@@ -50,7 +50,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The destination side is now a bootstrapped local runtime with its own config, state, and local IBC link metadata, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
 - The public AegisLink testnet scaffold is still a single-validator local devnet bootstrap, not a hosted or externally peered public network yet.
 - The route path is realistic enough to exercise packet lifecycle and destination execution through Hermes-shaped local commands, but it is still a controlled local environment rather than real proof-backed IBC transport.
-- Public Osmosis wallet delivery is still only scaffolded. The repo now has an explicit `deploy/testnet/ibc` landing zone and a guarded e2e seam for Phase K, but it does not claim live Hermes or Osmosis testnet connectivity yet.
+- Public Osmosis wallet delivery is still only scaffolded. The repo now has an explicit `deploy/testnet/ibc` landing zone, a local env/bootstrap flow for turning bridge assets into public IBC route profiles, and guarded e2e seams for Phase K, but it still does not claim live Hermes or Osmosis testnet connectivity yet.
 
 ## Why this still matters
 

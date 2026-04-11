@@ -11,6 +11,7 @@ import (
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -468,16 +469,34 @@ func (a *App) SetRoute(route ibcrouterkeeper.Route) error {
 	return a.IBCRouterKeeper.SetRoute(route)
 }
 
+func (a *App) SetRouteProfile(profile ibcroutertypes.RouteProfile) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.IBCRouterKeeper.SetRouteProfile(profile)
+}
+
 func (a *App) Transfers() []ibcrouterkeeper.TransferRecord {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.IBCRouterKeeper.ExportTransfers()
 }
 
+func (a *App) RouteProfiles() []ibcroutertypes.RouteProfile {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.IBCRouterKeeper.ExportRouteProfiles()
+}
+
 func (a *App) InitiateIBCTransfer(assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (ibcrouterkeeper.TransferRecord, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.IBCRouterKeeper.InitiateTransfer(assetID, amount, receiver, timeoutHeight, memo)
+}
+
+func (a *App) InitiateIBCTransferWithProfile(routeID, assetID string, amount *big.Int, receiver string, timeoutHeight uint64, memo string) (ibcrouterkeeper.TransferRecord, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.IBCRouterKeeper.InitiateTransferWithProfile(routeID, assetID, amount, receiver, timeoutHeight, memo)
 }
 
 func (a *App) FailIBCTransfer(transferID, reason string) (ibcrouterkeeper.TransferRecord, error) {

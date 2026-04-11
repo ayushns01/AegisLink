@@ -6,5 +6,21 @@
   "wallet_prefix": "osmo",
   "channel_id": "",
   "port_id": "transfer",
+  "route_id": "osmosis-public-wallet",
+  "allowed_memo_prefixes": [
+    "swap:",
+    "stake:"
+  ],
+  "allowed_action_types": [
+    "swap",
+    "stake"
+  ],
+  "assets": [
+    {
+      "asset_id": "eth",
+      "source_denom": "ueth",
+      "destination_denom": "ibc/ueth"
+    }
+  ],
   "notes": "Phase K scaffold only. Fill real client, connection, and channel metadata when live public IBC is actually configured."
 }

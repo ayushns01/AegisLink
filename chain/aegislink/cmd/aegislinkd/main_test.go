@@ -15,6 +15,7 @@ import (
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -836,6 +837,60 @@ func TestRunQueryRoutesPrintsPersistedIBCRoutes(t *testing.T) {
 	}
 }
 
+func TestRunQueryRouteProfilesPrintsPersistedRouteProfiles(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCProfile(t, statePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "route-profiles",
+		"--state-path", statePath,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query route-profiles: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var profiles []struct {
+		RouteID            string `json:"route_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		ChannelID          string `json:"channel_id"`
+		Enabled            bool   `json:"enabled"`
+		Assets             []struct {
+			AssetID          string `json:"asset_id"`
+			DestinationDenom string `json:"destination_denom"`
+		} `json:"assets"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &profiles); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected one route profile, got %d", len(profiles))
+	}
+	if profiles[0].RouteID != "osmosis-public-wallet" {
+		t.Fatalf("expected osmosis-public-wallet route id, got %q", profiles[0].RouteID)
+	}
+	if profiles[0].DestinationChainID != "osmosis-testnet" {
+		t.Fatalf("expected osmosis-testnet destination chain, got %q", profiles[0].DestinationChainID)
+	}
+	if profiles[0].ChannelID != "channel-42" {
+		t.Fatalf("expected channel-42, got %q", profiles[0].ChannelID)
+	}
+	if !profiles[0].Enabled {
+		t.Fatal("expected route profile to be enabled")
+	}
+	if len(profiles[0].Assets) != 1 || profiles[0].Assets[0].AssetID != "eth.usdc" {
+		t.Fatalf("expected route profile asset allowlist to include eth.usdc, got %+v", profiles[0].Assets)
+	}
+	if profiles[0].Assets[0].DestinationDenom != "ibc/uethusdc" {
+		t.Fatalf("expected profile destination denom ibc/uethusdc, got %q", profiles[0].Assets[0].DestinationDenom)
+	}
+}
+
 func TestRunTxInitiateIBCTransferPersistsPendingTransfer(t *testing.T) {
 	t.Parallel()
 
@@ -887,6 +942,73 @@ func TestRunTxInitiateIBCTransferPersistsPendingTransfer(t *testing.T) {
 	}
 	if result.DestinationChainID != "osmosis-1" {
 		t.Fatalf("expected osmosis-1, got %q", result.DestinationChainID)
+	}
+	if result.Status != "pending" {
+		t.Fatalf("expected pending status, got %q", result.Status)
+	}
+}
+
+func TestRunTxInitiateIBCTransferWithRouteProfilePersistsPendingTransfer(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
+	app := seededRuntimeAppWithIBCProfile(t, statePath)
+	if err := app.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "initiate-ibc-transfer",
+		"--state-path", statePath,
+		"--route-id", "osmosis-public-wallet",
+		"--asset-id", "eth.usdc",
+		"--amount", "25000000",
+		"--receiver", "osmo1recipient",
+		"--timeout-height", "140",
+		"--memo", "swap:uosmo",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx initiate-ibc-transfer with route profile: %v\nstderr=%s", err, stderr.String())
+	}
+
+	loaded, err := aegisapp.Load(statePath)
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	transfers := loaded.IBCRouterKeeper.ExportTransfers()
+	if len(transfers) != 1 {
+		t.Fatalf("expected one transfer, got %d", len(transfers))
+	}
+	if transfers[0].Status != ibcrouterkeeper.TransferStatusPending {
+		t.Fatalf("expected pending transfer, got %q", transfers[0].Status)
+	}
+	if transfers[0].DestinationChainID != "osmosis-testnet" {
+		t.Fatalf("expected osmosis-testnet destination chain, got %q", transfers[0].DestinationChainID)
+	}
+	if transfers[0].ChannelID != "channel-42" {
+		t.Fatalf("expected channel-42, got %q", transfers[0].ChannelID)
+	}
+	if transfers[0].DestinationDenom != "ibc/uethusdc" {
+		t.Fatalf("expected ibc/uethusdc destination denom, got %q", transfers[0].DestinationDenom)
+	}
+	if transfers[0].Memo != "swap:uosmo" {
+		t.Fatalf("expected memo swap:uosmo, got %q", transfers[0].Memo)
+	}
+
+	var result struct {
+		TransferID         string `json:"transfer_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		Status             string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.TransferID == "" {
+		t.Fatal("expected transfer id")
+	}
+	if result.DestinationChainID != "osmosis-testnet" {
+		t.Fatalf("expected osmosis-testnet, got %q", result.DestinationChainID)
 	}
 	if result.Status != "pending" {
 		t.Fatalf("expected pending status, got %q", result.Status)
@@ -1264,6 +1386,28 @@ func seededRuntimeAppWithIBCRoute(t *testing.T, statePath string) *aegisapp.App 
 		Enabled:            true,
 	}); err != nil {
 		t.Fatalf("set ibc route: %v", err)
+	}
+	return app
+}
+
+func seededRuntimeAppWithIBCProfile(t *testing.T, statePath string) *aegisapp.App {
+	t.Helper()
+
+	app := seededRuntimeApp(t, statePath)
+	if err := app.SetRouteProfile(ibcroutertypes.RouteProfile{
+		RouteID:            "osmosis-public-wallet",
+		DestinationChainID: "osmosis-testnet",
+		ChannelID:          "channel-42",
+		Enabled:            true,
+		Assets: []ibcroutertypes.AssetRoute{
+			{AssetID: "eth.usdc", DestinationDenom: "ibc/uethusdc"},
+		},
+		Policy: ibcroutertypes.RoutePolicy{
+			AllowedMemoPrefixes: []string{"swap:", "stake:"},
+			AllowedActionTypes:  []string{"swap", "stake"},
+		},
+	}); err != nil {
+		t.Fatalf("set ibc route profile: %v", err)
 	}
 	return app
 }
