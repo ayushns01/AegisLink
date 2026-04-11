@@ -36,7 +36,7 @@ func (c ClaimIdentity) ValidateBasic() error {
 	if c.Kind != ClaimKindDeposit && c.Kind != ClaimKindWithdrawal {
 		return fmt.Errorf("%w: invalid claim kind %q", ErrInvalidClaim, c.Kind)
 	}
-	if sourceAssetKind != SourceAssetKindNativeETH && sourceAssetKind != SourceAssetKindERC20 {
+	if sourceAssetKind != SourceAssetKindUnspecified && sourceAssetKind != SourceAssetKindNativeETH && sourceAssetKind != SourceAssetKindERC20 {
 		return fmt.Errorf("%w: invalid source asset kind", ErrInvalidClaim)
 	}
 	if strings.TrimSpace(c.SourceChainID) == "" {
@@ -45,7 +45,7 @@ func (c ClaimIdentity) ValidateBasic() error {
 	if strings.TrimSpace(c.SourceTxHash) == "" {
 		return fmt.Errorf("%w: missing source tx hash", ErrInvalidClaim)
 	}
-	if sourceAssetKind == SourceAssetKindERC20 && strings.TrimSpace(c.SourceContract) == "" {
+	if (sourceAssetKind == SourceAssetKindUnspecified || sourceAssetKind == SourceAssetKindERC20) && strings.TrimSpace(c.SourceContract) == "" {
 		return fmt.Errorf("%w: missing source contract", ErrInvalidClaim)
 	}
 	if strings.TrimSpace(c.MessageID) == "" {

@@ -65,6 +65,13 @@ func TestClaimIdentityValidateBasic(t *testing.T) {
 		t.Fatalf("expected valid identity, got error: %v", err)
 	}
 
+	t.Run("legacy claims may omit source asset kind", func(t *testing.T) {
+		identity := validLegacyClaimIdentity(ClaimKindDeposit)
+		if err := identity.ValidateBasic(); err != nil {
+			t.Fatalf("expected valid legacy identity, got error: %v", err)
+		}
+	})
+
 	t.Run("native eth may omit source contract", func(t *testing.T) {
 		identity := validNativeClaimIdentity(ClaimKindDeposit)
 		if err := identity.ValidateBasic(); err != nil {
@@ -266,6 +273,19 @@ func validClaimIdentity(kind ClaimKind) ClaimIdentity {
 		SourceTxHash:    "0xdeadbeef",
 		SourceLogIndex:  17,
 		Nonce:           42,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+	return identity
+}
+
+func validLegacyClaimIdentity(kind ClaimKind) ClaimIdentity {
+	identity := ClaimIdentity{
+		Kind:           kind,
+		SourceChainID:  "ethereum-1",
+		SourceContract: "0xabc123",
+		SourceTxHash:   "0xdeadbeef",
+		SourceLogIndex: 17,
+		Nonce:          42,
 	}
 	identity.MessageID = identity.DerivedMessageID()
 	return identity
