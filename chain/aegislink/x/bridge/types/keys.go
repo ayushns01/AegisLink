@@ -9,14 +9,15 @@ import (
 	"strings"
 )
 
-func ReplayKey(kind ClaimKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64) string {
-	sum := sha256.Sum256(canonicalIdentityBytes(kind, sourceChainID, sourceContract, sourceTxHash, sourceLogIndex, nonce))
+func ReplayKey(kind ClaimKind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64) string {
+	sum := sha256.Sum256(canonicalIdentityBytes(kind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash, sourceLogIndex, nonce))
 	return hex.EncodeToString(sum[:])
 }
 
-func canonicalIdentityBytes(kind ClaimKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64) []byte {
+func canonicalIdentityBytes(kind ClaimKind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64) []byte {
 	var buf bytes.Buffer
 	writeCanonicalString(&buf, string(kind))
+	writeCanonicalString(&buf, sourceAssetKind)
 	writeCanonicalString(&buf, sourceChainID)
 	writeCanonicalString(&buf, sourceContract)
 	writeCanonicalString(&buf, sourceTxHash)
@@ -30,13 +31,13 @@ func canonicalIdentityBytes(kind ClaimKind, sourceChainID, sourceContract, sourc
 	return buf.Bytes()
 }
 
-func ClaimDigest(kind ClaimKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64, destinationChainID, assetID string, amount *big.Int, recipient string, deadline uint64) string {
-	sum := sha256.Sum256(canonicalClaimBytes(kind, sourceChainID, sourceContract, sourceTxHash, sourceLogIndex, nonce, destinationChainID, assetID, amount, recipient, deadline))
+func ClaimDigest(kind ClaimKind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64, destinationChainID, assetID string, amount *big.Int, recipient string, deadline uint64) string {
+	sum := sha256.Sum256(canonicalClaimBytes(kind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash, sourceLogIndex, nonce, destinationChainID, assetID, amount, recipient, deadline))
 	return hex.EncodeToString(sum[:])
 }
 
-func canonicalClaimBytes(kind ClaimKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64, destinationChainID, assetID string, amount *big.Int, recipient string, deadline uint64) []byte {
-	buf := bytes.NewBuffer(canonicalIdentityBytes(kind, sourceChainID, sourceContract, sourceTxHash, sourceLogIndex, nonce))
+func canonicalClaimBytes(kind ClaimKind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash string, sourceLogIndex, nonce uint64, destinationChainID, assetID string, amount *big.Int, recipient string, deadline uint64) []byte {
+	buf := bytes.NewBuffer(canonicalIdentityBytes(kind, sourceAssetKind, sourceChainID, sourceContract, sourceTxHash, sourceLogIndex, nonce))
 	writeCanonicalString(buf, destinationChainID)
 	writeCanonicalString(buf, assetID)
 	writeCanonicalBigInt(buf, amount)

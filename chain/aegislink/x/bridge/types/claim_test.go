@@ -8,12 +8,13 @@ import (
 
 func TestReplayKeyIsDeterministicAndCanonical(t *testing.T) {
 	base := ClaimIdentity{
-		Kind:           ClaimKindDeposit,
-		SourceChainID:  "ethereum-1",
-		SourceContract: "0xabc|123",
-		SourceTxHash:   "0xdeadbeef",
-		SourceLogIndex: 17,
-		Nonce:          42,
+		Kind:            ClaimKindDeposit,
+		SourceAssetKind: SourceAssetKindERC20,
+		SourceChainID:   "ethereum-1",
+		SourceContract:  "0xabc|123",
+		SourceTxHash:    "0xdeadbeef",
+		SourceLogIndex:  17,
+		Nonce:           42,
 	}
 
 	first := base.ReplayKey()
@@ -27,24 +28,26 @@ func TestReplayKeyIsDeterministicAndCanonical(t *testing.T) {
 	}
 
 	whitespaceVariant := ClaimIdentity{
-		Kind:           ClaimKindDeposit,
-		SourceChainID:  "  ethereum-1  ",
-		SourceContract: "\n0xabc|123\t",
-		SourceTxHash:   " 0xdeadbeef ",
-		SourceLogIndex: 17,
-		Nonce:          42,
+		Kind:            ClaimKindDeposit,
+		SourceAssetKind: SourceAssetKindERC20,
+		SourceChainID:   "  ethereum-1  ",
+		SourceContract:  "\n0xabc|123\t",
+		SourceTxHash:    " 0xdeadbeef ",
+		SourceLogIndex:  17,
+		Nonce:           42,
 	}
 	if first != whitespaceVariant.ReplayKey() {
 		t.Fatalf("expected whitespace variants to normalize to the same replay key, got %q and %q", first, whitespaceVariant.ReplayKey())
 	}
 
 	delimiterCollision := ClaimIdentity{
-		Kind:           ClaimKindDeposit,
-		SourceChainID:  "ethereum-1|extra",
-		SourceContract: "0xabc123",
-		SourceTxHash:   "0xdeadbeef",
-		SourceLogIndex: 17,
-		Nonce:          42,
+		Kind:            ClaimKindDeposit,
+		SourceAssetKind: SourceAssetKindERC20,
+		SourceChainID:   "ethereum-1|extra",
+		SourceContract:  "0xabc123",
+		SourceTxHash:    "0xdeadbeef",
+		SourceLogIndex:  17,
+		Nonce:           42,
 	}
 	if first == delimiterCollision.ReplayKey() {
 		t.Fatal("expected canonical encoding to avoid separator collisions")
@@ -61,6 +64,13 @@ func TestClaimIdentityValidateBasic(t *testing.T) {
 	if err := identity.ValidateBasic(); err != nil {
 		t.Fatalf("expected valid identity, got error: %v", err)
 	}
+
+	t.Run("native eth may omit source contract", func(t *testing.T) {
+		identity := validNativeClaimIdentity(ClaimKindDeposit)
+		if err := identity.ValidateBasic(); err != nil {
+			t.Fatalf("expected valid native identity, got error: %v", err)
+		}
+	})
 
 	t.Run("missing message id", func(t *testing.T) {
 		identity := validClaimIdentity(ClaimKindDeposit)
@@ -79,6 +89,15 @@ func TestClaimIdentityValidateBasic(t *testing.T) {
 	})
 
 	t.Run("missing source contract", func(t *testing.T) {
+		identity := validClaimIdentity(ClaimKindDeposit)
+		identity.SourceContract = ""
+		identity.MessageID = identity.DerivedMessageID()
+		if err := identity.ValidateBasic(); !errors.Is(err, ErrInvalidClaim) {
+			t.Fatalf("expected invalid claim error, got: %v", err)
+		}
+	})
+
+	t.Run("erc20 requires source contract", func(t *testing.T) {
 		identity := validClaimIdentity(ClaimKindDeposit)
 		identity.SourceContract = ""
 		identity.MessageID = identity.DerivedMessageID()
@@ -188,9 +207,9 @@ func TestWithdrawalClaimValidateBasic(t *testing.T) {
 
 func TestAttestationValidateBasic(t *testing.T) {
 	attestation := Attestation{
-		MessageID:        validClaimIdentity(ClaimKindDeposit).MessageID,
-		PayloadHash:      validDepositClaim().Digest(),
-		Signers:          []string{"signer-1", "signer-2", "signer-3"},
+		MessageID:   validClaimIdentity(ClaimKindDeposit).MessageID,
+		PayloadHash: validDepositClaim().Digest(),
+		Signers:     []string{"signer-1", "signer-2", "signer-3"},
 		Proofs: []AttestationProof{
 			{Signer: "signer-1", Signature: []byte{1}},
 			{Signer: "signer-2", Signature: []byte{2}},
@@ -240,12 +259,26 @@ func TestAttestationValidateBasic(t *testing.T) {
 
 func validClaimIdentity(kind ClaimKind) ClaimIdentity {
 	identity := ClaimIdentity{
-		Kind:           kind,
-		SourceChainID:  "ethereum-1",
-		SourceContract: "0xabc123",
-		SourceTxHash:   "0xdeadbeef",
-		SourceLogIndex: 17,
-		Nonce:          42,
+		Kind:            kind,
+		SourceAssetKind: SourceAssetKindERC20,
+		SourceChainID:   "ethereum-1",
+		SourceContract:  "0xabc123",
+		SourceTxHash:    "0xdeadbeef",
+		SourceLogIndex:  17,
+		Nonce:           42,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+	return identity
+}
+
+func validNativeClaimIdentity(kind ClaimKind) ClaimIdentity {
+	identity := ClaimIdentity{
+		Kind:            kind,
+		SourceAssetKind: SourceAssetKindNativeETH,
+		SourceChainID:   "ethereum-1",
+		SourceTxHash:    "0xdeadbeef",
+		SourceLogIndex:  17,
+		Nonce:           42,
 	}
 	identity.MessageID = identity.DerivedMessageID()
 	return identity

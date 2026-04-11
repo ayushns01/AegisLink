@@ -17,13 +17,13 @@ func TestSDKKeeperPersistsAssetsAcrossReload(t *testing.T) {
 	}
 
 	asset := registrytypes.Asset{
-		AssetID:        "eth.usdc",
-		SourceChainID:  "ethereum-sepolia",
-		SourceContract: "0xabc123",
-		Denom:          "uethusdc",
-		Decimals:       6,
-		DisplayName:    "Ethereum USDC",
-		Enabled:        true,
+		AssetID:            "eth.usdc",
+		SourceChainID:      "ethereum-sepolia",
+		SourceAssetKind:    registrytypes.SourceAssetKindERC20,
+		SourceAssetAddress: "0xabc123",
+		DisplaySymbol:      "USDC",
+		Decimals:           6,
+		Enabled:            true,
 	}
 	if err := keeper.RegisterAsset(asset); err != nil {
 		t.Fatalf("expected asset registration to succeed, got %v", err)
@@ -38,8 +38,11 @@ func TestSDKKeeperPersistsAssetsAcrossReload(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected asset %q after reload", asset.AssetID)
 	}
-	if stored.Denom != asset.Denom {
-		t.Fatalf("expected denom %q, got %q", asset.Denom, stored.Denom)
+	if stored.DestinationDenom != "uethusdc" {
+		t.Fatalf("expected destination denom uethusdc, got %q", stored.DestinationDenom)
+	}
+	if stored.Denom != stored.DestinationDenom {
+		t.Fatalf("expected denom %q, got %q", stored.DestinationDenom, stored.Denom)
 	}
 }
 
@@ -51,13 +54,13 @@ func TestSDKKeeperStoresAssetsUnderPrefixKeys(t *testing.T) {
 		t.Fatalf("expected store-backed keeper to initialize, got %v", err)
 	}
 	if err := keeper.RegisterAsset(registrytypes.Asset{
-		AssetID:        "eth.usdc",
-		SourceChainID:  "ethereum-sepolia",
-		SourceContract: "0xabc123",
-		Denom:          "uethusdc",
-		Decimals:       6,
-		DisplayName:    "Ethereum USDC",
-		Enabled:        true,
+		AssetID:            "eth.usdc",
+		SourceChainID:      "ethereum-sepolia",
+		SourceAssetKind:    registrytypes.SourceAssetKindERC20,
+		SourceAssetAddress: "0xabc123",
+		DisplaySymbol:      "USDC",
+		Decimals:           6,
+		Enabled:            true,
 	}); err != nil {
 		t.Fatalf("register asset: %v", err)
 	}

@@ -62,11 +62,12 @@ func NewStoreKeeper(multiStore storetypes.CommitMultiStore, key *storetypes.KVSt
 }
 
 func (k *Keeper) RegisterAsset(asset registrytypes.Asset) error {
-	if err := asset.ValidateBasic(); err != nil {
+	stored := canonicalAsset(asset)
+	stored = deriveAssetMetadata(stored)
+	if err := stored.ValidateBasic(); err != nil {
 		return err
 	}
 
-	stored := canonicalAsset(asset)
 	key := assetKey(stored.AssetID)
 	if _, exists := k.assets[key]; exists {
 		return ErrAssetAlreadyExists
@@ -112,10 +113,10 @@ func (k *Keeper) ExportAssets() []registrytypes.Asset {
 func (k *Keeper) ImportAssets(assets []registrytypes.Asset) error {
 	k.assets = make(map[string]registrytypes.Asset, len(assets))
 	for _, asset := range assets {
-		if err := asset.ValidateBasic(); err != nil {
+		stored := deriveAssetMetadata(canonicalAsset(asset))
+		if err := stored.ValidateBasic(); err != nil {
 			return err
 		}
-		stored := canonicalAsset(asset)
 		k.assets[assetKey(stored.AssetID)] = stored
 	}
 	return k.persist()
@@ -147,10 +148,81 @@ func assetKey(assetID string) string {
 func canonicalAsset(asset registrytypes.Asset) registrytypes.Asset {
 	asset.AssetID = strings.TrimSpace(asset.AssetID)
 	asset.SourceChainID = strings.TrimSpace(asset.SourceChainID)
+	asset.SourceAssetAddress = strings.TrimSpace(asset.SourceAssetAddress)
 	asset.SourceContract = strings.TrimSpace(asset.SourceContract)
+	asset.SourceAssetKind = registrytypes.SourceAssetKind(strings.TrimSpace(string(asset.SourceAssetKind)))
 	asset.Denom = strings.TrimSpace(asset.Denom)
+	asset.DestinationDenom = strings.TrimSpace(asset.DestinationDenom)
 	asset.DisplayName = strings.TrimSpace(asset.DisplayName)
+	asset.DisplaySymbol = strings.TrimSpace(asset.DisplaySymbol)
+	if asset.DisplaySymbol == "" {
+		asset.DisplaySymbol = asset.DisplayName
+	}
+	if asset.SourceAssetAddress == "" {
+		asset.SourceAssetAddress = asset.SourceContract
+	}
+	if asset.SourceContract == "" {
+		asset.SourceContract = asset.SourceAssetAddress
+	}
+	if asset.SourceAssetKind == "" && asset.SourceAssetAddress != "" {
+		asset.SourceAssetKind = registrytypes.SourceAssetKindERC20
+	}
 	return asset
+}
+
+func deriveAssetMetadata(asset registrytypes.Asset) registrytypes.Asset {
+	asset.DestinationDenom = deriveDestinationDenom(asset)
+	asset.Denom = asset.DestinationDenom
+	return asset
+}
+
+func deriveDestinationDenom(asset registrytypes.Asset) string {
+	prefix := assetPrefixFromAssetID(asset.AssetID)
+	if prefix == "" {
+		prefix = "asset"
+	}
+
+	switch asset.SourceAssetKind {
+	case registrytypes.SourceAssetKindNativeETH:
+		return "u" + prefix
+	case registrytypes.SourceAssetKindERC20:
+		symbol := assetSuffixFromAssetID(asset.AssetID)
+		if symbol == "" {
+			symbol = normalizedSymbol(asset.DisplaySymbol)
+		}
+		if symbol == "" {
+			symbol = "token"
+		}
+		return "u" + prefix + symbol
+	default:
+		return "u" + prefix + normalizedSymbol(asset.DisplaySymbol)
+	}
+}
+
+func assetPrefixFromAssetID(assetID string) string {
+	trimmed := strings.TrimSpace(assetID)
+	if trimmed == "" {
+		return ""
+	}
+	if prefix, _, ok := strings.Cut(trimmed, "."); ok {
+		return normalizedSymbol(prefix)
+	}
+	return normalizedSymbol(trimmed)
+}
+
+func assetSuffixFromAssetID(assetID string) string {
+	trimmed := strings.TrimSpace(assetID)
+	if trimmed == "" {
+		return ""
+	}
+	if _, suffix, ok := strings.Cut(trimmed, "."); ok {
+		return normalizedSymbol(suffix)
+	}
+	return ""
+}
+
+func normalizedSymbol(value string) string {
+	return strings.ToLower(strings.TrimSpace(strings.NewReplacer(".", "", "-", "", "_", "").Replace(value)))
 }
 
 func (k *Keeper) loadFromPrefixStore() error {
