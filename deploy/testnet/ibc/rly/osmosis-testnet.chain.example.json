@@ -1,0 +1,25 @@
+{
+  "chain_name": "osmosistestnet",
+  "chain_id": "osmo-test-5",
+  "bech32_prefix": "osmo",
+  "fees": {
+    "fee_tokens": [
+      {
+        "denom": "uosmo",
+        "fixed_min_gas_price": 0.025
+      }
+    ]
+  },
+  "apis": {
+    "rpc": [
+      {
+        "address": "https://rpc.osmotest5.osmosis.zone:443"
+      }
+    ],
+    "grpc": [
+      {
+        "address": "https://grpc.osmotest5.osmosis.zone:443"
+      }
+    ]
+  }
+}

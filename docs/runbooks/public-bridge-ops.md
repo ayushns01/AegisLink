@@ -32,10 +32,28 @@ That creates:
 ## Start and inspect
 
 ```bash
-go run ./chain/aegislink/cmd/aegislinkd start --home /tmp/aegislink-public-home
-go run ./chain/aegislink/cmd/aegislinkd query status --home /tmp/aegislink-public-home
-go run ./chain/aegislink/cmd/aegislinkd query balances --home /tmp/aegislink-public-home --address <bech32-wallet>
+scripts/testnet/start_aegislink_ibc_demo.sh /tmp/aegislink-public-home
+go run ./chain/aegislink/cmd/aegislinkd demo-node status --home /tmp/aegislink-public-home
+go run ./chain/aegislink/cmd/aegislinkd demo-node balances --home /tmp/aegislink-public-home --address <bech32-wallet>
+go run ./chain/aegislink/cmd/aegislinkd demo-node transfers --home /tmp/aegislink-public-home
 ```
+
+While the demo node is running, prefer the `demo-node ...` inspection commands above. The older store-backed `query ...` commands reopen the local runtime directly and are best used while the node is stopped.
+
+The demo-node startup wrapper keeps the command surface simple:
+
+- bootstraps the home if it does not exist yet
+- binds the local RPC and gRPC listeners
+- writes the ready-state file under `<home>/data/demo-node-ready.json`
+- keeps running in the foreground until you stop it
+
+Useful local overrides:
+
+- `AEGISLINK_DEMO_NODE_RPC_ADDRESS`
+- `AEGISLINK_DEMO_NODE_GRPC_ADDRESS`
+- `AEGISLINK_DEMO_NODE_READY_FILE`
+- `AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS`
+- `AEGISLINK_PUBLIC_IBC_AEGISLINK_HOME`
 
 ## Sepolia bridge scaffold
 
@@ -105,6 +123,7 @@ Bootstrap the manifest and seed the AegisLink route profile like this:
 
 ```bash
 scripts/testnet/bootstrap_public_ibc.sh
+scripts/testnet/bootstrap_rly_path.sh
 scripts/testnet/seed_public_ibc_route.sh /tmp/aegislink-public-home
 go run ./chain/aegislink/cmd/aegislinkd query route-profiles --home /tmp/aegislink-public-home
 ```
@@ -125,6 +144,7 @@ That file and bootstrap flow are only scaffolds for the future public IBC path. 
 
 - `AEGISLINK_ENABLE_REAL_IBC=0` until a live Hermes or IBC-Go path exists
 - local AegisLink and Osmosis home placeholders
+- generated `rly` config/path artifacts for the next local packet-lifecycle milestone
 - a future route-relayer command shape
 - a manifest pointer to `deploy/testnet/ibc/osmosis-wallet-delivery.json`
 

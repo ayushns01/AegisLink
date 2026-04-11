@@ -18,6 +18,7 @@ import (
 	"github.com/ayushns01/aegislink/chain/aegislink/app"
 	appmetrics "github.com/ayushns01/aegislink/chain/aegislink/internal/metrics"
 	"github.com/ayushns01/aegislink/chain/aegislink/internal/opslog"
+	"github.com/ayushns01/aegislink/chain/aegislink/networked"
 	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
@@ -57,12 +58,33 @@ func runWithContext(ctx context.Context, args []string, stdout, stderr io.Writer
 		return runInit(args[1:], stdout, stderr)
 	case "start":
 		return runStart(ctx, args[1:], stdout, stderr)
+	case "demo-node":
+		return runDemoNode(ctx, args[1:], stdout, stderr)
 	case "query":
 		return runQuery(args[1:], stdout, stderr)
 	case "tx":
 		return runTx(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func runDemoNode(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("missing demo-node subcommand")
+	}
+
+	switch args[0] {
+	case "start":
+		return runDemoNodeStart(ctx, args[1:], stdout, stderr)
+	case "status":
+		return runDemoNodeStatus(args[1:], stdout, stderr)
+	case "balances":
+		return runDemoNodeBalances(args[1:], stdout, stderr)
+	case "transfers":
+		return runDemoNodeTransfers(args[1:], stdout, stderr)
+	default:
+		return fmt.Errorf("unknown demo-node subcommand %q", args[0])
 	}
 }
 
@@ -247,6 +269,137 @@ func runStart(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 			}
 		}
 	}
+}
+
+func runDemoNodeStart(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("demo-node start", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	home := flags.String("home", "", "runtime home directory")
+	rpcAddress := flags.String("rpc-address", "", "demo node RPC address")
+	grpcAddress := flags.String("grpc-address", "", "demo node gRPC address")
+	readyFile := flags.String("ready-file", "", "path to a ready-state file written after startup")
+	tickIntervalMS := flags.Uint("tick-interval-ms", 0, "optional demo-node block tick interval in milliseconds")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	state, err := networked.Start(ctx, networked.Config{
+		HomeDir:      *home,
+		RPCAddress:   *rpcAddress,
+		GRPCAddress:  *grpcAddress,
+		ReadyFile:    *readyFile,
+		TickInterval: time.Duration(*tickIntervalMS) * time.Millisecond,
+	})
+	if err != nil {
+		return err
+	}
+
+	_ = opslog.Write(stderr, "info", "aegislinkd", "demo_node_start", "demo node started", map[string]any{
+		"chain_id":     state.ChainID,
+		"home_dir":     state.HomeDir,
+		"rpc_address":  state.RPCAddress,
+		"grpc_address": state.GRPCAddress,
+		"ready_file":   strings.TrimSpace(*readyFile),
+	})
+
+	<-ctx.Done()
+
+	_ = opslog.Write(stderr, "info", "aegislinkd", "demo_node_stop", "demo node stopped", map[string]any{
+		"chain_id":     state.ChainID,
+		"home_dir":     state.HomeDir,
+		"rpc_address":  state.RPCAddress,
+		"grpc_address": state.GRPCAddress,
+		"reason":       "context_cancelled",
+	})
+
+	return writeJSON(stdout, map[string]any{
+		"status":       "stopped",
+		"chain_id":     state.ChainID,
+		"home_dir":     state.HomeDir,
+		"rpc_address":  state.RPCAddress,
+		"grpc_address": state.GRPCAddress,
+	})
+}
+
+func runDemoNodeStatus(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("demo-node status", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	home := flags.String("home", "", "runtime home directory")
+	readyFile := flags.String("ready-file", "", "path to the demo node ready-state file")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	status, err := networked.ReadStatus(context.Background(), networked.Config{
+		HomeDir:   *home,
+		ReadyFile: *readyFile,
+	})
+	if err != nil {
+		return err
+	}
+
+	_ = opslog.Write(stderr, "info", "aegislinkd", "demo_node_status", "demo node status queried", map[string]any{
+		"chain_id":     status.ChainID,
+		"home_dir":     status.HomeDir,
+		"rpc_address":  status.RPCAddress,
+		"grpc_address": status.GRPCAddress,
+		"healthy":      status.Healthy,
+	})
+
+	return writeJSON(stdout, status)
+}
+
+func runDemoNodeBalances(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("demo-node balances", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	home := flags.String("home", "", "runtime home directory")
+	readyFile := flags.String("ready-file", "", "path to the demo node ready-state file")
+	address := flags.String("address", "", "bech32 wallet address")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*address) == "" {
+		return fmt.Errorf("missing address")
+	}
+
+	balances, err := networked.QueryBalances(context.Background(), networked.Config{
+		HomeDir:   *home,
+		ReadyFile: *readyFile,
+	}, *address)
+	if err != nil {
+		return err
+	}
+
+	_ = opslog.Write(stderr, "info", "aegislinkd", "demo_node_balances", "demo node balances queried", map[string]any{
+		"home_dir": strings.TrimSpace(*home),
+		"address":  strings.TrimSpace(*address),
+		"records":  len(balances),
+	})
+	return writeJSON(stdout, balances)
+}
+
+func runDemoNodeTransfers(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("demo-node transfers", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	home := flags.String("home", "", "runtime home directory")
+	readyFile := flags.String("ready-file", "", "path to the demo node ready-state file")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	transfers, err := networked.QueryTransfers(context.Background(), networked.Config{
+		HomeDir:   *home,
+		ReadyFile: *readyFile,
+	})
+	if err != nil {
+		return err
+	}
+
+	_ = opslog.Write(stderr, "info", "aegislinkd", "demo_node_transfers", "demo node transfers queried", map[string]any{
+		"home_dir": strings.TrimSpace(*home),
+		"records":  len(transfers),
+	})
+	return writeJSON(stdout, transfers)
 }
 
 func queryStatus(args []string, stdout, stderr io.Writer) error {

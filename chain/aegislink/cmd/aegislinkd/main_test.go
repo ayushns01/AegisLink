@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"math/big"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
@@ -257,6 +261,522 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 	}
 	if last["signer_set_count"] != float64(2) {
 		t.Fatalf("expected signer set count 2, got %+v", last["signer_set_count"])
+	}
+}
+
+func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-ibc-demo-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runWithContext(ctx, []string{
+			"demo-node", "start",
+			"--home", homeDir,
+			"--rpc-address", "127.0.0.1:0",
+			"--grpc-address", "127.0.0.1:0",
+			"--ready-file", readyPath,
+		}, &stdout, &stderr)
+	}()
+
+	var ready struct {
+		Status      string `json:"status"`
+		ChainID     string `json:"chain_id"`
+		RPCAddress  string `json:"rpc_address"`
+		GRPCAddress string `json:"grpc_address"`
+	}
+	waitForReadyFile(t, readyPath, &ready)
+	if ready.Status != "ready" {
+		t.Fatalf("expected ready status, got %+v", ready)
+	}
+	if ready.ChainID != "aegislink-ibc-demo-1" {
+		t.Fatalf("expected chain id aegislink-ibc-demo-1, got %+v", ready)
+	}
+	if ready.RPCAddress == "" || ready.GRPCAddress == "" {
+		t.Fatalf("expected bound addresses, got %+v", ready)
+	}
+
+	resp, err := http.Get("http://" + ready.RPCAddress + "/healthz")
+	if err != nil {
+		t.Fatalf("probe demo-node health endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected HTTP 200 health response, got %d", resp.StatusCode)
+	}
+
+	conn, err := net.DialTimeout("tcp", ready.GRPCAddress, time.Second)
+	if err != nil {
+		t.Fatalf("dial grpc endpoint: %v", err)
+	}
+	_ = conn.Close()
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for demo node shutdown")
+	}
+}
+
+func TestRunDemoNodeStartServesPersistedRuntimeState(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	app.SetCurrentHeight(73)
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runWithContext(ctx, []string{
+			"demo-node", "start",
+			"--home", homeDir,
+			"--rpc-address", "127.0.0.1:0",
+			"--grpc-address", "127.0.0.1:0",
+			"--ready-file", readyPath,
+		}, &stdout, &stderr)
+	}()
+
+	var ready struct {
+		RPCAddress string `json:"rpc_address"`
+	}
+	waitForReadyFile(t, readyPath, &ready)
+	if ready.RPCAddress == "" {
+		t.Fatal("expected demo node RPC address in ready file")
+	}
+
+	statusResp, err := http.Get("http://" + ready.RPCAddress + "/status")
+	if err != nil {
+		t.Fatalf("fetch demo-node status: %v", err)
+	}
+	defer statusResp.Body.Close()
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected HTTP 200 status response, got %d", statusResp.StatusCode)
+	}
+
+	var status struct {
+		AppName         string            `json:"app_name"`
+		ChainID         string            `json:"chain_id"`
+		CurrentHeight   uint64            `json:"current_height"`
+		Assets          int               `json:"assets"`
+		ProcessedClaims int               `json:"processed_claims"`
+		SupplyByDenom   map[string]string `json:"supply_by_denom"`
+	}
+	if err := json.NewDecoder(statusResp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode demo-node status response: %v", err)
+	}
+	if status.AppName != aegisapp.AppName {
+		t.Fatalf("expected app name %q, got %q", aegisapp.AppName, status.AppName)
+	}
+	if status.ChainID != "aegislink-sdk-1" {
+		t.Fatalf("expected chain id aegislink-sdk-1, got %q", status.ChainID)
+	}
+	if status.CurrentHeight != 73 {
+		t.Fatalf("expected current height 73, got %d", status.CurrentHeight)
+	}
+	if status.Assets != 1 {
+		t.Fatalf("expected one registered asset, got %d", status.Assets)
+	}
+	if status.ProcessedClaims != 1 {
+		t.Fatalf("expected one processed claim, got %d", status.ProcessedClaims)
+	}
+	if got := status.SupplyByDenom["uethusdc"]; got != claim.Amount.String() {
+		t.Fatalf("expected uethusdc supply %s, got %q", claim.Amount.String(), got)
+	}
+
+	balancesResp, err := http.Get("http://" + ready.RPCAddress + "/balances?address=" + claim.Recipient)
+	if err != nil {
+		t.Fatalf("fetch demo-node balances: %v", err)
+	}
+	defer balancesResp.Body.Close()
+	if balancesResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected HTTP 200 balances response, got %d", balancesResp.StatusCode)
+	}
+
+	var balances []struct {
+		Address string `json:"address"`
+		Denom   string `json:"denom"`
+		Amount  string `json:"amount"`
+	}
+	if err := json.NewDecoder(balancesResp.Body).Decode(&balances); err != nil {
+		t.Fatalf("decode demo-node balances response: %v", err)
+	}
+	if len(balances) != 1 {
+		t.Fatalf("expected one wallet balance, got %+v", balances)
+	}
+	if balances[0].Address != claim.Recipient {
+		t.Fatalf("expected recipient %q, got %q", claim.Recipient, balances[0].Address)
+	}
+	if balances[0].Denom != "uethusdc" {
+		t.Fatalf("expected denom uethusdc, got %q", balances[0].Denom)
+	}
+	if balances[0].Amount != claim.Amount.String() {
+		t.Fatalf("expected amount %s, got %q", claim.Amount.String(), balances[0].Amount)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for demo node shutdown")
+	}
+}
+
+func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-ibc-demo-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runWithContext(ctx, []string{
+			"demo-node", "start",
+			"--home", homeDir,
+			"--rpc-address", "127.0.0.1:0",
+			"--grpc-address", "127.0.0.1:0",
+			"--ready-file", readyPath,
+		}, &stdout, &stderr)
+	}()
+
+	var ready struct {
+		RPCAddress string `json:"rpc_address"`
+	}
+	waitForReadyFile(t, readyPath, &ready)
+
+	var statusOut bytes.Buffer
+	var statusErr bytes.Buffer
+	if err := run([]string{
+		"demo-node", "status",
+		"--home", homeDir,
+		"--ready-file", readyPath,
+	}, &statusOut, &statusErr); err != nil {
+		t.Fatalf("run demo-node status: %v\nstderr=%s", err, statusErr.String())
+	}
+
+	var status struct {
+		Status      string `json:"status"`
+		ChainID     string `json:"chain_id"`
+		RPCAddress  string `json:"rpc_address"`
+		GRPCAddress string `json:"grpc_address"`
+		Healthy     bool   `json:"healthy"`
+	}
+	if err := json.Unmarshal(statusOut.Bytes(), &status); err != nil {
+		t.Fatalf("decode demo-node status output: %v\n%s", err, statusOut.String())
+	}
+	if status.Status != "ready" {
+		t.Fatalf("expected ready status, got %+v", status)
+	}
+	if status.ChainID != "aegislink-ibc-demo-1" {
+		t.Fatalf("expected chain id aegislink-ibc-demo-1, got %+v", status)
+	}
+	if status.RPCAddress == "" || status.GRPCAddress == "" {
+		t.Fatalf("expected bound endpoint info, got %+v", status)
+	}
+	if !status.Healthy {
+		t.Fatalf("expected healthy demo node status, got %+v", status)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for demo node shutdown")
+	}
+}
+
+func TestRunDemoNodeQueuesDepositClaimOverHTTPAndAppliesItOnTick(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runWithContext(ctx, []string{
+			"demo-node", "start",
+			"--home", homeDir,
+			"--rpc-address", "127.0.0.1:0",
+			"--grpc-address", "127.0.0.1:0",
+			"--ready-file", readyPath,
+			"--tick-interval-ms", "10",
+		}, &stdout, &stderr)
+	}()
+
+	var ready struct {
+		RPCAddress string `json:"rpc_address"`
+	}
+	waitForReadyFile(t, readyPath, &ready)
+
+	claim := validDepositClaim(t)
+	attestation := validAttestationForClaim(claim)
+	resp, err := http.Post(
+		"http://"+ready.RPCAddress+"/tx/queue-deposit-claim",
+		"application/json",
+		bytes.NewReader(marshalSubmissionPayload(t, claim, attestation)),
+	)
+	if err != nil {
+		t.Fatalf("post queued deposit claim: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected HTTP 200 queue response, got %d body=%s", resp.StatusCode, string(body))
+	}
+
+	var queued struct {
+		Status    string `json:"status"`
+		MessageID string `json:"message_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&queued); err != nil {
+		t.Fatalf("decode queued deposit response: %v", err)
+	}
+	if queued.Status != "queued" || queued.MessageID != claim.Identity.MessageID {
+		t.Fatalf("unexpected queue response: %+v", queued)
+	}
+
+	var status struct {
+		CurrentHeight   uint64            `json:"current_height"`
+		ProcessedClaims int               `json:"processed_claims"`
+		SupplyByDenom   map[string]string `json:"supply_by_denom"`
+	}
+	waitForHTTPJSON(t, "http://"+ready.RPCAddress+"/status", &status, func() bool {
+		return status.CurrentHeight > 0 &&
+			status.ProcessedClaims == 1 &&
+			status.SupplyByDenom["uethusdc"] == claim.Amount.String()
+	})
+
+	var balances []struct {
+		Address string `json:"address"`
+		Denom   string `json:"denom"`
+		Amount  string `json:"amount"`
+	}
+	waitForHTTPJSON(t, "http://"+ready.RPCAddress+"/balances?address="+claim.Recipient, &balances, func() bool {
+		return len(balances) == 1 && balances[0].Amount == claim.Amount.String()
+	})
+	if balances[0].Address != claim.Recipient || balances[0].Denom != "uethusdc" {
+		t.Fatalf("unexpected wallet balances: %+v", balances)
+	}
+
+	var cliOut bytes.Buffer
+	var cliErr bytes.Buffer
+	if err := run([]string{
+		"demo-node", "balances",
+		"--home", homeDir,
+		"--ready-file", readyPath,
+		"--address", claim.Recipient,
+	}, &cliOut, &cliErr); err != nil {
+		t.Fatalf("run demo-node balances: %v\nstderr=%s", err, cliErr.String())
+	}
+
+	var cliBalances []struct {
+		Address string `json:"address"`
+		Denom   string `json:"denom"`
+		Amount  string `json:"amount"`
+	}
+	if err := json.Unmarshal(cliOut.Bytes(), &cliBalances); err != nil {
+		t.Fatalf("decode demo-node balances output: %v\n%s", err, cliOut.String())
+	}
+	if len(cliBalances) != 1 || cliBalances[0].Amount != claim.Amount.String() {
+		t.Fatalf("unexpected cli balances: %+v", cliBalances)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for demo node shutdown")
+	}
+}
+
+func TestRunDemoNodeInitiatesIBCTransferOverHTTPAndListsTransfers(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	if err := app.IBCRouterKeeper.SetRoute(ibcrouterkeeper.Route{
+		AssetID:            "eth.usdc",
+		DestinationChainID: "osmosis-1",
+		ChannelID:          "channel-0",
+		DestinationDenom:   "ibc/uethusdc",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("set route: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runWithContext(ctx, []string{
+			"demo-node", "start",
+			"--home", homeDir,
+			"--rpc-address", "127.0.0.1:0",
+			"--grpc-address", "127.0.0.1:0",
+			"--ready-file", readyPath,
+			"--tick-interval-ms", "0",
+		}, &stdout, &stderr)
+	}()
+
+	var ready struct {
+		RPCAddress string `json:"rpc_address"`
+	}
+	waitForReadyFile(t, readyPath, &ready)
+
+	payload := map[string]any{
+		"asset_id":       "eth.usdc",
+		"amount":         "4200",
+		"receiver":       "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+		"timeout_height": 120,
+		"memo":           "bridge-demo",
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal transfer payload: %v", err)
+	}
+	resp, err := http.Post(
+		"http://"+ready.RPCAddress+"/tx/initiate-ibc-transfer",
+		"application/json",
+		bytes.NewReader(encoded),
+	)
+	if err != nil {
+		t.Fatalf("post initiate ibc transfer: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected HTTP 200 initiate transfer response, got %d body=%s", resp.StatusCode, string(body))
+	}
+
+	var transfer struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+		Receiver   string `json:"receiver"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&transfer); err != nil {
+		t.Fatalf("decode transfer response: %v", err)
+	}
+	if transfer.TransferID == "" || transfer.Status != "pending" {
+		t.Fatalf("unexpected transfer response: %+v", transfer)
+	}
+
+	var transfers []struct {
+		TransferID string `json:"transfer_id"`
+		AssetID    string `json:"asset_id"`
+		Amount     string `json:"amount"`
+		Receiver   string `json:"receiver"`
+		Status     string `json:"status"`
+	}
+	waitForHTTPJSON(t, "http://"+ready.RPCAddress+"/transfers", &transfers, func() bool {
+		return len(transfers) == 1
+	})
+	if transfers[0].TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %+v", transfer.TransferID, transfers)
+	}
+	if transfers[0].AssetID != "eth.usdc" || transfers[0].Amount != "4200" || transfers[0].Receiver != payload["receiver"] || transfers[0].Status != "pending" {
+		t.Fatalf("unexpected transfer list: %+v", transfers)
+	}
+
+	var cliOut bytes.Buffer
+	var cliErr bytes.Buffer
+	if err := run([]string{
+		"demo-node", "transfers",
+		"--home", homeDir,
+		"--ready-file", readyPath,
+	}, &cliOut, &cliErr); err != nil {
+		t.Fatalf("run demo-node transfers: %v\nstderr=%s", err, cliErr.String())
+	}
+
+	var cliTransfers []struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal(cliOut.Bytes(), &cliTransfers); err != nil {
+		t.Fatalf("decode demo-node transfers output: %v\n%s", err, cliOut.String())
+	}
+	if len(cliTransfers) != 1 || cliTransfers[0].TransferID != transfer.TransferID || cliTransfers[0].Status != "pending" {
+		t.Fatalf("unexpected cli transfers: %+v", cliTransfers)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for demo node shutdown")
 	}
 }
 
@@ -1212,6 +1732,15 @@ func TestRunTxApplyAssetStatusProposalRequiresAuthorizedAuthority(t *testing.T) 
 func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) {
 	t.Helper()
 
+	encoded := marshalSubmissionPayload(t, claim, attestation)
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatalf("write submission: %v", err)
+	}
+}
+
+func marshalSubmissionPayload(t *testing.T, claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) []byte {
+	t.Helper()
+
 	payload := struct {
 		Claim struct {
 			Kind               string `json:"kind"`
@@ -1263,9 +1792,7 @@ func writeSubmissionFile(t *testing.T, path string, claim bridgetypes.DepositCla
 	if err != nil {
 		t.Fatalf("marshal submission: %v", err)
 	}
-	if err := os.WriteFile(path, encoded, 0o644); err != nil {
-		t.Fatalf("write submission: %v", err)
-	}
+	return encoded
 }
 
 func validDepositClaim(t *testing.T) bridgetypes.DepositClaim {
@@ -1372,6 +1899,46 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 	}
 	app.SetCurrentHeight(50)
 	return app
+}
+
+func waitForReadyFile(t *testing.T, path string, target any) {
+	t.Helper()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			if err := json.Unmarshal(data, target); err != nil {
+				t.Fatalf("decode ready file %s: %v", path, err)
+			}
+			return
+		}
+		if !os.IsNotExist(err) {
+			t.Fatalf("read ready file %s: %v", path, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for ready file %s", path)
+}
+
+func waitForHTTPJSON(t *testing.T, endpoint string, target any, satisfied func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(endpoint)
+		if err == nil {
+			if resp.StatusCode == http.StatusOK {
+				if err := json.NewDecoder(resp.Body).Decode(target); err == nil && satisfied() {
+					_ = resp.Body.Close()
+					return
+				}
+			}
+			_ = resp.Body.Close()
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for HTTP condition at %s", endpoint)
 }
 
 func seededRuntimeAppWithIBCRoute(t *testing.T, statePath string) *aegisapp.App {
