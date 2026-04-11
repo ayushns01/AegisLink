@@ -67,6 +67,141 @@ func TestPublicRedeemBackToEthereumViaPublicBridgeRelayer(t *testing.T) {
 	assertWalletBurned(t, result)
 }
 
+func TestPublicRedeemBackToEthereumViaPublicBridgeRelayerAgainstDemoNode(t *testing.T) {
+	t.Parallel()
+
+	repo := repoRoot(t)
+	homeDir := filepath.Join(t.TempDir(), "public-redeem-demo-node-home")
+	cfg := initSDKDemoNodeHome(t, homeDir)
+
+	anvil := startAnvilRuntime(t)
+	contracts := deployBridgeContractsToAnvil(t, anvil.rpcURL)
+
+	app, err := aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("load sdk demo runtime: %v", err)
+	}
+	if err := registerPublicBridgeAssetsWithERC20Address(t, app, contracts.Token); err != nil {
+		t.Fatalf("register public assets: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save sdk demo runtime: %v", err)
+	}
+	closeApp(t, app)
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startIBCDemoNodeProcess(t, homeDir, readyPath, map[string]string{
+		"AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS": "10",
+	})
+	defer stopIBCDemoNodeProcess(t, cmd, logs)
+
+	recipient := sdk.AccAddress([]byte("wallet-demo-eth")).String()
+	evmRecipient := rpcAccounts(t, anvil.rpcURL)[2]
+	deadline := "10000000000"
+	depositAmount := "1000000000000000000"
+	receipt := createAnvilNativeDeposit(t, anvil.rpcURL, contracts, depositAmount, recipient, deadline)
+
+	claim := relayedDepositClaim(
+		t,
+		bridgetypes.SourceAssetKindNativeETH,
+		contracts.Gateway,
+		"eth",
+		receipt.TransactionHash,
+		parseHexUint64(t, receipt.Logs[0].LogIndex),
+		1,
+		recipient,
+		depositAmount,
+		10000000000,
+	)
+	claim.DestinationChainID = cfg.ChainID
+
+	attestationPath := filepath.Join(t.TempDir(), "demo-node-attestations.json")
+	writeAttestationVotes(t, attestationPath, claim)
+
+	replayStore := filepath.Join(t.TempDir(), "public-redeem-demo-node-replay.json")
+	depositOutput := runGoCommandWithLocalCacheAndEnv(t, repo, map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        cfg.ChainID,
+		"AEGISLINK_RELAYER_EVM_RPC_URL":            anvil.rpcURL,
+		"AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS":   contracts.Verifier,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":    contracts.Gateway,
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "0",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "1",
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      replayStore,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": attestationPath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd --home " + homeDir + " --demo-node-ready-file " + readyPath,
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   "",
+	}, "run", "./relayer/cmd/public-bridge-relayer")
+	if !strings.Contains(depositOutput, "run_complete") {
+		t.Fatalf("expected deposit relayer success log against demo node, got:\n%s", depositOutput)
+	}
+
+	waitForWalletDenomsOnDemoNode(t, homeDir, readyPath, recipient, map[string]string{
+		"ueth": depositAmount,
+	})
+
+	amount := mustWalletAmount(t, depositAmount)
+	expectedMessageID := predictWithdrawalMessageID(60, 1, "eth", evmRecipient, amount)
+	signature := signWithdrawalReleaseAttestation(
+		t,
+		contracts.Verifier,
+		contracts.Gateway,
+		"0x0000000000000000000000000000000000000000",
+		evmRecipient,
+		amount,
+		expectedMessageID,
+		10000000000,
+	)
+	withdrawOutput := runGoCommandWithLocalCacheAndEnv(t, repo, nil,
+		"run", "./chain/aegislink/cmd/aegislinkd",
+		"tx", "execute-withdrawal",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+		"--owner-address", recipient,
+		"--asset-id", "eth",
+		"--amount", depositAmount,
+		"--recipient", evmRecipient,
+		"--deadline", deadline,
+		"--signature-base64", base64.StdEncoding.EncodeToString(signature),
+		"--height", "60",
+	)
+	if !strings.Contains(withdrawOutput, expectedMessageID) {
+		t.Fatalf("expected withdrawal message id %s in demo-node output, got:\n%s", expectedMessageID, withdrawOutput)
+	}
+
+	beforeBalance := nativeBalanceOf(t, anvil.rpcURL, evmRecipient)
+	redeemOutput := runGoCommandWithLocalCacheAndEnv(t, repo, map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":                cfg.ChainID,
+		"AEGISLINK_RELAYER_EVM_RPC_URL":                    anvil.rpcURL,
+		"AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS":           contracts.Verifier,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":            contracts.Gateway,
+		"AEGISLINK_RELAYER_EVM_RELEASE_SIGNER_PRIVATE_KEY": anvilFirstAccountPrivateKey,
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":              "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":           "0",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT":         "1",
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":              replayStore,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH":         attestationPath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":                  "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":             "run ./chain/aegislink/cmd/aegislinkd --home " + homeDir + " --demo-node-ready-file " + readyPath,
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":           "",
+	}, "run", "./relayer/cmd/public-bridge-relayer")
+	if !strings.Contains(redeemOutput, "run_complete") {
+		t.Fatalf("expected redeem relayer success log against demo node, got:\n%s", redeemOutput)
+	}
+
+	afterBalance := nativeBalanceOf(t, anvil.rpcURL, evmRecipient)
+	delta := new(big.Int).Sub(afterBalance, beforeBalance)
+	if delta.String() != depositAmount {
+		t.Fatalf("expected released balance delta %s, got %s", depositAmount, delta.String())
+	}
+
+	burned := waitForWalletDenomsOnDemoNode(t, homeDir, readyPath, recipient, map[string]string{})
+	if len(burned) != 0 {
+		t.Fatalf("expected demo-node wallet balance to burn to zero, got %+v", burned)
+	}
+}
+
 func TestPublicRedeemERC20BackToEthereumViaPublicBridgeRelayer(t *testing.T) {
 	t.Parallel()
 

@@ -204,7 +204,7 @@ func commandArgsContainFlag(args []string, flagName string) bool {
 
 func runtimeFlagArity(arg string) int {
 	switch strings.TrimSpace(arg) {
-	case "--home", "--config-path", "--state-path", "--genesis-path", "--runtime-mode":
+	case "--home", "--config-path", "--state-path", "--genesis-path", "--runtime-mode", "--demo-node-ready-file":
 		return 1
 	default:
 		return 0

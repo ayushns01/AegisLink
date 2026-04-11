@@ -8,9 +8,38 @@ import (
 	"strings"
 
 	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
+	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 )
+
+type SummaryView struct {
+	AppName       string            `json:"app_name"`
+	Modules       []string          `json:"modules"`
+	Assets        int               `json:"assets"`
+	Limits        int               `json:"limits"`
+	PausedFlows   int               `json:"paused_flows"`
+	CurrentHeight uint64            `json:"current_height"`
+	Withdrawals   int               `json:"withdrawals"`
+	SupplyByDenom map[string]string `json:"supply_by_denom"`
+}
+
+type WithdrawalView struct {
+	Kind            string `json:"kind"`
+	SourceChainID   string `json:"source_chain_id"`
+	SourceContract  string `json:"source_contract"`
+	SourceTxHash    string `json:"source_tx_hash"`
+	SourceLogIndex  uint64 `json:"source_log_index"`
+	Nonce           uint64 `json:"nonce"`
+	MessageID       string `json:"message_id"`
+	AssetID         string `json:"asset_id"`
+	AssetAddress    string `json:"asset_address"`
+	Amount          string `json:"amount"`
+	Recipient       string `json:"recipient"`
+	Deadline        uint64 `json:"deadline"`
+	BlockHeight     uint64 `json:"block_height"`
+	SignatureBase64 string `json:"signature_base64"`
+}
 
 type TransferView struct {
 	TransferID         string `json:"transfer_id"`
@@ -42,6 +71,14 @@ func QueryTransfers(ctx context.Context, cfg Config) ([]TransferView, error) {
 	return transfers, nil
 }
 
+func QuerySummary(ctx context.Context, cfg Config) (SummaryView, error) {
+	var summary SummaryView
+	if err := abciQueryJSON(ctx, cfg, "/summary", nil, &summary); err != nil {
+		return SummaryView{}, err
+	}
+	return summary, nil
+}
+
 func QueryClaim(ctx context.Context, cfg Config, messageID string) (bridgekeeper.ClaimRecordSnapshot, bool, error) {
 	var claim bridgekeeper.ClaimRecordSnapshot
 	err := abciQueryJSON(ctx, cfg, "/claim", []byte(strings.TrimSpace(messageID)), &claim)
@@ -52,6 +89,21 @@ func QueryClaim(ctx context.Context, cfg Config, messageID string) (bridgekeeper
 		return bridgekeeper.ClaimRecordSnapshot{}, false, err
 	}
 	return claim, true, nil
+}
+
+func QueryWithdrawals(ctx context.Context, cfg Config, fromHeight, toHeight uint64) ([]WithdrawalView, error) {
+	payload, err := json.Marshal(map[string]uint64{
+		"from_height": fromHeight,
+		"to_height":   toHeight,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var withdrawals []WithdrawalView
+	if err := abciQueryJSON(ctx, cfg, "/withdrawals", payload, &withdrawals); err != nil {
+		return nil, err
+	}
+	return withdrawals, nil
 }
 
 func readReadyState(cfg Config) (ReadyState, error) {
@@ -90,4 +142,28 @@ func abciQueryJSON(ctx context.Context, cfg Config, path string, data []byte, ta
 		return nil
 	}
 	return json.Unmarshal(resp.Response.Value, target)
+}
+
+func withdrawalsFromRecords(records []bridgekeeper.WithdrawalRecord) []WithdrawalView {
+	items := bridgecli.WithdrawalsResponse(records).Withdrawals
+	withdrawals := make([]WithdrawalView, 0, len(items))
+	for _, item := range items {
+		withdrawals = append(withdrawals, WithdrawalView{
+			Kind:            item.Kind,
+			SourceChainID:   item.SourceChainId,
+			SourceContract:  item.SourceContract,
+			SourceTxHash:    item.SourceTxHash,
+			SourceLogIndex:  item.SourceLogIndex,
+			Nonce:           item.Nonce,
+			MessageID:       item.MessageId,
+			AssetID:         item.AssetId,
+			AssetAddress:    item.AssetAddress,
+			Amount:          item.Amount,
+			Recipient:       item.Recipient,
+			Deadline:        item.Deadline,
+			BlockHeight:     item.BlockHeight,
+			SignatureBase64: item.SignatureBase64,
+		})
+	}
+	return withdrawals
 }

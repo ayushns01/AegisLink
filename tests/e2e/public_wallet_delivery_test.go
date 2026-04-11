@@ -14,6 +14,7 @@ import (
 	"time"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
+	"github.com/ayushns01/aegislink/chain/aegislink/networked"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
@@ -286,6 +287,106 @@ func TestPublicWalletDeliveryViaPublicBridgeRelayer(t *testing.T) {
 	}
 }
 
+func TestPublicWalletDeliveryViaPublicBridgeRelayerAgainstDemoNode(t *testing.T) {
+	t.Parallel()
+
+	repo := repoRoot(t)
+	homeDir := filepath.Join(t.TempDir(), "public-wallet-demo-node-home")
+	cfg := initSDKDemoNodeHome(t, homeDir)
+
+	app, err := aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("load sdk demo runtime: %v", err)
+	}
+	if err := registerPublicBridgeAssets(t, app); err != nil {
+		t.Fatalf("register public assets: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save sdk demo runtime: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close sdk demo runtime: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startIBCDemoNodeProcess(t, homeDir, readyPath, map[string]string{
+		"AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS": "10",
+	})
+	defer stopIBCDemoNodeProcess(t, cmd, logs)
+
+	anvil := startAnvilRuntime(t)
+	contracts := deployBridgeContractsToAnvil(t, anvil.rpcURL)
+	recipient := testCosmosWalletAddress()
+	nativeReceipt := createAnvilNativeDeposit(t, anvil.rpcURL, contracts, "1000000000000000000", recipient, "10000000000")
+	erc20Receipt := createAnvilDeposit(t, anvil.rpcURL, contracts, "25000000", recipient, "10000000000")
+
+	nativeClaim := relayedDepositClaim(t, bridgetypes.SourceAssetKindNativeETH, contracts.Gateway, "eth", nativeReceipt.TransactionHash, parseHexUint64(t, nativeReceipt.Logs[0].LogIndex), 1, recipient, "1000000000000000000", 10000000000)
+	nativeClaim.DestinationChainID = cfg.ChainID
+	erc20Claim := relayedDepositClaim(t, bridgetypes.SourceAssetKindERC20, contracts.Gateway, "eth.usdc", erc20Receipt.TransactionHash, parseHexUint64(t, erc20Receipt.Logs[0].LogIndex), 2, recipient, "25000000", 10000000000)
+	erc20Claim.DestinationChainID = cfg.ChainID
+
+	attestationPath := filepath.Join(t.TempDir(), "demo-node-attestations.json")
+	writeAttestationVotes(t, attestationPath, nativeClaim, erc20Claim)
+
+	replayStore := filepath.Join(t.TempDir(), "demo-node-relayer-replay.json")
+	output := runGoCommandWithLocalCacheAndEnv(t, repo, map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        cfg.ChainID,
+		"AEGISLINK_RELAYER_EVM_RPC_URL":            anvil.rpcURL,
+		"AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS":   contracts.Verifier,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":    contracts.Gateway,
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "0",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "1",
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      replayStore,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": attestationPath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd --home " + homeDir + " --demo-node-ready-file " + readyPath,
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   "",
+	}, "run", "./relayer/cmd/public-bridge-relayer")
+	if !strings.Contains(output, "run_complete") {
+		t.Fatalf("expected relayer success log against demo node, got:\n%s", output)
+	}
+
+	balances := waitForWalletDenomsOnDemoNode(t, homeDir, readyPath, recipient, map[string]string{
+		"ueth":     "1000000000000000000",
+		"uethusdc": "25000000",
+	})
+	if len(balances) != 2 {
+		t.Fatalf("expected two balances on demo node, got %+v", balances)
+	}
+
+	secondOutput := runGoCommandWithLocalCacheAndEnv(t, repo, map[string]string{
+		"AEGISLINK_RELAYER_COSMOS_CHAIN_ID":        cfg.ChainID,
+		"AEGISLINK_RELAYER_EVM_RPC_URL":            anvil.rpcURL,
+		"AEGISLINK_RELAYER_EVM_VERIFIER_ADDRESS":   contracts.Verifier,
+		"AEGISLINK_RELAYER_EVM_GATEWAY_ADDRESS":    contracts.Gateway,
+		"AEGISLINK_RELAYER_EVM_CONFIRMATIONS":      "0",
+		"AEGISLINK_RELAYER_COSMOS_CONFIRMATIONS":   "0",
+		"AEGISLINK_RELAYER_SUBMISSION_RETRY_LIMIT": "1",
+		"AEGISLINK_RELAYER_REPLAY_STORE_PATH":      replayStore,
+		"AEGISLINK_RELAYER_ATTESTATION_STATE_PATH": attestationPath,
+		"AEGISLINK_RELAYER_AEGISLINK_CMD":          "go",
+		"AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS":     "run ./chain/aegislink/cmd/aegislinkd --home " + homeDir + " --demo-node-ready-file " + readyPath,
+		"AEGISLINK_RELAYER_AEGISLINK_STATE_PATH":   "",
+	}, "run", "./relayer/cmd/public-bridge-relayer")
+	if !strings.Contains(secondOutput, "run_complete") {
+		t.Fatalf("expected second relayer success log against demo node, got:\n%s", secondOutput)
+	}
+
+	again := waitForWalletDenomsOnDemoNode(t, homeDir, readyPath, recipient, map[string]string{
+		"ueth":     "1000000000000000000",
+		"uethusdc": "25000000",
+	})
+	if len(again) != len(balances) {
+		t.Fatalf("expected replay-safe balance count, got %+v after %+v", again, balances)
+	}
+	for denom, amount := range balances {
+		if again[denom] != amount {
+			t.Fatalf("expected replay-safe balance for %s to stay %s, got %+v after %+v", denom, amount, again, balances)
+		}
+	}
+}
+
 func submitClaim(t *testing.T, app *aegisapp.App, claim bridgetypes.DepositClaim) error {
 	t.Helper()
 
@@ -442,6 +543,39 @@ func closeApp(t *testing.T, app *aegisapp.App) {
 	if err := app.Close(); err != nil {
 		t.Fatalf("close app: %v", err)
 	}
+}
+
+func waitForWalletDenomsOnDemoNode(t *testing.T, homeDir, readyPath, address string, want map[string]string) map[string]string {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		balances, err := networked.QueryBalances(context.Background(), networked.Config{
+			HomeDir:   homeDir,
+			ReadyFile: readyPath,
+		}, address)
+		if err == nil {
+			got := make(map[string]string, len(balances))
+			for _, balance := range balances {
+				got[balance.Denom] = balance.Amount
+			}
+			if len(got) == len(want) {
+				allMatched := true
+				for denom, amount := range want {
+					if got[denom] != amount {
+						allMatched = false
+						break
+					}
+				}
+				if allMatched {
+					return got
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for demo-node balances at %s to reach %+v", address, want)
+	return nil
 }
 
 func parseHexUint64(t *testing.T, value string) uint64 {

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
@@ -61,6 +62,15 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 			Height: height,
 			Value:  encoded,
 		}, nil
+	case "/summary":
+		encoded, err := json.Marshal(summaryViewFromApp(a.app))
+		if err != nil {
+			return nil, err
+		}
+		return &abcitypes.ResponseQuery{
+			Height: height,
+			Value:  encoded,
+		}, nil
 	case "/balances":
 		address := strings.TrimSpace(string(req.Data))
 		if address == "" {
@@ -92,6 +102,29 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 			return transfers[i].TransferID < transfers[j].TransferID
 		})
 		encoded, err := json.Marshal(transferViewsFromRecords(transfers))
+		if err != nil {
+			return nil, err
+		}
+		return &abcitypes.ResponseQuery{
+			Height: height,
+			Value:  encoded,
+		}, nil
+	case "/withdrawals":
+		var query struct {
+			FromHeight uint64 `json:"from_height"`
+			ToHeight   uint64 `json:"to_height"`
+		}
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &query); err != nil {
+				return &abcitypes.ResponseQuery{
+					Code:   1,
+					Log:    fmt.Sprintf("decode withdrawals query: %v", err),
+					Height: height,
+				}, nil
+			}
+		}
+		withdrawals := aegisapp.NewBridgeQueryService(a.app).ListWithdrawals(query.FromHeight, query.ToHeight)
+		encoded, err := json.Marshal(bridgecli.WithdrawalsResponse(withdrawals).Withdrawals)
 		if err != nil {
 			return nil, err
 		}
@@ -232,6 +265,19 @@ func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResu
 			return nil, err
 		}
 		result = transferJSONResponse(transfer)
+	case "execute_withdrawal":
+		payload, amount, signature, err := decodeExecuteWithdrawalPayload(*tx.ExecuteWithdrawal)
+		if err != nil {
+			return nil, err
+		}
+		if payload.Height > 0 {
+			a.app.SetCurrentHeight(payload.Height)
+		}
+		withdrawal, err := a.app.ExecuteWithdrawal(payload.OwnerAddress, payload.AssetID, amount, payload.Recipient, payload.Deadline, signature)
+		if err != nil {
+			return nil, err
+		}
+		result = bridgecli.ExecuteWithdrawalResponse(withdrawal)
 	default:
 		return nil, fmt.Errorf("unsupported demo node tx type %q", tx.Type)
 	}
@@ -271,4 +317,18 @@ func transferViewsFromRecords(transfers []ibcrouterkeeper.TransferRecord) []Tran
 		})
 	}
 	return items
+}
+
+func summaryViewFromApp(app *aegisapp.App) SummaryView {
+	bridgeState := app.BridgeKeeper.ExportState()
+	return SummaryView{
+		AppName:       app.Config.AppName,
+		Modules:       app.ModuleNames(),
+		Assets:        len(app.RegistryKeeper.ExportAssets()),
+		Limits:        len(app.LimitsKeeper.ExportLimits()),
+		PausedFlows:   len(app.PauserKeeper.ExportPausedFlows()),
+		CurrentHeight: bridgeState.CurrentHeight,
+		Withdrawals:   len(bridgeState.Withdrawals),
+		SupplyByDenom: bridgeState.SupplyByDenom,
+	}
 }

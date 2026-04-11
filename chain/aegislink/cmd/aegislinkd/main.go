@@ -474,8 +474,19 @@ func querySummary(args []string, stdout io.Writer) error {
 	flags.SetOutput(io.Discard)
 
 	runtimeFlags := addRuntimeFlags(flags)
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "query a running demo node via its ready-state file")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		summary, err := networked.QuerySummary(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, summary)
 	}
 
 	a, err := loadRuntimeApp(runtimeFlags)
@@ -615,10 +626,21 @@ func queryWithdrawals(args []string, stdout io.Writer) error {
 	flags.SetOutput(io.Discard)
 
 	runtimeFlags := addRuntimeFlags(flags)
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "query a running demo node via its ready-state file")
 	fromHeight := flags.Uint64("from-height", 0, "inclusive start height")
 	toHeight := flags.Uint64("to-height", math.MaxUint64, "inclusive end height")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		withdrawals, err := networked.QueryWithdrawals(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		}, *fromHeight, *toHeight)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, withdrawals)
 	}
 
 	a, err := loadRuntimeApp(runtimeFlags)
@@ -833,6 +855,7 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	deadline := flags.Uint64("deadline", 0, "withdrawal expiry")
 	signatureBase64 := flags.String("signature-base64", "", "base64-encoded withdrawal attestation")
 	height := flags.Uint64("height", 0, "optional runtime block height override")
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "submit to a running demo node via its ready-state file")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -862,6 +885,24 @@ func txExecuteWithdrawal(args []string, stdout io.Writer) error {
 	signature, err := base64.StdEncoding.DecodeString(*signatureBase64)
 	if err != nil {
 		return fmt.Errorf("decode signature: %w", err)
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		withdrawal, err := networked.SubmitExecuteWithdrawal(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		}, networked.ExecuteWithdrawalPayload{
+			OwnerAddress:    *ownerAddress,
+			AssetID:         *assetID,
+			Amount:          amount.String(),
+			Recipient:       *recipient,
+			Deadline:        *deadline,
+			SignatureBase64: *signatureBase64,
+			Height:          *height,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, withdrawal)
 	}
 
 	a, err := loadRuntimeApp(runtimeFlags)

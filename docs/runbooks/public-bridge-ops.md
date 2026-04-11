@@ -96,6 +96,8 @@ set -a; source .env.public-bridge.local; set +a
 go run ./relayer/cmd/public-bridge-relayer
 ```
 
+For the current real-node path, prefer starting the demo node first and letting the relayer target its ready file through `AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS`. That keeps claim submission and withdrawal queries on the running Comet-backed surface instead of reopening the store directly.
+
 This current repo scope is verified locally against Anvil-backed Sepolia-shaped deposits for:
 
 - native ETH wallet delivery

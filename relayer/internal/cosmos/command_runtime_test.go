@@ -130,3 +130,38 @@ func TestCommandWithdrawalSourceUsesRuntimeQueries(t *testing.T) {
 		t.Fatalf("expected two command calls, got %d", len(calls))
 	}
 }
+
+func TestCommandRuntimeTreatsDemoNodeReadyFileAsRuntimeFlag(t *testing.T) {
+	t.Parallel()
+
+	var calls [][]string
+	runner := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		return []byte(`{"current_height":61}`), nil
+	}
+
+	source := newCommandWithdrawalSourceWithRunner(runner, "aegislinkd", []string{"--home", "/tmp/home", "--demo-node-ready-file", "/tmp/demo-node-ready.json"}, "/tmp/state.json")
+	latest, err := source.LatestHeight(context.Background())
+	if err != nil {
+		t.Fatalf("latest height: %v", err)
+	}
+	if latest != 61 {
+		t.Fatalf("expected latest height 61, got %d", latest)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected one command call, got %d", len(calls))
+	}
+	joined := strings.Join(calls[0], " ")
+	if !strings.Contains(joined, "query summary") {
+		t.Fatalf("expected query summary invocation, got %q", joined)
+	}
+	if !strings.Contains(joined, "--home /tmp/home") {
+		t.Fatalf("expected preserved home flag, got %q", joined)
+	}
+	if !strings.Contains(joined, "--demo-node-ready-file /tmp/demo-node-ready.json") {
+		t.Fatalf("expected preserved demo-node-ready-file flag, got %q", joined)
+	}
+	if strings.Contains(joined, "--state-path /tmp/state.json") {
+		t.Fatalf("expected state path to be omitted when --home is present, got %q", joined)
+	}
+}

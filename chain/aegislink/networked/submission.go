@@ -2,6 +2,7 @@ package networked
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -51,10 +52,21 @@ type InitiateIBCTransferPayload struct {
 	Memo          string `json:"memo,omitempty"`
 }
 
+type ExecuteWithdrawalPayload struct {
+	OwnerAddress    string `json:"owner_address"`
+	AssetID         string `json:"asset_id"`
+	Amount          string `json:"amount"`
+	Recipient       string `json:"recipient"`
+	Deadline        uint64 `json:"deadline"`
+	SignatureBase64 string `json:"signature_base64"`
+	Height          uint64 `json:"height,omitempty"`
+}
+
 type demoNodeTx struct {
 	Type                string                      `json:"type"`
 	QueueDepositClaim   *submissionPayload          `json:"queue_deposit_claim,omitempty"`
 	InitiateIBCTransfer *InitiateIBCTransferPayload `json:"initiate_ibc_transfer,omitempty"`
+	ExecuteWithdrawal   *ExecuteWithdrawalPayload   `json:"execute_withdrawal,omitempty"`
 }
 
 func decodeSubmission(r *http.Request) (bridgetypes.DepositClaim, bridgetypes.Attestation, error) {
@@ -119,6 +131,39 @@ func decodeInitiateIBCTransferPayload(payload InitiateIBCTransferPayload) (Initi
 	return payload, amount, nil
 }
 
+func decodeExecuteWithdrawalPayload(payload ExecuteWithdrawalPayload) (ExecuteWithdrawalPayload, *big.Int, []byte, error) {
+	if strings.TrimSpace(payload.OwnerAddress) == "" {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("missing owner address")
+	}
+	if strings.TrimSpace(payload.AssetID) == "" {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("missing asset id")
+	}
+	if strings.TrimSpace(payload.Amount) == "" {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("missing amount")
+	}
+	if strings.TrimSpace(payload.Recipient) == "" {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("missing recipient")
+	}
+	if payload.Deadline == 0 {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("missing deadline")
+	}
+	if strings.TrimSpace(payload.SignatureBase64) == "" {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("missing signature")
+	}
+
+	amount, ok := new(big.Int).SetString(strings.TrimSpace(payload.Amount), 10)
+	if !ok {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("invalid amount %q", payload.Amount)
+	}
+	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload.SignatureBase64))
+	if err != nil {
+		return ExecuteWithdrawalPayload{}, nil, nil, fmt.Errorf("decode signature: %w", err)
+	}
+	payload.Amount = amount.String()
+	payload.SignatureBase64 = strings.TrimSpace(payload.SignatureBase64)
+	return payload, amount, signature, nil
+}
+
 func encodeQueueDepositClaimTx(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) ([]byte, error) {
 	payload := submissionPayload{}
 	payload.Claim.Kind = string(claim.Identity.Kind)
@@ -160,6 +205,17 @@ func encodeInitiateIBCTransferTx(payload InitiateIBCTransferPayload) ([]byte, er
 	})
 }
 
+func encodeExecuteWithdrawalTx(payload ExecuteWithdrawalPayload) ([]byte, error) {
+	payload, _, _, err := decodeExecuteWithdrawalPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(demoNodeTx{
+		Type:              "execute_withdrawal",
+		ExecuteWithdrawal: &payload,
+	})
+}
+
 func decodeDemoNodeTx(txBytes []byte) (demoNodeTx, error) {
 	var tx demoNodeTx
 	if err := json.Unmarshal(txBytes, &tx); err != nil {
@@ -178,6 +234,13 @@ func decodeDemoNodeTx(txBytes []byte) (demoNodeTx, error) {
 			return demoNodeTx{}, fmt.Errorf("missing initiate ibc transfer payload")
 		}
 		if _, _, err := decodeInitiateIBCTransferPayload(*tx.InitiateIBCTransfer); err != nil {
+			return demoNodeTx{}, err
+		}
+	case "execute_withdrawal":
+		if tx.ExecuteWithdrawal == nil {
+			return demoNodeTx{}, fmt.Errorf("missing execute withdrawal payload")
+		}
+		if _, _, _, err := decodeExecuteWithdrawalPayload(*tx.ExecuteWithdrawal); err != nil {
 			return demoNodeTx{}, err
 		}
 	default:
@@ -242,6 +305,18 @@ func SubmitInitiateIBCTransfer(ctx context.Context, cfg Config, payload Initiate
 		return TransferView{}, err
 	}
 	return transfer, nil
+}
+
+func SubmitExecuteWithdrawal(ctx context.Context, cfg Config, payload ExecuteWithdrawalPayload) (WithdrawalView, error) {
+	txBytes, err := encodeExecuteWithdrawalTx(payload)
+	if err != nil {
+		return WithdrawalView{}, err
+	}
+	var withdrawal WithdrawalView
+	if err := broadcastTxJSON(ctx, cfg, txBytes, &withdrawal); err != nil {
+		return WithdrawalView{}, err
+	}
+	return withdrawal, nil
 }
 
 func broadcastTxJSON(ctx context.Context, cfg Config, txBytes []byte, target any) error {

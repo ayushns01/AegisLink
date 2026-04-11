@@ -1310,6 +1310,108 @@ func TestRunQueryClaimUsesSDKStoreRuntimeHome(t *testing.T) {
 	}
 }
 
+func TestRunQuerySummaryTargetsDemoNodeReadyFile(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "0")
+	defer stopDemoNodeProcess(t, cmd, logs)
+	_ = mustReadReadyRPCAddress(t, readyPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "summary",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query summary against demo node: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		AppName       string            `json:"app_name"`
+		Assets        int               `json:"assets"`
+		Limits        int               `json:"limits"`
+		CurrentHeight uint64            `json:"current_height"`
+		SupplyByDenom map[string]string `json:"supply_by_denom"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.AppName != aegisapp.AppName {
+		t.Fatalf("expected app name %q, got %q", aegisapp.AppName, result.AppName)
+	}
+	if result.Assets != 1 || result.Limits != 1 {
+		t.Fatalf("unexpected summary counts: %+v", result)
+	}
+	if result.CurrentHeight != 0 {
+		t.Fatalf("expected current height 0 before ticks, got %d", result.CurrentHeight)
+	}
+}
+
+func TestRunQueryWithdrawalsTargetsDemoNodeReadyFile(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	app.SetCurrentHeight(60)
+	if _, err := app.ExecuteWithdrawal(claim.Recipient, claim.AssetID, mustAmount(t, "25000000"), "0xrecipient", 140, []byte("threshold-proof")); err != nil {
+		t.Fatalf("execute withdrawal: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "0")
+	defer stopDemoNodeProcess(t, cmd, logs)
+	_ = mustReadReadyRPCAddress(t, readyPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"query", "withdrawals",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+		"--from-height", "60",
+		"--to-height", "60",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run query withdrawals against demo node: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result []struct {
+		AssetID         string `json:"asset_id"`
+		Recipient       string `json:"recipient"`
+		Amount          string `json:"amount"`
+		BlockHeight     uint64 `json:"block_height"`
+		SignatureBase64 string `json:"signature_base64"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected one withdrawal, got %+v", result)
+	}
+	if result[0].AssetID != claim.AssetID || result[0].Recipient != "0xrecipient" || result[0].Amount != "25000000" || result[0].BlockHeight != 60 {
+		t.Fatalf("unexpected withdrawal response: %+v", result[0])
+	}
+	if result[0].SignatureBase64 != base64.StdEncoding.EncodeToString([]byte("threshold-proof")) {
+		t.Fatalf("unexpected signature encoding: %+v", result[0])
+	}
+}
+
 func TestRunTxExecuteWithdrawalPersistsWithdrawalAndBurnsSupply(t *testing.T) {
 	t.Parallel()
 
@@ -1382,6 +1484,84 @@ func TestRunTxExecuteWithdrawalPersistsWithdrawalAndBurnsSupply(t *testing.T) {
 	}
 	if result.MessageID == "" {
 		t.Fatal("expected withdrawal message id")
+	}
+}
+
+func TestRunTxExecuteWithdrawalTargetsDemoNodeReadyFile(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	claim := validDepositClaim(t)
+	if _, err := app.SubmitDepositClaim(claim, validAttestationForClaim(claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "0")
+	defer stopDemoNodeProcess(t, cmd, logs)
+	_ = mustReadReadyRPCAddress(t, readyPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "execute-withdrawal",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+		"--owner-address", claim.Recipient,
+		"--asset-id", claim.AssetID,
+		"--amount", "25000000",
+		"--recipient", "0xrecipient",
+		"--deadline", "140",
+		"--signature-base64", base64.StdEncoding.EncodeToString([]byte("threshold-proof")),
+		"--height", "60",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx execute-withdrawal against demo node: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		MessageID   string `json:"message_id"`
+		AssetID     string `json:"asset_id"`
+		Amount      string `json:"amount"`
+		Recipient   string `json:"recipient"`
+		BlockHeight uint64 `json:"block_height"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
+	}
+	if result.AssetID != claim.AssetID || result.Amount != "25000000" || result.Recipient != "0xrecipient" || result.BlockHeight != 60 {
+		t.Fatalf("unexpected execute withdrawal response: %+v", result)
+	}
+	if result.MessageID == "" {
+		t.Fatal("expected withdrawal message id")
+	}
+
+	var withdrawals []struct {
+		AssetID     string `json:"asset_id"`
+		Recipient   string `json:"recipient"`
+		Amount      string `json:"amount"`
+		BlockHeight uint64 `json:"block_height"`
+	}
+	var queryStdout bytes.Buffer
+	var queryStderr bytes.Buffer
+	if err := run([]string{
+		"query", "withdrawals",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+		"--from-height", "60",
+		"--to-height", "60",
+	}, &queryStdout, &queryStderr); err != nil {
+		t.Fatalf("run query withdrawals against demo node: %v\nstderr=%s", err, queryStderr.String())
+	}
+	if err := json.Unmarshal(queryStdout.Bytes(), &withdrawals); err != nil {
+		t.Fatalf("decode withdrawals output: %v\n%s", err, queryStdout.String())
+	}
+	if len(withdrawals) != 1 || withdrawals[0].AssetID != claim.AssetID || withdrawals[0].Recipient != "0xrecipient" || withdrawals[0].Amount != "25000000" || withdrawals[0].BlockHeight != 60 {
+		t.Fatalf("unexpected persisted demo-node withdrawals: %+v", withdrawals)
 	}
 }
 

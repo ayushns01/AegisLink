@@ -25,10 +25,12 @@ import (
 	cmtnode "github.com/cometbft/cometbft/node"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	sm "github.com/cometbft/cometbft/state"
 	cmtstore "github.com/cometbft/cometbft/store"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"google.golang.org/grpc"
 )
 
@@ -416,8 +418,54 @@ func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App) error {
 	genesisState.LastBlockTime = time.Now().UTC()
 	genesisState.LastValidators = genesisState.Validators.Copy()
 	genesisState.AppHash = appHash
-
-	return stateStore.Bootstrap(genesisState)
+	lastBlockID := cmttypes.BlockID{
+		Hash: appHash,
+		PartSetHeader: cmttypes.PartSetHeader{
+			Total: 1,
+			Hash:  appHash,
+		},
+	}
+	genesisState.LastBlockID = lastBlockID
+	if err := stateStore.Bootstrap(genesisState); err != nil {
+		return err
+	}
+	if genesisState.LastBlockHeight > 0 && blockStore.LoadSeenCommit(genesisState.LastBlockHeight) == nil {
+		filePV := privval.LoadFilePV(nodeHome.Config.PrivValidatorKeyFile(), nodeHome.Config.PrivValidatorStateFile())
+		signatures := make([]cmttypes.CommitSig, len(genesisState.LastValidators.Validators))
+		for idx := range signatures {
+			signatures[idx] = cmttypes.NewCommitSigAbsent()
+		}
+		validatorIdx, _ := genesisState.LastValidators.GetByAddress(filePV.GetAddress())
+		if validatorIdx >= 0 {
+			vote := &cmtproto.Vote{
+				Type:             cmtproto.PrecommitType,
+				Height:           genesisState.LastBlockHeight,
+				Round:            0,
+				BlockID:          lastBlockID.ToProto(),
+				Timestamp:        genesisState.LastBlockTime,
+				ValidatorAddress: filePV.GetAddress(),
+				ValidatorIndex:   int32(validatorIdx),
+			}
+			if err := filePV.SignVote(genesisState.ChainID, vote); err != nil {
+				return err
+			}
+			signedVote, err := cmttypes.VoteFromProto(vote)
+			if err != nil {
+				return err
+			}
+			signatures[validatorIdx] = signedVote.CommitSig()
+		}
+		commit := &cmttypes.Commit{
+			Height: genesisState.LastBlockHeight,
+			Round:  0,
+			BlockID: lastBlockID,
+			Signatures: signatures,
+		}
+		if err := blockStore.SaveSeenCommit(genesisState.LastBlockHeight, commit); err != nil {
+			return err
+		}
+	}
+	return stateStore.SetOfflineStateSyncHeight(genesisState.LastBlockHeight)
 }
 
 func waitForCometRPC(address string, timeout time.Duration) error {
