@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -22,6 +24,9 @@ import (
 	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
+	abcicli "github.com/cometbft/cometbft/abci/client"
+	abcitypes "github.com/cometbft/cometbft/abci/types"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -277,27 +282,23 @@ func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
 	}
 
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runWithContext(ctx, []string{
-			"demo-node", "start",
-			"--home", homeDir,
-			"--rpc-address", "127.0.0.1:0",
-			"--grpc-address", "127.0.0.1:0",
-			"--ready-file", readyPath,
-		}, &stdout, &stderr)
-	}()
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath)
+	defer stopDemoNodeProcess(t, cmd, logs)
 
 	var ready struct {
-		Status      string `json:"status"`
-		ChainID     string `json:"chain_id"`
-		RPCAddress  string `json:"rpc_address"`
-		GRPCAddress string `json:"grpc_address"`
+		Status                 string   `json:"status"`
+		ChainID                string   `json:"chain_id"`
+		NodeID                 string   `json:"node_id"`
+		RPCAddress             string   `json:"rpc_address"`
+		CometRPCAddress        string   `json:"comet_rpc_address"`
+		GRPCAddress            string   `json:"grpc_address"`
+		ABCIAddress            string   `json:"abci_address"`
+		ConfigPath             string   `json:"config_path"`
+		CometGenesisPath       string   `json:"comet_genesis_path"`
+		NodeKeyPath            string   `json:"node_key_path"`
+		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
+		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
+		CoreStoreKeys          []string `json:"core_store_keys"`
 	}
 	waitForReadyFile(t, readyPath, &ready)
 	if ready.Status != "ready" {
@@ -306,8 +307,30 @@ func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
 	if ready.ChainID != "aegislink-ibc-demo-1" {
 		t.Fatalf("expected chain id aegislink-ibc-demo-1, got %+v", ready)
 	}
-	if ready.RPCAddress == "" || ready.GRPCAddress == "" {
+	if ready.RPCAddress == "" || ready.CometRPCAddress == "" || ready.GRPCAddress == "" {
 		t.Fatalf("expected bound addresses, got %+v", ready)
+	}
+	if ready.ABCIAddress == "" {
+		t.Fatalf("expected abci address, got %+v", ready)
+	}
+	if ready.NodeID == "" {
+		t.Fatalf("expected node id, got %+v", ready)
+	}
+	for _, path := range []string{
+		ready.ConfigPath,
+		ready.CometGenesisPath,
+		ready.NodeKeyPath,
+		ready.PrivValidatorKeyPath,
+		ready.PrivValidatorStatePath,
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected reported artifact %s: %v", path, err)
+		}
+	}
+	for _, key := range []string{"auth", "bank", "bridge", "ibc", "transfer"} {
+		if !containsString(ready.CoreStoreKeys, key) {
+			t.Fatalf("expected core store key %q in %+v", key, ready.CoreStoreKeys)
+		}
 	}
 
 	resp, err := http.Get("http://" + ready.RPCAddress + "/healthz")
@@ -325,15 +348,46 @@ func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
 	}
 	_ = conn.Close()
 
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for demo node shutdown")
+	abciClient := abcicli.NewSocketClient(ready.ABCIAddress, true)
+	if err := abciClient.Start(); err != nil {
+		t.Fatalf("start abci client: %v", err)
 	}
+	defer func() {
+		_ = abciClient.Stop()
+	}()
+	info, err := abciClient.Info(context.Background(), &abcitypes.RequestInfo{})
+	if err != nil {
+		t.Fatalf("abci info: %v", err)
+	}
+	if info.Data != "aegislink" {
+		t.Fatalf("expected abci info data aegislink, got %+v", info)
+	}
+	query, err := abciClient.Query(context.Background(), &abcitypes.RequestQuery{Path: "/status"})
+	if err != nil {
+		t.Fatalf("abci query status: %v", err)
+	}
+	var queried struct {
+		ChainID string `json:"chain_id"`
+	}
+	if err := json.Unmarshal(query.Value, &queried); err != nil {
+		t.Fatalf("decode abci query status: %v", err)
+	}
+	if queried.ChainID != "aegislink-ibc-demo-1" {
+		t.Fatalf("expected abci query chain id aegislink-ibc-demo-1, got %+v", queried)
+	}
+
+	cometClient, err := rpchttp.New("http://"+ready.CometRPCAddress, "/websocket")
+	if err != nil {
+		t.Fatalf("create comet rpc client: %v", err)
+	}
+	cometStatus, err := cometClient.Status(context.Background())
+	if err != nil {
+		t.Fatalf("comet rpc status: %v", err)
+	}
+	if cometStatus.NodeInfo.Network != "aegislink-ibc-demo-1" {
+		t.Fatalf("expected comet rpc network aegislink-ibc-demo-1, got %+v", cometStatus.NodeInfo)
+	}
+
 }
 
 func TestRunDemoNodeStartServesPersistedRuntimeState(t *testing.T) {
@@ -353,24 +407,19 @@ func TestRunDemoNodeStartServesPersistedRuntimeState(t *testing.T) {
 	}
 
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runWithContext(ctx, []string{
-			"demo-node", "start",
-			"--home", homeDir,
-			"--rpc-address", "127.0.0.1:0",
-			"--grpc-address", "127.0.0.1:0",
-			"--ready-file", readyPath,
-		}, &stdout, &stderr)
-	}()
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath)
+	defer stopDemoNodeProcess(t, cmd, logs)
 
 	var ready struct {
-		RPCAddress string `json:"rpc_address"`
+		NodeID                 string   `json:"node_id"`
+		RPCAddress             string   `json:"rpc_address"`
+		ABCIAddress            string   `json:"abci_address"`
+		ConfigPath             string   `json:"config_path"`
+		CometGenesisPath       string   `json:"comet_genesis_path"`
+		NodeKeyPath            string   `json:"node_key_path"`
+		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
+		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
+		CoreStoreKeys          []string `json:"core_store_keys"`
 	}
 	waitForReadyFile(t, readyPath, &ready)
 	if ready.RPCAddress == "" {
@@ -446,15 +495,6 @@ func TestRunDemoNodeStartServesPersistedRuntimeState(t *testing.T) {
 		t.Fatalf("expected amount %s, got %q", claim.Amount.String(), balances[0].Amount)
 	}
 
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for demo node shutdown")
-	}
 }
 
 func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
@@ -470,24 +510,18 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 	}
 
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runWithContext(ctx, []string{
-			"demo-node", "start",
-			"--home", homeDir,
-			"--rpc-address", "127.0.0.1:0",
-			"--grpc-address", "127.0.0.1:0",
-			"--ready-file", readyPath,
-		}, &stdout, &stderr)
-	}()
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath)
+	defer stopDemoNodeProcess(t, cmd, logs)
 
 	var ready struct {
-		RPCAddress string `json:"rpc_address"`
+		NodeID                 string `json:"node_id"`
+		RPCAddress             string `json:"rpc_address"`
+		ABCIAddress            string `json:"abci_address"`
+		ConfigPath             string `json:"config_path"`
+		CometGenesisPath       string `json:"comet_genesis_path"`
+		NodeKeyPath            string `json:"node_key_path"`
+		PrivValidatorKeyPath   string `json:"priv_validator_key_path"`
+		PrivValidatorStatePath string `json:"priv_validator_state_path"`
 	}
 	waitForReadyFile(t, readyPath, &ready)
 
@@ -502,11 +536,20 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 	}
 
 	var status struct {
-		Status      string `json:"status"`
-		ChainID     string `json:"chain_id"`
-		RPCAddress  string `json:"rpc_address"`
-		GRPCAddress string `json:"grpc_address"`
-		Healthy     bool   `json:"healthy"`
+		Status                 string   `json:"status"`
+		ChainID                string   `json:"chain_id"`
+		NodeID                 string   `json:"node_id"`
+		RPCAddress             string   `json:"rpc_address"`
+		CometRPCAddress        string   `json:"comet_rpc_address"`
+		GRPCAddress            string   `json:"grpc_address"`
+		ABCIAddress            string   `json:"abci_address"`
+		ConfigPath             string   `json:"config_path"`
+		CometGenesisPath       string   `json:"comet_genesis_path"`
+		NodeKeyPath            string   `json:"node_key_path"`
+		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
+		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
+		CoreStoreKeys          []string `json:"core_store_keys"`
+		Healthy                bool     `json:"healthy"`
 	}
 	if err := json.Unmarshal(statusOut.Bytes(), &status); err != nil {
 		t.Fatalf("decode demo-node status output: %v\n%s", err, statusOut.String())
@@ -517,22 +560,94 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 	if status.ChainID != "aegislink-ibc-demo-1" {
 		t.Fatalf("expected chain id aegislink-ibc-demo-1, got %+v", status)
 	}
-	if status.RPCAddress == "" || status.GRPCAddress == "" {
+	if status.RPCAddress == "" || status.CometRPCAddress == "" || status.GRPCAddress == "" {
 		t.Fatalf("expected bound endpoint info, got %+v", status)
 	}
 	if !status.Healthy {
 		t.Fatalf("expected healthy demo node status, got %+v", status)
 	}
-
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for demo node shutdown")
+	if status.NodeID == "" || status.NodeID != ready.NodeID {
+		t.Fatalf("expected status to report node id, got ready=%+v status=%+v", ready, status)
 	}
+	if status.ABCIAddress == "" || status.ABCIAddress != ready.ABCIAddress {
+		t.Fatalf("expected status to report abci address, got ready=%+v status=%+v", ready, status)
+	}
+	if status.ConfigPath != ready.ConfigPath || status.CometGenesisPath != ready.CometGenesisPath || status.NodeKeyPath != ready.NodeKeyPath || status.PrivValidatorKeyPath != ready.PrivValidatorKeyPath || status.PrivValidatorStatePath != ready.PrivValidatorStatePath {
+		t.Fatalf("expected status to report ready-file artifact paths, got ready=%+v status=%+v", ready, status)
+	}
+	if len(status.CoreStoreKeys) == 0 {
+		t.Fatalf("expected status to report core store keys, got %+v", status)
+	}
+	for _, key := range []string{"auth", "bank", "bridge", "ibc", "transfer"} {
+		if !containsString(status.CoreStoreKeys, key) {
+			t.Fatalf("expected status core store keys to include %q in %+v", key, status.CoreStoreKeys)
+		}
+	}
+
+}
+
+func TestRunDemoNodeABCIFinalizeBlockAndCommitAdvanceHeight(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-ibc-demo-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath)
+	defer stopDemoNodeProcess(t, cmd, logs)
+
+	var ready struct {
+		ABCIAddress string `json:"abci_address"`
+	}
+	waitForReadyFile(t, readyPath, &ready)
+
+	abciClient := abcicli.NewSocketClient(ready.ABCIAddress, true)
+	if err := abciClient.Start(); err != nil {
+		t.Fatalf("start abci client: %v", err)
+	}
+	defer func() {
+		_ = abciClient.Stop()
+	}()
+
+	finalize, err := abciClient.FinalizeBlock(context.Background(), &abcitypes.RequestFinalizeBlock{
+		Height: 1,
+		Time:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("abci finalize block: %v", err)
+	}
+	if len(finalize.AppHash) == 0 {
+		t.Fatalf("expected app hash from finalize block, got %+v", finalize)
+	}
+
+	commit, err := abciClient.Commit(context.Background(), &abcitypes.RequestCommit{})
+	if err != nil {
+		t.Fatalf("abci commit: %v", err)
+	}
+	if commit.RetainHeight != 1 {
+		t.Fatalf("expected retain height 1, got %+v", commit)
+	}
+
+	query, err := abciClient.Query(context.Background(), &abcitypes.RequestQuery{Path: "/status"})
+	if err != nil {
+		t.Fatalf("abci query status: %v", err)
+	}
+	var status struct {
+		CurrentHeight float64 `json:"current_height"`
+	}
+	if err := json.Unmarshal(query.Value, &status); err != nil {
+		t.Fatalf("decode abci query status: %v", err)
+	}
+	if status.CurrentHeight != 1 {
+		t.Fatalf("expected current height 1 after finalize/commit, got %+v", status)
+	}
+
 }
 
 func TestRunDemoNodeQueuesDepositClaimOverHTTPAndAppliesItOnTick(t *testing.T) {
@@ -546,22 +661,8 @@ func TestRunDemoNodeQueuesDepositClaimOverHTTPAndAppliesItOnTick(t *testing.T) {
 	}
 
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runWithContext(ctx, []string{
-			"demo-node", "start",
-			"--home", homeDir,
-			"--rpc-address", "127.0.0.1:0",
-			"--grpc-address", "127.0.0.1:0",
-			"--ready-file", readyPath,
-			"--tick-interval-ms", "10",
-		}, &stdout, &stderr)
-	}()
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "10")
+	defer stopDemoNodeProcess(t, cmd, logs)
 
 	var ready struct {
 		RPCAddress string `json:"rpc_address"`
@@ -641,15 +742,6 @@ func TestRunDemoNodeQueuesDepositClaimOverHTTPAndAppliesItOnTick(t *testing.T) {
 		t.Fatalf("unexpected cli balances: %+v", cliBalances)
 	}
 
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for demo node shutdown")
-	}
 }
 
 func TestRunDemoNodeInitiatesIBCTransferOverHTTPAndListsTransfers(t *testing.T) {
@@ -672,22 +764,8 @@ func TestRunDemoNodeInitiatesIBCTransferOverHTTPAndListsTransfers(t *testing.T) 
 	}
 
 	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runWithContext(ctx, []string{
-			"demo-node", "start",
-			"--home", homeDir,
-			"--rpc-address", "127.0.0.1:0",
-			"--grpc-address", "127.0.0.1:0",
-			"--ready-file", readyPath,
-			"--tick-interval-ms", "0",
-		}, &stdout, &stderr)
-	}()
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "0")
+	defer stopDemoNodeProcess(t, cmd, logs)
 
 	var ready struct {
 		RPCAddress string `json:"rpc_address"`
@@ -767,16 +845,6 @@ func TestRunDemoNodeInitiatesIBCTransferOverHTTPAndListsTransfers(t *testing.T) 
 	}
 	if len(cliTransfers) != 1 || cliTransfers[0].TransferID != transfer.TransferID || cliTransfers[0].Status != "pending" {
 		t.Fatalf("unexpected cli transfers: %+v", cliTransfers)
-	}
-
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("demo node exited with error: %v\nstderr=%s", err, stderr.String())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for demo node shutdown")
 	}
 }
 
@@ -1904,7 +1972,7 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 func waitForReadyFile(t *testing.T, path string, target any) {
 	t.Helper()
 
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -2023,4 +2091,77 @@ func seededSDKRuntimeApp(t *testing.T, cfg aegisapp.Config) *aegisapp.App {
 		t.Fatalf("set limit: %v", err)
 	}
 	return app
+}
+
+func startDemoNodeProcess(t *testing.T, homeDir, readyPath string, extraArgs ...string) (*exec.Cmd, *bytes.Buffer) {
+	t.Helper()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+
+	args := []string{
+		"run", ".",
+		"demo-node", "start",
+		"--home", homeDir,
+		"--rpc-address", "127.0.0.1:0",
+		"--comet-rpc-address", "127.0.0.1:0",
+		"--grpc-address", "127.0.0.1:0",
+		"--abci-address", "127.0.0.1:0",
+		"--ready-file", readyPath,
+	}
+	args = append(args, extraArgs...)
+
+	cmd := exec.Command("go", args...)
+	cmd.Dir = cwd
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Env = append([]string{}, os.Environ()...)
+	cmd.Env = append(cmd.Env, "GOCACHE=/tmp/aegislink-gocache")
+
+	var logs bytes.Buffer
+	cmd.Stdout = &logs
+	cmd.Stderr = &logs
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start demo node process: %v", err)
+	}
+
+	return cmd, &logs
+}
+
+func stopDemoNodeProcess(t *testing.T, cmd *exec.Cmd, logs *bytes.Buffer) {
+	t.Helper()
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			errText := err.Error() + "\n" + logs.String()
+			if strings.Contains(errText, "signal: interrupt") {
+				return
+			}
+			t.Fatalf("demo node process exited with error: %v\nlogs=%s", err, logs.String())
+		}
+	case <-time.After(5 * time.Second):
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		t.Fatalf("timed out stopping demo node process\n%s", logs.String())
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

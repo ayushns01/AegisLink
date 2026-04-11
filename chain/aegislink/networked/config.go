@@ -10,11 +10,14 @@ import (
 )
 
 type Config struct {
-	HomeDir      string
-	RPCAddress   string
-	GRPCAddress  string
-	ReadyFile    string
-	TickInterval time.Duration
+	HomeDir         string
+	RPCAddress      string
+	CometRPCAddress string
+	GRPCAddress     string
+	ABCIAddress     string
+	P2PAddress      string
+	ReadyFile       string
+	TickInterval    time.Duration
 }
 
 func ResolveConfig(cfg Config) (Config, aegisapp.Config, error) {
@@ -34,6 +37,12 @@ func ResolveConfig(cfg Config) (Config, aegisapp.Config, error) {
 	}
 	if strings.TrimSpace(cfg.GRPCAddress) == "" {
 		cfg.GRPCAddress = "127.0.0.1:9090"
+	}
+	if strings.TrimSpace(cfg.ABCIAddress) == "" {
+		cfg.ABCIAddress = "127.0.0.1:0"
+	}
+	if strings.TrimSpace(cfg.P2PAddress) == "" {
+		cfg.P2PAddress = "127.0.0.1:0"
 	}
 	if strings.TrimSpace(cfg.ReadyFile) == "" {
 		cfg.ReadyFile = filepath.Join(appCfg.HomeDir, "data", "demo-node-ready.json")

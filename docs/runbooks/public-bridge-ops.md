@@ -51,6 +51,7 @@ Useful local overrides:
 
 - `AEGISLINK_DEMO_NODE_RPC_ADDRESS`
 - `AEGISLINK_DEMO_NODE_GRPC_ADDRESS`
+- `AEGISLINK_DEMO_NODE_ABCI_ADDRESS`
 - `AEGISLINK_DEMO_NODE_READY_FILE`
 - `AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS`
 - `AEGISLINK_PUBLIC_IBC_AEGISLINK_HOME`
@@ -128,6 +129,13 @@ scripts/testnet/seed_public_ibc_route.sh /tmp/aegislink-public-home
 go run ./chain/aegislink/cmd/aegislinkd query route-profiles --home /tmp/aegislink-public-home
 ```
 
+If the demo node is already running, prefer pointing `bootstrap_rly_path.sh` at its ready file:
+
+- `AEGISLINK_RLY_SOURCE_READY_FILE=/tmp/aegislink-public-home/data/demo-node-ready.json`
+
+That lets the `rly` bootstrap reuse the live demo-node RPC, WebSocket, and gRPC endpoints automatically instead of hand-copying source addresses.
+The ready file now prefers the real Comet RPC surface for `rly` and keeps the custom demo-node HTTP API separate for balances and transfer inspection.
+
 Once the profile exists, the current repo can also prove the profile-based initiation path locally:
 
 ```bash
@@ -152,8 +160,10 @@ Use it to document the eventual public IBC bootstrap, not to claim live Osmosis 
 
 ## Intended endpoints
 
-- RPC: `http://127.0.0.1:26657`
+- Demo-node API RPC: `http://127.0.0.1:26657`
+- Comet RPC: `http://127.0.0.1:27657`
 - gRPC: `127.0.0.1:9090`
+- ABCI: `tcp://127.0.0.1:26658`
 - REST: `http://127.0.0.1:1317`
 
 These are documented operator targets for the scaffold. The current bootstrap remains a local single-validator devnet, so treat these as local public-testnet-shaped endpoints rather than a hosted network promise.

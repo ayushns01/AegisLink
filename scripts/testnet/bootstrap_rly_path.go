@@ -61,6 +61,13 @@ type pathEnd struct {
 	ChannelID    string `json:"channel_id"`
 }
 
+type sourceReadyState struct {
+	RPCAddress      string   `json:"rpc_address"`
+	CometRPCAddress string   `json:"comet_rpc_address"`
+	GRPCAddress     string   `json:"grpc_address"`
+	CoreStoreKeys   []string `json:"core_store_keys"`
+}
+
 func main() {
 	if err := runBootstrapRlyPath(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -75,6 +82,7 @@ func runBootstrapRlyPath() error {
 	manifestPath := flags.String("manifest-file", "", "path to the public IBC manifest")
 	destinationMetadataPath := flags.String("destination-metadata-file", "", "path to chain-registry-style destination metadata")
 	outputDir := flags.String("output-dir", "", "directory for generated rly files")
+	sourceReadyFile := flags.String("source-ready-file", "", "path to a demo-node ready-state file")
 	sourceRPC := flags.String("source-rpc-addr", "", "AegisLink demo-node RPC address")
 	sourceRPCWS := flags.String("source-rpc-ws-addr", "", "AegisLink demo-node websocket address")
 	sourceGRPC := flags.String("source-grpc-addr", "", "AegisLink demo-node gRPC address")
@@ -91,13 +99,23 @@ func runBootstrapRlyPath() error {
 		return err
 	}
 
+	sourceRPCValue, sourceRPCWSValue, sourceGRPCValue, err := resolveSourceEndpoints(
+		strings.TrimSpace(*sourceReadyFile),
+		strings.TrimSpace(*sourceRPC),
+		strings.TrimSpace(*sourceRPCWS),
+		strings.TrimSpace(*sourceGRPC),
+	)
+	if err != nil {
+		return err
+	}
+
 	required := map[string]string{
 		"--manifest-file":             strings.TrimSpace(*manifestPath),
 		"--destination-metadata-file": strings.TrimSpace(*destinationMetadataPath),
 		"--output-dir":                strings.TrimSpace(*outputDir),
-		"--source-rpc-addr":           strings.TrimSpace(*sourceRPC),
-		"--source-rpc-ws-addr":        strings.TrimSpace(*sourceRPCWS),
-		"--source-grpc-addr":          strings.TrimSpace(*sourceGRPC),
+		"--source-rpc-addr":           sourceRPCValue,
+		"--source-rpc-ws-addr":        sourceRPCWSValue,
+		"--source-grpc-addr":          sourceGRPCValue,
 	}
 	for flagName, value := range required {
 		if value == "" {
@@ -158,9 +176,9 @@ func runBootstrapRlyPath() error {
 	configPath := filepath.Join(configDir, "config.yaml")
 	configBody := renderRlyConfig(renderRlyConfigParams{
 		SourceChainID:        manifest.SourceChainID,
-		SourceRPC:            strings.TrimSpace(*sourceRPC),
-		SourceRPCWS:          strings.TrimSpace(*sourceRPCWS),
-		SourceGRPC:           strings.TrimSpace(*sourceGRPC),
+		SourceRPC:            sourceRPCValue,
+		SourceRPCWS:          sourceRPCWSValue,
+		SourceGRPC:           sourceGRPCValue,
 		SourceKeyName:        strings.TrimSpace(*sourceKeyName),
 		SourceAccountPrefix:  strings.TrimSpace(*sourcePrefix),
 		SourceGasPrices:      strings.TrimSpace(*sourceGasAmount) + strings.TrimSpace(*sourceGasDenom),
@@ -215,6 +233,44 @@ func runBootstrapRlyPath() error {
 	})
 }
 
+func resolveSourceEndpoints(readyFilePath, sourceRPC, sourceRPCWS, sourceGRPC string) (string, string, string, error) {
+	if readyFilePath != "" {
+		ready, err := loadSourceReadyState(readyFilePath)
+		if err != nil {
+			return "", "", "", err
+		}
+		if !containsAllStrings(ready.CoreStoreKeys, "ibc", "transfer") {
+			return "", "", "", fmt.Errorf("missing required source core store keys: need ibc and transfer in %s", filepath.Clean(readyFilePath))
+		}
+		readyRPC := strings.TrimSpace(ready.CometRPCAddress)
+		if readyRPC == "" {
+			readyRPC = strings.TrimSpace(ready.RPCAddress)
+		}
+		if sourceRPC == "" {
+			sourceRPC = normalizeHTTPAddress(readyRPC)
+		}
+		if sourceRPCWS == "" {
+			sourceRPCWS = deriveWebsocketAddress(readyRPC)
+		}
+		if sourceGRPC == "" {
+			sourceGRPC = normalizeHTTPAddress(ready.GRPCAddress)
+		}
+	}
+	return sourceRPC, sourceRPCWS, sourceGRPC, nil
+}
+
+func loadSourceReadyState(path string) (sourceReadyState, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return sourceReadyState{}, err
+	}
+	var ready sourceReadyState
+	if err := json.Unmarshal(data, &ready); err != nil {
+		return sourceReadyState{}, err
+	}
+	return ready, nil
+}
+
 func loadRlyManifest(path string) (rlyManifest, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
@@ -227,6 +283,37 @@ func loadRlyManifest(path string) (rlyManifest, error) {
 	return manifest, nil
 }
 
+func normalizeHTTPAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	if strings.Contains(address, "://") {
+		return address
+	}
+	return "http://" + address
+}
+
+func deriveWebsocketAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	if strings.HasPrefix(address, "ws://") || strings.HasPrefix(address, "wss://") {
+		if strings.HasSuffix(address, "/websocket") {
+			return address
+		}
+		return strings.TrimRight(address, "/") + "/websocket"
+	}
+	if strings.HasPrefix(address, "http://") {
+		return "ws://" + strings.TrimPrefix(strings.TrimRight(address, "/"), "http://") + "/websocket"
+	}
+	if strings.HasPrefix(address, "https://") {
+		return "wss://" + strings.TrimPrefix(strings.TrimRight(address, "/"), "https://") + "/websocket"
+	}
+	return "ws://" + strings.TrimRight(address, "/") + "/websocket"
+}
+
 func loadChainMetadata(path string) (chainMetadata, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
@@ -237,6 +324,22 @@ func loadChainMetadata(path string) (chainMetadata, error) {
 		return chainMetadata{}, err
 	}
 	return metadata, nil
+}
+
+func containsAllStrings(values []string, required ...string) bool {
+	for _, want := range required {
+		found := false
+		for _, value := range values {
+			if value == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func firstAPIAddress(entries []struct {

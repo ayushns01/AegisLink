@@ -16,6 +16,9 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	abcicli "github.com/cometbft/cometbft/abci/client"
+	abcitypes "github.com/cometbft/cometbft/abci/types"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 )
 
 func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
@@ -42,11 +45,20 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 	)
 
 	var status struct {
-		Status      string `json:"status"`
-		ChainID     string `json:"chain_id"`
-		RPCAddress  string `json:"rpc_address"`
-		GRPCAddress string `json:"grpc_address"`
-		Healthy     bool   `json:"healthy"`
+		Status                 string   `json:"status"`
+		ChainID                string   `json:"chain_id"`
+		NodeID                 string   `json:"node_id"`
+		RPCAddress             string   `json:"rpc_address"`
+		CometRPCAddress        string   `json:"comet_rpc_address"`
+		GRPCAddress            string   `json:"grpc_address"`
+		ABCIAddress            string   `json:"abci_address"`
+		ConfigPath             string   `json:"config_path"`
+		CometGenesisPath       string   `json:"comet_genesis_path"`
+		NodeKeyPath            string   `json:"node_key_path"`
+		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
+		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
+		CoreStoreKeys          []string `json:"core_store_keys"`
+		Healthy                bool     `json:"healthy"`
 	}
 	if err := decodeLastJSONObject(statusOutput, &status); err != nil {
 		t.Fatalf("decode demo-node status: %v\n%s", err, statusOutput)
@@ -57,8 +69,68 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 	if status.ChainID != "aegislink-public-testnet-1" {
 		t.Fatalf("expected chain id aegislink-public-testnet-1, got %q", status.ChainID)
 	}
-	if status.RPCAddress == "" || status.GRPCAddress == "" {
+	if status.RPCAddress == "" || status.CometRPCAddress == "" || status.GRPCAddress == "" {
 		t.Fatalf("expected bound endpoints, got %+v", status)
+	}
+	if status.ABCIAddress == "" {
+		t.Fatalf("expected abci address, got %+v", status)
+	}
+	if status.NodeID == "" {
+		t.Fatalf("expected node id, got %+v", status)
+	}
+	for _, path := range []string{
+		status.ConfigPath,
+		status.CometGenesisPath,
+		status.NodeKeyPath,
+		status.PrivValidatorKeyPath,
+		status.PrivValidatorStatePath,
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected status to report artifact %s: %v", path, err)
+		}
+	}
+	for _, key := range []string{"auth", "bank", "bridge", "ibc", "transfer"} {
+		if !containsStringE2E(status.CoreStoreKeys, key) {
+			t.Fatalf("expected status core store keys to include %q in %+v", key, status.CoreStoreKeys)
+		}
+	}
+
+	abciClient := abcicli.NewSocketClient(status.ABCIAddress, true)
+	if err := abciClient.Start(); err != nil {
+		t.Fatalf("start abci client: %v", err)
+	}
+	defer func() {
+		_ = abciClient.Stop()
+	}()
+	info, err := abciClient.Info(context.Background(), &abcitypes.RequestInfo{})
+	if err != nil {
+		t.Fatalf("abci info: %v", err)
+	}
+	if info.Data != "aegislink" {
+		t.Fatalf("expected abci info data aegislink, got %+v", info)
+	}
+
+	cometClient, err := rpchttp.New("http://"+status.CometRPCAddress, "/websocket")
+	if err != nil {
+		t.Fatalf("create comet rpc client: %v", err)
+	}
+	cometStatus, err := cometClient.Status(context.Background())
+	if err != nil {
+		t.Fatalf("comet rpc status: %v", err)
+	}
+	if cometStatus.NodeInfo.Network != "aegislink-public-testnet-1" {
+		t.Fatalf("expected comet rpc network aegislink-public-testnet-1, got %+v", cometStatus.NodeInfo)
+	}
+
+	for _, path := range []string{
+		filepath.Join(homeDir, "config", "config.toml"),
+		filepath.Join(homeDir, "config", "node_key.json"),
+		filepath.Join(homeDir, "config", "priv_validator_key.json"),
+		filepath.Join(homeDir, "data", "priv_validator_state.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected demo node startup to create %s: %v", path, err)
+		}
 	}
 }
 
@@ -213,6 +285,29 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 	if len(transfers) != 1 || transfers[0].TransferID != transfer.TransferID || transfers[0].Status != "pending" || transfers[0].AssetID != "eth" {
 		t.Fatalf("unexpected demo-node transfers output: %+v", transfers)
 	}
+
+	abciClient := abcicli.NewSocketClient(ready.ABCIAddress, true)
+	if err := abciClient.Start(); err != nil {
+		t.Fatalf("start abci client for transfer query: %v", err)
+	}
+	defer func() {
+		_ = abciClient.Stop()
+	}()
+	query, err := abciClient.Query(context.Background(), &abcitypes.RequestQuery{Path: "/transfers"})
+	if err != nil {
+		t.Fatalf("abci query transfers: %v", err)
+	}
+	var abciTransfers []struct {
+		TransferID string `json:"transfer_id"`
+		Status     string `json:"status"`
+		AssetID    string `json:"asset_id"`
+	}
+	if err := json.Unmarshal(query.Value, &abciTransfers); err != nil {
+		t.Fatalf("decode abci transfer query: %v", err)
+	}
+	if len(abciTransfers) != 1 || abciTransfers[0].TransferID != transfer.TransferID || abciTransfers[0].Status != "pending" || abciTransfers[0].AssetID != "eth" {
+		t.Fatalf("unexpected abci transfer query output: %+v", abciTransfers)
+	}
 }
 
 func startIBCDemoNodeProcess(t *testing.T, homeDir, readyPath string, extraEnv map[string]string) (*exec.Cmd, *bytes.Buffer) {
@@ -230,7 +325,9 @@ func startIBCDemoNodeProcess(t *testing.T, homeDir, readyPath string, extraEnv m
 		"GOMODCACHE=/Users/ayushns01/go/pkg/mod",
 		"AEGISLINK_DEMO_NODE_READY_FILE="+readyPath,
 		"AEGISLINK_DEMO_NODE_RPC_ADDRESS=127.0.0.1:0",
+		"AEGISLINK_DEMO_NODE_COMET_RPC_ADDRESS=127.0.0.1:0",
 		"AEGISLINK_DEMO_NODE_GRPC_ADDRESS=127.0.0.1:0",
+		"AEGISLINK_DEMO_NODE_ABCI_ADDRESS=127.0.0.1:0",
 	)
 	for key, value := range extraEnv {
 		cmd.Env = append(cmd.Env, key+"="+value)
@@ -269,7 +366,7 @@ func stopIBCDemoNodeProcess(t *testing.T, cmd *exec.Cmd, logs *bytes.Buffer) {
 
 func waitForReadyFileE2E(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
 			return
@@ -280,11 +377,15 @@ func waitForReadyFileE2E(t *testing.T, path string) {
 }
 
 func readReadyFileE2E(t *testing.T, path string) struct {
-	RPCAddress string `json:"rpc_address"`
+	RPCAddress      string `json:"rpc_address"`
+	CometRPCAddress string `json:"comet_rpc_address"`
+	ABCIAddress     string `json:"abci_address"`
 } {
 	t.Helper()
 	var ready struct {
-		RPCAddress string `json:"rpc_address"`
+		RPCAddress      string `json:"rpc_address"`
+		CometRPCAddress string `json:"comet_rpc_address"`
+		ABCIAddress     string `json:"abci_address"`
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -394,4 +495,13 @@ func initSDKDemoNodeHome(t *testing.T, homeDir string) aegisapp.Config {
 		t.Fatalf("init sdk demo node home: %v", err)
 	}
 	return cfg
+}
+
+func containsStringE2E(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
