@@ -255,6 +255,8 @@ git commit -m "feat: mint canonical bridged assets"
 
 ### Task H1: Put bridged balances into a real wallet-holding chain account model
 
+Current status in this worktree: complete. Bridged deposits now credit bank-backed wallet balances for real Bech32 recipients, `query balances` exposes them, deposit acceptance rolls back cleanly if wallet crediting fails, and JSON or SDK-store reloads preserve balances with explicit legacy-migration safeguards for older runtimes.
+
 **Files:**
 - Create or modify: `chain/aegislink/x/bank/`
 - Modify: `chain/aegislink/app/app.go`
@@ -262,7 +264,7 @@ git commit -m "feat: mint canonical bridged assets"
 - Modify: `chain/aegislink/cmd/aegislinkd/main.go`
 - Test: `tests/e2e/public_wallet_delivery_test.go`
 
-- [ ] **Step 1: Write failing wallet-delivery tests**
+- [x] **Step 1: Write failing wallet-delivery tests**
 
 Cover:
 - deposit claim credited to a real Bech32 wallet address
@@ -270,21 +272,21 @@ Cover:
 - wallet balance query shows bridged ERC-20
 - balances survive restart or reload
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestPublicWalletDelivery'`
 Expected: FAIL because current runtime status is not yet a real public wallet balance surface.
 
-- [ ] **Step 3: Implement minimal on-chain bank balance integration**
+- [x] **Step 3: Implement minimal on-chain bank balance integration**
 
 Do not build full staking or governance integration here. Just ensure bridged assets live in transfer-capable wallet balances.
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestPublicWalletDelivery'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add chain/aegislink/app chain/aegislink/x/bank tests/e2e
@@ -293,6 +295,8 @@ git commit -m "feat: credit bridged assets to real wallet balances"
 
 ### Task H2: Stand up a public AegisLink testnet
 
+Current status in this worktree: complete. The repo now has a reproducible single-validator public-testnet scaffold, operator and network config artifacts, a wallet-query-capable smoke test, and an operator runbook for the new bootstrap path.
+
 **Files:**
 - Create: `deploy/testnet/aegislink/`
 - Create: `scripts/testnet/bootstrap_aegislink_testnet.sh`
@@ -300,31 +304,31 @@ git commit -m "feat: credit bridged assets to real wallet balances"
 - Modify: `docs/project-positioning.md`
 - Create: `docs/runbooks/public-bridge-ops.md`
 
-- [ ] **Step 1: Write the failing smoke test**
+- [x] **Step 1: Write the failing smoke test**
 
 Cover:
 - a node comes up from public-testnet config
 - a wallet can query balances
 - operator config loads required bridge settings
 
-- [ ] **Step 2: Run the smoke test**
+- [x] **Step 2: Run the smoke test**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestPublicAegisLinkTestnet'`
 Expected: FAIL because the public testnet bootstrap does not exist yet.
 
-- [ ] **Step 3: Implement minimal public testnet bootstrap**
+- [x] **Step 3: Implement minimal public testnet bootstrap**
 
 Keep this small:
 - single validator first
 - reproducible config
 - documented RPC and gRPC endpoints
 
-- [ ] **Step 4: Re-run smoke test**
+- [x] **Step 4: Re-run smoke test**
 
 Run: `cd tests/e2e && GOCACHE=/tmp/aegislink-gocache go test ./... -run 'TestPublicAegisLinkTestnet'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add deploy/testnet scripts/testnet README.md docs/project-positioning.md docs/runbooks/public-bridge-ops.md

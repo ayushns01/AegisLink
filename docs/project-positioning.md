@@ -40,12 +40,14 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The `ibcrouter` now supports destination route profiles, so multiple destinations, route-specific asset allowlists, and memo-policy guardrails can be modeled without rewriting the core bridge lifecycle.
 - The repo now also includes a minimal governance module, so asset enablement, rate-limit updates, and route-policy updates can flow through an authority-gated recorded proposal path instead of direct keeper edits.
 - The route layer now supports a second concrete action beyond swaps: profile-constrained `stake` actions can execute on the dual-runtime path with recipient and validator-path hints, while unsupported actions still fail through explicit destination receipts.
+- The repo now also includes a first public-testnet scaffold for AegisLink, with a reproducible bootstrap script, operator bridge settings, and documented local RPC/gRPC endpoints for wallet-balance inspection.
 
 ## What is still a local harness
 
 - AegisLink is now a store-backed single-node runtime with a daemon-style block loop, but it is still not a full networked CometBFT or ABCI chain.
 - State is persisted in Cosmos KV stores, but the repo still does not claim live consensus, IAVL-backed network operation, or a full BaseApp block pipeline today.
 - The destination side is now a bootstrapped local runtime with its own config, state, and local IBC link metadata, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
+- The public AegisLink testnet scaffold is still a single-validator local devnet bootstrap, not a hosted or externally peered public network yet.
 - The route path is realistic enough to exercise packet lifecycle and destination execution through Hermes-shaped local commands, but it is still a controlled local environment rather than real proof-backed IBC transport.
 
 ## Why this still matters

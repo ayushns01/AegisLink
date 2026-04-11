@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"math/big"
 	"os"
@@ -10,9 +11,12 @@ import (
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
+	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
@@ -21,7 +25,7 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
 	app, err := NewWithConfig(Config{
 		AppName:           AppName,
-		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
@@ -149,7 +153,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	app, err := NewWithConfig(Config{
 		AppName:           AppName,
 		RuntimeMode:       RuntimeModeSDKStore,
-		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 		StatePath:         storePath,
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
@@ -200,7 +204,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	reloaded, err := LoadWithConfig(Config{
 		RuntimeMode: RuntimeModeSDKStore,
 		StatePath:   storePath,
-		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+		Modules:     []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	})
 	if err != nil {
 		t.Fatalf("reload store runtime: %v", err)
@@ -215,6 +219,190 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	}
 	if len(reloaded.IBCRouterKeeper.ExportRoutes()) != 1 {
 		t.Fatalf("expected one route after reload, got %d", len(reloaded.IBCRouterKeeper.ExportRoutes()))
+	}
+}
+
+func TestSaveAndLoadPreservesWalletBalances(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "wallet-state.json")
+	app, err := NewWithConfig(Config{
+		AppName:           AppName,
+		Modules:           []string{"bank", "bridge", "registry", "limits", "pauser", "governance"},
+		StatePath:         statePath,
+		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		RequiredThreshold: 2,
+	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+
+	recipient := sdk.AccAddress([]byte("wallet-runtime-test")).String()
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:         "eth",
+		SourceChainID:   "11155111",
+		SourceAssetKind: registrytypes.SourceAssetKindNativeETH,
+		Denom:           "ueth",
+		Decimals:        18,
+		DisplayName:     "Ether",
+		DisplaySymbol:   "ETH",
+		Enabled:         true,
+	}); err != nil {
+		t.Fatalf("register native asset: %v", err)
+	}
+	if err := app.RegisterAsset(registrytypes.Asset{
+		AssetID:            "eth.usdc",
+		SourceChainID:      "11155111",
+		SourceAssetKind:    registrytypes.SourceAssetKindERC20,
+		SourceAssetAddress: "0xusdc",
+		Denom:              "uethusdc",
+		Decimals:           6,
+		DisplayName:        "USD Coin",
+		DisplaySymbol:      "USDC",
+		Enabled:            true,
+	}); err != nil {
+		t.Fatalf("register erc20 asset: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth",
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount(t, "2000000000000000000"),
+	}); err != nil {
+		t.Fatalf("set eth limit: %v", err)
+	}
+	if err := app.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth.usdc",
+		WindowSeconds: 600,
+		MaxAmount:     mustAmount(t, "100000000"),
+	}); err != nil {
+		t.Fatalf("set erc20 limit: %v", err)
+	}
+
+	nativeClaim := depositClaimForWalletTest(t, bridgetypes.SourceAssetKindNativeETH, "", "eth", "0xnative", 1, 1, recipient, "1000000000000000000")
+	if _, err := app.SubmitDepositClaim(nativeClaim, attestationForWalletTest(t, nativeClaim)); err != nil {
+		t.Fatalf("submit native claim: %v", err)
+	}
+	erc20Claim := depositClaimForWalletTest(t, bridgetypes.SourceAssetKindERC20, "0xusdc", "eth.usdc", "0xerc20", 2, 2, recipient, "25000000")
+	if _, err := app.SubmitDepositClaim(erc20Claim, attestationForWalletTest(t, erc20Claim)); err != nil {
+		t.Fatalf("submit erc20 claim: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save wallet state: %v", err)
+	}
+
+	loaded, err := Load(statePath)
+	if err != nil {
+		t.Fatalf("load wallet state: %v", err)
+	}
+	balances, err := loaded.WalletBalances(recipient)
+	if err != nil {
+		t.Fatalf("wallet balances: %v", err)
+	}
+	if len(balances) != 2 {
+		t.Fatalf("expected two persisted balances, got %d", len(balances))
+	}
+	if balances[0].Denom != "ueth" || balances[0].Amount != "1000000000000000000" {
+		t.Fatalf("unexpected native balance: %+v", balances[0])
+	}
+	if balances[1].Denom != "uethusdc" || balances[1].Amount != "25000000" {
+		t.Fatalf("unexpected erc20 balance: %+v", balances[1])
+	}
+}
+
+func TestLoadSynthesizesWalletBalancesWhenLegacyRuntimeOmitsBankState(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "legacy-wallet-state.json")
+	recipient := sdk.AccAddress([]byte("legacy-wallet-recipient")).String()
+
+	asset := registrytypes.Asset{
+		AssetID:         "eth",
+		SourceChainID:   "11155111",
+		SourceAssetKind: registrytypes.SourceAssetKindNativeETH,
+		Denom:           "ueth",
+		Decimals:        18,
+		DisplayName:     "Ether",
+		DisplaySymbol:   "ETH",
+		Enabled:         true,
+	}
+	raw := map[string]any{
+		"assets": []registrytypes.Asset{asset},
+		"limits": limitskeeper.StateSnapshot{},
+		"bridge": bridgekeeper.StateSnapshot{
+			ProcessedClaims: []bridgekeeper.ClaimRecordSnapshot{
+				{
+					ClaimKey:  "legacy-claim-1",
+					MessageID: "legacy-msg-1",
+					Denom:     "ueth",
+					AssetID:   "eth",
+					Recipient: recipient,
+					Amount:    "1000000000000000000",
+					Status:    bridgekeeper.ClaimStatusAccepted,
+				},
+			},
+			SupplyByDenom: map[string]string{
+				"ueth": "1000000000000000000",
+			},
+		},
+		"ibc_router":   ibcrouterkeeper.StateSnapshot{},
+		"governance":   governancekeeper.StateSnapshot{},
+		"paused_flows": []string{},
+	}
+	encoded, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal legacy state: %v", err)
+	}
+	if err := os.WriteFile(statePath, encoded, 0o644); err != nil {
+		t.Fatalf("write legacy state: %v", err)
+	}
+
+	loaded, err := Load(statePath)
+	if err != nil {
+		t.Fatalf("load legacy wallet state: %v", err)
+	}
+	balances, err := loaded.WalletBalances(recipient)
+	if err != nil {
+		t.Fatalf("wallet balances: %v", err)
+	}
+	if len(balances) != 1 {
+		t.Fatalf("expected one synthesized balance, got %d (%+v)", len(balances), balances)
+	}
+	if balances[0].Denom != "ueth" || balances[0].Amount != "1000000000000000000" {
+		t.Fatalf("unexpected synthesized balance: %+v", balances[0])
+	}
+}
+
+func TestLoadRejectsLegacyRuntimeMissingBankStateWithoutRecipientMetadata(t *testing.T) {
+	t.Parallel()
+
+	statePath := filepath.Join(t.TempDir(), "ambiguous-wallet-state.json")
+	raw := map[string]any{
+		"bridge": bridgekeeper.StateSnapshot{
+			ProcessedClaims: []bridgekeeper.ClaimRecordSnapshot{
+				{
+					ClaimKey:  "legacy-claim-1",
+					MessageID: "legacy-msg-1",
+					Denom:     "ueth",
+					AssetID:   "eth",
+					Amount:    "1000000000000000000",
+					Status:    bridgekeeper.ClaimStatusAccepted,
+				},
+			},
+			SupplyByDenom: map[string]string{
+				"ueth": "1000000000000000000",
+			},
+		},
+	}
+	encoded, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal ambiguous legacy state: %v", err)
+	}
+	if err := os.WriteFile(statePath, encoded, 0o644); err != nil {
+		t.Fatalf("write ambiguous legacy state: %v", err)
+	}
+
+	if _, err := Load(statePath); !errors.Is(err, ErrWalletStateMigrationRequired) {
+		t.Fatalf("expected wallet migration error, got %v", err)
 	}
 }
 
@@ -298,7 +486,7 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 		HomeDir: homeDir,
 		ChainID: "aegislink-devnet-1",
 		AppName: AppName,
-		Modules: []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+		Modules: []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	}, false)
 	if err != nil {
 		t.Fatalf("init home: %v", err)
@@ -328,8 +516,8 @@ func TestInitHomeCreatesRuntimeArtifactsAndStatusSummary(t *testing.T) {
 	if !status.Initialized {
 		t.Fatal("expected initialized runtime")
 	}
-	if status.Modules != 6 {
-		t.Fatalf("expected 6 modules, got %d", status.Modules)
+	if status.Modules != 7 {
+		t.Fatalf("expected 7 modules, got %d", status.Modules)
 	}
 	if status.FailedClaims != 0 {
 		t.Fatalf("expected zero failed claims on fresh runtime, got %d", status.FailedClaims)
@@ -345,7 +533,7 @@ func TestInitHomeCreatesSDKStoreRuntimeArtifacts(t *testing.T) {
 		ChainID:     "aegislink-sdk-1",
 		AppName:     AppName,
 		RuntimeMode: RuntimeModeSDKStore,
-		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+		Modules:     []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	}, false)
 	if err != nil {
 		t.Fatalf("init home: %v", err)
@@ -363,6 +551,48 @@ func TestInitHomeCreatesSDKStoreRuntimeArtifacts(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Fatalf("expected sdk runtime state path to be a directory, got file at %s", cfg.StatePath)
+	}
+}
+
+func TestLoadWithConfigMigratesLegacySDKStoreConfigWithoutBankModule(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "legacy-home")
+	legacy := Config{
+		AppName:     AppName,
+		ChainID:     "aegislink-sdk-legacy-1",
+		RuntimeMode: RuntimeModeSDKStore,
+		HomeDir:     homeDir,
+		ConfigPath:  runtimeConfigPath(homeDir),
+		GenesisPath: runtimeGenesisPath(homeDir),
+		StatePath:   runtimeStorePath(homeDir),
+		Modules:     []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+	}
+
+	if err := os.MkdirAll(filepath.Dir(legacy.ConfigPath), 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.MkdirAll(legacy.StatePath, 0o755); err != nil {
+		t.Fatalf("mkdir store dir: %v", err)
+	}
+	if err := writeConfigFile(legacy.ConfigPath, legacy); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+	if err := writeGenesisFile(legacy.GenesisPath, DefaultGenesis(legacy)); err != nil {
+		t.Fatalf("write legacy genesis: %v", err)
+	}
+
+	loaded, err := LoadWithConfig(Config{
+		HomeDir:     homeDir,
+		RuntimeMode: RuntimeModeSDKStore,
+	})
+	if err != nil {
+		t.Fatalf("load legacy sdk config: %v", err)
+	}
+	defer loaded.Close()
+
+	if !containsModule(loaded.Config.Modules, "bank") {
+		t.Fatalf("expected migrated module list to include bank, got %+v", loaded.Config.Modules)
 	}
 }
 
@@ -398,7 +628,7 @@ func validDepositClaim(t *testing.T) bridgetypes.DepositClaim {
 		DestinationChainID: "aegislink-1",
 		AssetID:            "eth.usdc",
 		Amount:             mustAmount(t, "100000000"),
-		Recipient:          "cosmos1recipient",
+		Recipient:          sdk.AccAddress([]byte("runtime-test-wallet")).String(),
 		Deadline:           100,
 	}
 }
@@ -430,4 +660,58 @@ func mustAmount(t *testing.T, value string) *big.Int {
 		t.Fatalf("invalid amount %q", value)
 	}
 	return amount
+}
+
+func containsModule(modules []string, target string) bool {
+	for _, moduleName := range modules {
+		if moduleName == target {
+			return true
+		}
+	}
+	return false
+}
+
+func depositClaimForWalletTest(t *testing.T, sourceAssetKind, sourceContract, assetID, txHash string, logIndex, nonce uint64, recipient, amount string) bridgetypes.DepositClaim {
+	t.Helper()
+
+	identity := bridgetypes.ClaimIdentity{
+		Kind:            bridgetypes.ClaimKindDeposit,
+		SourceAssetKind: sourceAssetKind,
+		SourceChainID:   "11155111",
+		SourceContract:  sourceContract,
+		SourceTxHash:    txHash,
+		SourceLogIndex:  logIndex,
+		Nonce:           nonce,
+	}
+	identity.MessageID = identity.DerivedMessageID()
+
+	return bridgetypes.DepositClaim{
+		Identity:           identity,
+		DestinationChainID: "aegislink-local-1",
+		AssetID:            assetID,
+		Amount:             mustAmount(t, amount),
+		Recipient:          recipient,
+		Deadline:           120,
+	}
+}
+
+func attestationForWalletTest(t *testing.T, claim bridgetypes.DepositClaim) bridgetypes.Attestation {
+	t.Helper()
+
+	attestation := bridgetypes.Attestation{
+		MessageID:        claim.Identity.MessageID,
+		PayloadHash:      claim.Digest(),
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Threshold:        2,
+		Expiry:           200,
+		SignerSetVersion: 1,
+	}
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			t.Fatalf("sign attestation: %v", err)
+		}
+		attestation.Proofs = append(attestation.Proofs, proof)
+	}
+	return attestation
 }

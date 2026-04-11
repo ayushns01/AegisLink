@@ -1,0 +1,8 @@
+{
+  "chain_id": "aegislink-public-testnet-1",
+  "rpc_address": "http://127.0.0.1:26657",
+  "grpc_address": "127.0.0.1:9090",
+  "rest_address": "http://127.0.0.1:1317",
+  "mode": "single-validator-devnet",
+  "notes": "This scaffold is the first reproducible public-testnet bootstrap for AegisLink. It is operator-oriented and wallet-query capable, but it is not yet a multi-validator public network."
+}

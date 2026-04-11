@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
@@ -240,8 +241,8 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 	if last["home_dir"] != homeDir {
 		t.Fatalf("expected home dir %q, got %+v", homeDir, last["home_dir"])
 	}
-	if last["module_count"] != float64(6) {
-		t.Fatalf("expected module count 6, got %+v", last["module_count"])
+	if last["module_count"] != float64(7) {
+		t.Fatalf("expected module count 7, got %+v", last["module_count"])
 	}
 	if last["configured_signers"] != float64(3) {
 		t.Fatalf("expected configured signers 3, got %+v", last["configured_signers"])
@@ -509,7 +510,7 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
 	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
-		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
@@ -1162,7 +1163,7 @@ func validDepositClaim(t *testing.T) bridgetypes.DepositClaim {
 		DestinationChainID: "aegislink-1",
 		AssetID:            "eth.usdc",
 		Amount:             mustAmount(t, "100000000"),
-		Recipient:          "cosmos1recipient",
+		Recipient:          sdk.AccAddress([]byte("main-test-wallet")).String(),
 		Deadline:           100,
 	}
 }
@@ -1220,7 +1221,7 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 
 	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
-		Modules:           []string{"bridge", "registry", "limits", "pauser", "governance"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
@@ -1274,7 +1275,7 @@ func initSDKRuntimeHome(t *testing.T, homeDir string) aegisapp.Config {
 		AppName:           aegisapp.AppName,
 		ChainID:           "aegislink-sdk-1",
 		RuntimeMode:       aegisapp.RuntimeModeSDKStore,
-		Modules:           []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	}, false)

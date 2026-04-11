@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"strings"
 
+	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
@@ -72,6 +73,18 @@ func (s *BridgeTxService) QueueDepositClaim(claim bridgetypes.DepositClaim, atte
 
 func (s *BridgeTxService) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (bridgekeeper.WithdrawalRecord, error) {
 	return s.app.ExecuteWithdrawal(assetID, amount, recipient, deadline, signature)
+}
+
+type BankQueryService struct {
+	app *App
+}
+
+func NewBankQueryService(app *App) *BankQueryService {
+	return &BankQueryService{app: app}
+}
+
+func (s *BankQueryService) ListBalances(address string) ([]bankkeeper.BalanceRecord, error) {
+	return s.app.WalletBalances(address)
 }
 
 type IBCRouterQueryService struct {

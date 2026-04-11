@@ -12,6 +12,7 @@ import (
 	storetypes "cosmossdk.io/store/types"
 	dbm "github.com/cosmos/cosmos-db"
 
+	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
@@ -74,6 +75,10 @@ func newStoreBackedApp(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	bankKeeper, err := bankkeeper.NewStoreKeeper(runtime.multi, runtime.storeKeys["bank"])
+	if err != nil {
+		return nil, err
+	}
 	limitsKeeper, err := limitskeeper.NewStoreKeeper(runtime.multi, runtime.storeKeys["limits"])
 	if err != nil {
 		return nil, err
@@ -103,7 +108,7 @@ func newStoreBackedApp(cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	app := newAppFromKeepers(cfg, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper, governanceKeeper)
+	app := newAppFromKeepers(cfg, bankKeeper, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper, governanceKeeper)
 	app.storeRuntime = runtime
 	app.Config.StatePath = runtimeStorePath(cfg.HomeDir)
 	if cfg.StatePath != "" {

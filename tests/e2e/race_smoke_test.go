@@ -22,7 +22,7 @@ func TestRaceSmokeSerializedRuntimeAccess(t *testing.T) {
 		AllowedSigners:        bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold:     2,
 		GovernanceAuthorities: []string{"guardian-1"},
-		Modules:               []string{"bridge", "registry", "limits", "pauser", "ibcrouter", "governance"},
+		Modules:               []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)

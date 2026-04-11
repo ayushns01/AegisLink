@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	bankmodule "github.com/ayushns01/aegislink/chain/aegislink/x/bank"
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	governancemodule "github.com/ayushns01/aegislink/chain/aegislink/x/governance"
@@ -58,6 +59,7 @@ func DefaultConfig() Config {
 		StatePath:   runtimeStatePath(defaultHomeDir()),
 		Modules: []string{
 			bridgemodule.ModuleName,
+			bankmodule.ModuleName,
 			registrymodule.ModuleName,
 			limitsmodule.ModuleName,
 			pausermodule.ModuleName,

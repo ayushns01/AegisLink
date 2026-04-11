@@ -14,6 +14,7 @@ type ClaimRecord struct {
 	MessageID string
 	Denom     string
 	AssetID   string
+	Recipient string
 	Amount    *big.Int
 	Status    ClaimStatus
 }
@@ -36,6 +37,7 @@ func (k *Keeper) acceptDepositClaim(claimKey string, claim bridgetypes.DepositCl
 		MessageID: claim.Identity.MessageID,
 		Denom:     denom,
 		AssetID:   claim.AssetID,
+		Recipient: claim.Recipient,
 		Amount:    cloneAmount(claim.Amount),
 		Status:    ClaimStatusAccepted,
 	}

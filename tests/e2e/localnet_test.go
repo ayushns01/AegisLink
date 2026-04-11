@@ -87,13 +87,13 @@ type persistedDepositClaim struct {
 }
 
 type persistedAttestation struct {
-	MessageID        string                       `json:"message_id"`
-	PayloadHash      string                       `json:"payload_hash"`
-	Signers          []string                     `json:"signers"`
+	MessageID        string                         `json:"message_id"`
+	PayloadHash      string                         `json:"payload_hash"`
+	Signers          []string                       `json:"signers"`
 	Proofs           []bridgetypes.AttestationProof `json:"proofs"`
-	Threshold        uint32                       `json:"threshold"`
-	Expiry           uint64                       `json:"expiry"`
-	SignerSetVersion uint64                       `json:"signer_set_version"`
+	Threshold        uint32                         `json:"threshold"`
+	Expiry           uint64                         `json:"expiry"`
+	SignerSetVersion uint64                         `json:"signer_set_version"`
 }
 
 type persistedWithdrawalState struct {
@@ -135,7 +135,7 @@ func TestAegisLinkShellStartsWithSafetyModules(t *testing.T) {
 	t.Parallel()
 
 	output := runGoCommand(t, repoRoot(t), nil, "run", "./chain/aegislink/cmd/aegislinkd")
-	if !strings.Contains(output, "aegislink initialized with modules: bridge, registry, limits, pauser") {
+	if !strings.Contains(output, "aegislink initialized with modules: bridge, bank, registry, limits, pauser") {
 		t.Fatalf("expected aegislinkd module list in output, got %q", output)
 	}
 }
@@ -319,7 +319,7 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	statePath := filepath.Join(t.TempDir(), "aegislink-state.json")
 	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
-		Modules:           []string{"bridge", "registry", "limits", "pauser"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
@@ -438,7 +438,7 @@ func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress strin
 	statePath := filepath.Join(t.TempDir(), "aegislink-bootstrap-state.json")
 	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
-		Modules:           []string{"bridge", "registry", "limits", "pauser"},
+		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser"},
 		StatePath:         statePath,
 		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,

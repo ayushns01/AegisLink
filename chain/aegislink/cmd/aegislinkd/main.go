@@ -90,6 +90,8 @@ func runQuery(args []string, stdout, stderr io.Writer) error {
 		return queryTransfers(args[1:], stdout)
 	case "withdrawals":
 		return queryWithdrawals(args[1:], stdout)
+	case "balances":
+		return queryBalances(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown query subcommand %q", args[0])
 	}
@@ -462,6 +464,33 @@ func queryWithdrawals(args []string, stdout io.Writer) error {
 	service := app.NewBridgeQueryService(a)
 	withdrawals := service.ListWithdrawals(*fromHeight, *toHeight)
 	return writeJSON(stdout, bridgecli.WithdrawalsResponse(withdrawals).Withdrawals)
+}
+
+func queryBalances(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("balances", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	address := flags.String("address", "", "bech32 wallet address")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*address) == "" {
+		return fmt.Errorf("missing address")
+	}
+
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+
+	service := app.NewBankQueryService(a)
+	balances, err := service.ListBalances(*address)
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, balances)
 }
 
 func queryRoutes(args []string, stdout io.Writer) error {

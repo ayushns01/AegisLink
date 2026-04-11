@@ -5,12 +5,14 @@ import (
 	"math/big"
 	"testing"
 
+	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func TestBridgeQueryServiceReturnsStoredClaim(t *testing.T) {
@@ -47,6 +49,61 @@ func TestBridgeTxServiceSubmitsDepositClaim(t *testing.T) {
 	}
 	if result.Status != "accepted" {
 		t.Fatalf("expected accepted claim result, got %+v", result)
+	}
+}
+
+func TestBridgeTxServiceRejectsInvalidRecipientBeforeBridgeMutation(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	claim := sampleDepositClaim()
+	claim.Recipient = "not-a-bech32-address"
+	attestation := sampleAttestation(claim)
+
+	service := NewBridgeTxService(app)
+	if _, err := service.SubmitDepositClaim(claim, attestation); !errors.Is(err, bankkeeper.ErrInvalidAddress) {
+		t.Fatalf("expected invalid address error, got %v", err)
+	}
+
+	query := NewBridgeQueryService(app)
+	if _, ok := query.GetClaim(claim.Identity.MessageID); ok {
+		t.Fatalf("expected invalid-recipient claim %q to remain unprocessed", claim.Identity.MessageID)
+	}
+
+	if supply := app.BridgeKeeper.SupplyForDenom("uethusdc"); supply.Sign() != 0 {
+		t.Fatalf("expected zero bridge supply after invalid recipient rejection, got %s", supply.String())
+	}
+}
+
+func TestBridgeTxServiceRollsBackDepositWhenWalletCreditFails(t *testing.T) {
+	app := New()
+	seedBridgeRuntime(t, app)
+
+	claim := sampleDepositClaim()
+	attestation := sampleAttestation(claim)
+	failed := false
+	app.BankKeeper.SetPersistHookForTesting(func() error {
+		if failed {
+			return nil
+		}
+		failed = true
+		return errors.New("forced bank persist failure")
+	})
+
+	service := NewBridgeTxService(app)
+	if _, err := service.SubmitDepositClaim(claim, attestation); err == nil {
+		t.Fatalf("expected wallet credit failure")
+	}
+
+	query := NewBridgeQueryService(app)
+	if _, ok := query.GetClaim(claim.Identity.MessageID); ok {
+		t.Fatalf("expected failed wallet credit to roll back processed claim %q", claim.Identity.MessageID)
+	}
+	if supply := app.BridgeKeeper.SupplyForDenom("uethusdc"); supply.Sign() != 0 {
+		t.Fatalf("expected zero bridge supply after rollback, got %s", supply.String())
+	}
+	if usage, ok := app.LimitsKeeper.CurrentUsage("eth.usdc", 0); ok {
+		t.Fatalf("expected no persisted usage after rollback, got %+v", usage)
 	}
 }
 
@@ -183,7 +240,7 @@ func sampleDepositClaim() bridgetypes.DepositClaim {
 		DestinationChainID: "aegislink-local-1",
 		AssetID:            "eth.usdc",
 		Amount:             big.NewInt(25000000),
-		Recipient:          "osmo1receiver",
+		Recipient:          sdk.AccAddress([]byte("service-test-wallet")).String(),
 		Deadline:           100,
 	}
 }

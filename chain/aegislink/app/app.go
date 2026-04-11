@@ -1,6 +1,9 @@
 package app
 
 import (
+	"errors"
+	bankmodule "github.com/ayushns01/aegislink/chain/aegislink/x/bank"
+	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
@@ -26,6 +29,7 @@ import (
 type App struct {
 	mu                   sync.RWMutex
 	Config               Config
+	BankKeeper           *bankkeeper.Keeper
 	BridgeKeeper         *bridgekeeper.Keeper
 	IBCRouterKeeper      *ibcrouterkeeper.Keeper
 	RegistryKeeper       *registrykeeper.Keeper
@@ -93,6 +97,7 @@ func NewWithConfig(cfg Config) (*App, error) {
 		return newStoreBackedApp(cfg)
 	}
 
+	bankKeeper := bankkeeper.NewKeeper()
 	registryKeeper := registrykeeper.NewKeeper()
 	limitsKeeper := limitskeeper.NewKeeper()
 	pauserKeeper := pauserkeeper.NewKeeper()
@@ -100,11 +105,12 @@ func NewWithConfig(cfg Config) (*App, error) {
 	governanceKeeper := governancekeeper.NewKeeper(registryKeeper, limitsKeeper, ibcRouterKeeper, cfg.GovernanceAuthorities)
 	bridgeKeeper := bridgekeeper.NewKeeper(registryKeeper, limitsKeeper, pauserKeeper, cfg.AllowedSigners, cfg.RequiredThreshold)
 
-	return newAppFromKeepers(cfg, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper, governanceKeeper), nil
+	return newAppFromKeepers(cfg, bankKeeper, bridgeKeeper, ibcRouterKeeper, registryKeeper, limitsKeeper, pauserKeeper, governanceKeeper), nil
 }
 
 func newAppFromKeepers(
 	cfg Config,
+	bankKeeper *bankkeeper.Keeper,
 	bridgeKeeper *bridgekeeper.Keeper,
 	ibcRouterKeeper *ibcrouterkeeper.Keeper,
 	registryKeeper *registrykeeper.Keeper,
@@ -112,6 +118,7 @@ func newAppFromKeepers(
 	pauserKeeper *pauserkeeper.Keeper,
 	governanceKeeper *governancekeeper.Keeper,
 ) *App {
+	bankAppModule := bankmodule.NewAppModule(bankKeeper)
 	bridgeAppModule := bridgemodule.NewAppModule(bridgeKeeper)
 	registryAppModule := registrymodule.NewAppModule(registryKeeper)
 	limitsAppModule := limitsmodule.NewAppModule(limitsKeeper)
@@ -120,6 +127,7 @@ func newAppFromKeepers(
 	governanceAppModule := governancemodule.NewAppModule(governanceKeeper)
 	modules := []string{
 		bridgeAppModule.Name(),
+		bankAppModule.Name(),
 		registryAppModule.Name(),
 		limitsAppModule.Name(),
 		pauserAppModule.Name(),
@@ -129,6 +137,7 @@ func newAppFromKeepers(
 
 	return &App{
 		Config:           cfg,
+		BankKeeper:       bankKeeper,
 		BridgeKeeper:     bridgeKeeper,
 		IBCRouterKeeper:  ibcRouterKeeper,
 		RegistryKeeper:   registryKeeper,
@@ -188,6 +197,13 @@ func LoadWithConfig(cfg Config) (*App, error) {
 	if err := app.GovernanceKeeper.ImportState(state.Governance); err != nil {
 		return nil, err
 	}
+	bankState, err := state.resolvedBankState()
+	if err != nil {
+		return nil, err
+	}
+	if err := app.BankKeeper.ImportState(bankState); err != nil {
+		return nil, err
+	}
 	app.pendingDepositClaims = append([]QueuedDepositClaim(nil), state.PendingClaims...)
 
 	return app, nil
@@ -228,6 +244,11 @@ func (a *App) QueueDepositClaim(claim bridgetypes.DepositClaim, attestation brid
 	if err := attestation.ValidateBasic(); err != nil {
 		return err
 	}
+	normalizedRecipient, err := a.BankKeeper.NormalizeAddress(claim.Recipient)
+	if err != nil {
+		return err
+	}
+	claim.Recipient = normalizedRecipient
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -302,7 +323,52 @@ func (a *App) SubmitDepositClaim(claim bridgetypes.DepositClaim, attestation bri
 }
 
 func (a *App) submitDepositClaimLocked(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) (bridgekeeper.ClaimResult, error) {
-	return a.BridgeKeeper.ExecuteDepositClaim(claim, attestation)
+	normalizedRecipient, err := a.BankKeeper.NormalizeAddress(claim.Recipient)
+	if err != nil {
+		return bridgekeeper.ClaimResult{}, err
+	}
+	claim.Recipient = normalizedRecipient
+	bridgeState := a.BridgeKeeper.ExportState()
+	bankState := a.BankKeeper.ExportState()
+	limitsState := a.LimitsKeeper.ExportState()
+
+	result, err := a.BridgeKeeper.ExecuteDepositClaim(claim, attestation)
+	if err != nil {
+		return result, err
+	}
+	if err := a.BankKeeper.Credit(claim.Recipient, result.Denom, result.Amount); err != nil {
+		if rollbackErr := a.rollbackDepositClaimState(bridgeState, bankState, limitsState); rollbackErr != nil {
+			return bridgekeeper.ClaimResult{}, errors.Join(err, rollbackErr)
+		}
+		return bridgekeeper.ClaimResult{}, err
+	}
+	return result, nil
+}
+
+func (a *App) rollbackDepositClaimState(
+	bridgeState bridgekeeper.StateSnapshot,
+	bankState bankkeeper.StateSnapshot,
+	limitsState limitskeeper.StateSnapshot,
+) error {
+	if err := a.BridgeKeeper.ImportState(bridgeState); err != nil {
+		return err
+	}
+	if err := a.BankKeeper.ImportState(bankState); err != nil {
+		return err
+	}
+	if err := a.LimitsKeeper.ImportState(limitsState); err != nil {
+		return err
+	}
+	for _, flush := range []func() error{
+		a.BridgeKeeper.Flush,
+		a.BankKeeper.Flush,
+		a.LimitsKeeper.Flush,
+	} {
+		if err := flush(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) ExecuteWithdrawal(assetID string, amount *big.Int, recipient string, deadline uint64, signature []byte) (bridgekeeper.WithdrawalRecord, error) {
@@ -315,6 +381,12 @@ func (a *App) Withdrawals(fromHeight, toHeight uint64) []bridgekeeper.Withdrawal
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.BridgeKeeper.Withdrawals(fromHeight, toHeight)
+}
+
+func (a *App) WalletBalances(address string) ([]bankkeeper.BalanceRecord, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.BankKeeper.Balances(address)
 }
 
 func (a *App) ActiveSignerSet() (bridgekeeper.SignerSet, error) {
@@ -400,6 +472,7 @@ func (a *App) Save() error {
 	defer a.mu.Unlock()
 	if a.Config.RuntimeMode == RuntimeModeSDKStore {
 		for _, flush := range []func() error{
+			a.BankKeeper.Flush,
 			a.RegistryKeeper.Flush,
 			a.LimitsKeeper.Flush,
 			a.PauserKeeper.Flush,
@@ -418,6 +491,7 @@ func (a *App) Save() error {
 	}
 	return persistRuntimeState(a.Config.StatePath, runtimeState{
 		Assets:        a.RegistryKeeper.ExportAssets(),
+		Bank:          a.BankKeeper.ExportState(),
 		Limits:        a.LimitsKeeper.ExportState(),
 		PausedFlows:   a.PauserKeeper.ExportPausedFlows(),
 		PendingClaims: append([]QueuedDepositClaim(nil), a.pendingDepositClaims...),
@@ -432,6 +506,7 @@ func (a *App) Close() error {
 	defer a.mu.Unlock()
 	if a.Config.RuntimeMode == RuntimeModeSDKStore {
 		for _, flush := range []func() error{
+			a.BankKeeper.Flush,
 			a.RegistryKeeper.Flush,
 			a.LimitsKeeper.Flush,
 			a.PauserKeeper.Flush,
@@ -574,9 +649,7 @@ func normalizeConfig(cfg Config) Config {
 			cfg.StatePath = runtimeStatePath(cfg.HomeDir)
 		}
 	}
-	if len(cfg.Modules) == 0 {
-		cfg.Modules = append([]string(nil), defaults.Modules...)
-	}
+	cfg.Modules = normalizeModules(cfg.Modules, defaults.Modules)
 	if len(cfg.AllowedSigners) == 0 {
 		cfg.AllowedSigners = append([]string(nil), defaults.AllowedSigners...)
 	}
@@ -587,6 +660,38 @@ func normalizeConfig(cfg Config) Config {
 		cfg.RequiredThreshold = defaults.RequiredThreshold
 	}
 	return cfg
+}
+
+func normalizeModules(modules []string, defaults []string) []string {
+	if len(modules) == 0 {
+		return append([]string(nil), defaults...)
+	}
+
+	normalized := make([]string, 0, len(modules)+len(defaults))
+	seen := make(map[string]struct{}, len(modules)+len(defaults))
+	for _, moduleName := range modules {
+		moduleName = strings.TrimSpace(moduleName)
+		if moduleName == "" {
+			continue
+		}
+		if _, exists := seen[moduleName]; exists {
+			continue
+		}
+		normalized = append(normalized, moduleName)
+		seen[moduleName] = struct{}{}
+	}
+	for _, moduleName := range defaults {
+		moduleName = strings.TrimSpace(moduleName)
+		if moduleName == "" {
+			continue
+		}
+		if _, exists := seen[moduleName]; exists {
+			continue
+		}
+		normalized = append(normalized, moduleName)
+		seen[moduleName] = struct{}{}
+	}
+	return normalized
 }
 
 func runtimeInitialized(cfg Config) bool {

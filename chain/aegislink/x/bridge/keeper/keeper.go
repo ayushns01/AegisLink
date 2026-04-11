@@ -327,6 +327,7 @@ func (k *Keeper) persist() error {
 			MessageID: record.MessageID,
 			Denom:     record.Denom,
 			AssetID:   record.AssetID,
+			Recipient: record.Recipient,
 			Amount:    record.Amount.String(),
 			Status:    record.Status,
 		}); err != nil {

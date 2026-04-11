@@ -40,6 +40,7 @@ type ClaimRecordSnapshot struct {
 	MessageID string      `json:"message_id"`
 	Denom     string      `json:"denom"`
 	AssetID   string      `json:"asset_id"`
+	Recipient string      `json:"recipient,omitempty"`
 	Amount    string      `json:"amount"`
 	Status    ClaimStatus `json:"status"`
 }
@@ -83,6 +84,7 @@ func (k *Keeper) ExportState() StateSnapshot {
 			MessageID: record.MessageID,
 			Denom:     record.Denom,
 			AssetID:   record.AssetID,
+			Recipient: record.Recipient,
 			Amount:    record.Amount.String(),
 			Status:    record.Status,
 		})
@@ -140,6 +142,7 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 			MessageID: claim.MessageID,
 			Denom:     claim.Denom,
 			AssetID:   claim.AssetID,
+			Recipient: claim.Recipient,
 			Amount:    amount,
 			Status:    claim.Status,
 		}
@@ -229,6 +232,7 @@ func (k *Keeper) loadFromPrefixStore() error {
 			MessageID: claim.MessageID,
 			Denom:     claim.Denom,
 			AssetID:   claim.AssetID,
+			Recipient: claim.Recipient,
 			Amount:    amount,
 			Status:    claim.Status,
 		}
