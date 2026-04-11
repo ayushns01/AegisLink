@@ -54,9 +54,10 @@ contract BridgeGatewayInvariantTest {
         for (uint256 i = 0; i < steps; ++i) {
             seed = uint256(keccak256(abi.encode(seed, i)));
             if ((seed & 1) == 0) {
-                uint256 amount = _bound(
-                    uint256(keccak256(abi.encode(seed, "deposit"))), 1, token.balanceOf(depositor)
-                );
+                uint256 depositorBalance = token.balanceOf(depositor);
+                if (depositorBalance == 0) continue;
+
+                uint256 amount = _bound(uint256(keccak256(abi.encode(seed, "deposit"))), 1, depositorBalance);
                 _deposit(amount);
                 totalDeposited += amount;
             } else {

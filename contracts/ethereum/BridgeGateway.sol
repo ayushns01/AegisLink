@@ -13,6 +13,8 @@ interface IERC20BalanceOf {
 }
 
 contract BridgeGateway {
+    string private constant CANONICAL_ETH_ASSET_ID = "eth";
+
     error NotOwner();
     error Paused();
     error UnsupportedAsset(address asset);
@@ -115,6 +117,26 @@ contract BridgeGateway {
         emit DepositInitiated(depositId, messageId, nonce, asset, config.assetId, amount, recipient, expiry);
     }
 
+    function depositETH(string calldata recipient, uint64 expiry)
+        external
+        payable
+        whenNotPaused
+        returns (bytes32 messageId)
+    {
+        uint256 amount = msg.value;
+        if (amount == 0) revert InvalidAmount();
+        if (bytes(recipient).length == 0) revert InvalidRecipient();
+        if (expiry <= block.timestamp) revert ExpiredClaim();
+
+        uint256 nonce = nextNonce++;
+        bytes32 depositId = keccak256(abi.encode(address(this), nonce));
+        messageId = keccak256(
+            abi.encode(block.chainid, address(this), depositId, address(0), amount, keccak256(bytes(recipient)), expiry)
+        );
+
+        emit DepositInitiated(depositId, messageId, nonce, address(0), CANONICAL_ETH_ASSET_ID, amount, recipient, expiry);
+    }
+
     modifier nonReentrantRelease() {
         if (releaseEntered) revert ReentrantRelease();
         releaseEntered = true;
@@ -130,17 +152,26 @@ contract BridgeGateway {
         uint64 expiry,
         bytes calldata signature
     ) external whenNotPaused nonReentrantRelease returns (bytes32 releaseId) {
-        if (!supportedAssets[asset].supported) revert UnsupportedAsset(asset);
         if (amount == 0) revert InvalidAmount();
         if (recipient == address(0)) revert InvalidRecipient();
+        if (asset != address(0)) {
+            AssetConfig memory config = supportedAssets[asset];
+            if (!config.supported) revert UnsupportedAsset(asset);
+        }
 
-        uint256 gatewayBalanceBefore = IERC20BalanceOf(asset).balanceOf(address(this));
-        uint256 recipientBalanceBefore = IERC20BalanceOf(asset).balanceOf(recipient);
         verifier.verifyAndConsume(messageId, releasePayloadHash(asset, recipient, amount, messageId, expiry), expiry, signature);
 
         releaseId = keccak256(abi.encode(address(this), messageId, asset, recipient, amount));
-        _transferOut(asset, recipient, amount);
-        _assertCanonicalRelease(asset, recipient, amount, gatewayBalanceBefore, recipientBalanceBefore);
+        if (asset == address(0)) {
+            uint256 gatewayBalanceBefore = address(this).balance;
+            _transferOutETH(payable(recipient), amount);
+            _assertCanonicalETHRelease(amount, gatewayBalanceBefore);
+        } else {
+            uint256 gatewayBalanceBefore = IERC20BalanceOf(asset).balanceOf(address(this));
+            uint256 recipientBalanceBefore = IERC20BalanceOf(asset).balanceOf(recipient);
+            _transferOut(asset, recipient, amount);
+            _assertCanonicalRelease(asset, recipient, amount, gatewayBalanceBefore, recipientBalanceBefore);
+        }
 
         emit WithdrawalReleased(messageId, releaseId, asset, recipient, amount, expiry);
     }
@@ -167,6 +198,11 @@ contract BridgeGateway {
         if (!ok) revert TransferFailed();
     }
 
+    function _transferOutETH(address payable to, uint256 amount) internal {
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert TransferFailed();
+    }
+
     function _assertCanonicalRelease(
         address asset,
         address recipient,
@@ -181,5 +217,15 @@ contract BridgeGateway {
                 || recipientBalanceAfter < recipientBalanceBefore
                 || recipientBalanceAfter - recipientBalanceBefore != amount
         ) revert NonCanonicalToken(asset);
+    }
+
+    function _assertCanonicalETHRelease(
+        uint256 amount,
+        uint256 gatewayBalanceBefore
+    ) internal view {
+        uint256 gatewayBalanceAfter = address(this).balance;
+        if (gatewayBalanceBefore < gatewayBalanceAfter || gatewayBalanceBefore - gatewayBalanceAfter != amount) {
+            revert NonCanonicalToken(address(0));
+        }
     }
 }

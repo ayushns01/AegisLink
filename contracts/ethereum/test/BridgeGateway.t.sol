@@ -311,6 +311,22 @@ contract BridgeGatewayTest {
         }
     }
 
+    function testReleasePayloadHashHelperMatchesNativeEthFormula() public view {
+        uint256 amount = 25_000_000;
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        bytes32 messageId = keccak256(
+            abi.encode(block.chainid, address(gateway), uint256(1), address(0), amount, address(uint160(0xCA11)), expiry)
+        );
+        address recipient = address(0xCA11);
+
+        bytes32 helperHash = gateway.releasePayloadHash(address(0), recipient, amount, messageId, expiry);
+        bytes32 inlineHash = keccak256(abi.encode(block.chainid, address(gateway), address(0), recipient, amount, messageId, expiry));
+
+        if (helperHash != inlineHash) {
+            revert("native payload hash mismatch");
+        }
+    }
+
     function testGatewayCanUseGenericVerifierInterface() public {
         MockVerifier mockVerifier = new MockVerifier();
         BridgeGateway genericGateway = new BridgeGateway(address(mockVerifier));

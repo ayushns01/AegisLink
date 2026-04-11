@@ -70,6 +70,7 @@ contract ThresholdBridgeVerifier is IBridgeVerifier {
         onlyGateway
         returns (address signer)
     {
+        // The gateway decides whether payloadHash represents ETH or ERC-20 custody.
         if (block.timestamp > expiry) revert AttestationExpired();
         if (usedProofs[messageId]) revert ProofAlreadyUsed();
 
