@@ -5,11 +5,14 @@ import (
 	"testing"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctypes "github.com/cosmos/ibc-go/v10/modules/core/types"
-	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 )
 
 func TestNewChainAppBuildsBaseAppAndMountsCoreStoreKeys(t *testing.T) {
@@ -250,5 +253,62 @@ func TestBuildChainAppConstructsTransferKeeperAndSealsIBCRouter(t *testing.T) {
 	}
 	if !app.IBCKeeper.PortKeeper.Router.Sealed() {
 		t.Fatal("expected ibc port router to be sealed after transfer route registration")
+	}
+}
+
+func TestBuildChainAppRegistersSDKModuleServicesAndInitializesGenesis(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	if app.ModuleManager == nil {
+		t.Fatal("expected module manager to be initialized")
+	}
+	if app.Configurator == nil {
+		t.Fatal("expected module configurator to be initialized")
+	}
+
+	for _, msg := range []sdk.Msg{
+		&authtypes.MsgUpdateParams{},
+		&banktypes.MsgSend{},
+		&clienttypes.MsgUpdateParams{},
+		&transfertypes.MsgTransfer{},
+	} {
+		if handler := app.BaseApp.MsgServiceRouter().HandlerByTypeURL(sdk.MsgTypeURL(msg)); handler == nil {
+			t.Fatalf("expected msg service handler for %T", msg)
+		}
+	}
+
+	for _, path := range []string{
+		"/cosmos.auth.v1beta1.Query/Accounts",
+		"/cosmos.bank.v1beta1.Query/Params",
+		"/ibc.core.client.v1.Query/ClientStates",
+		"/ibc.applications.transfer.v1.Query/Params",
+	} {
+		if route := app.BaseApp.GRPCQueryRouter().Route(path); route == nil {
+			t.Fatalf("expected grpc query route %q to be registered", path)
+		}
+	}
+
+	ctx := app.BaseApp.NewUncachedContext(false, cmtproto.Header{ChainID: "aegislink-networked-1"})
+	if got := app.TransferKeeper.GetPort(ctx); got != transfertypes.PortID {
+		t.Fatalf("expected initialized transfer port %q, got %q", transfertypes.PortID, got)
 	}
 }

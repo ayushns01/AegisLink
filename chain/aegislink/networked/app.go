@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"cosmossdk.io/log"
 	"cosmossdk.io/store/rootmulti"
 	storetypes "cosmossdk.io/store/types"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
+	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -22,42 +25,45 @@ import (
 	txsigning "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authmodule "github.com/cosmos/cosmos-sdk/x/auth"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	bankmodule "github.com/cosmos/cosmos-sdk/x/bank"
-	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	bankmodule "github.com/cosmos/cosmos-sdk/x/bank"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	transfermodule "github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	transferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	ibcmodule "github.com/cosmos/ibc-go/v10/modules/core"
-	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
-	transfermodule "github.com/cosmos/ibc-go/v10/modules/apps/transfer"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 )
 
 type ChainApp struct {
-	AppConfig         aegisapp.Config
-	Logger            log.Logger
-	DB                dbm.DB
-	BaseApp           *baseapp.BaseApp
-	MultiStore        *rootmulti.Store
-	StoreKeys         map[string]*storetypes.KVStoreKey
-	LegacyAmino       *codec.LegacyAmino
-	InterfaceRegistry codectypes.InterfaceRegistry
-	Codec             codec.Codec
-	TxConfig          client.TxConfig
+	AppConfig          aegisapp.Config
+	Logger             log.Logger
+	DB                 dbm.DB
+	BaseApp            *baseapp.BaseApp
+	MultiStore         *rootmulti.Store
+	StoreKeys          map[string]*storetypes.KVStoreKey
+	LegacyAmino        *codec.LegacyAmino
+	InterfaceRegistry  codectypes.InterfaceRegistry
+	Codec              codec.Codec
+	TxConfig           client.TxConfig
 	BasicModuleManager module.BasicManager
-	AccountKeeper     authkeeper.AccountKeeper
-	BankKeeper        bankkeeper.BaseKeeper
-	Authority         string
-	UpgradeKeeper     *upgradekeeper.Keeper
-	IBCKeeper         *ibckeeper.Keeper
-	IBCModule         ibcmodule.AppModule
-	TransferKeeper    transferkeeper.Keeper
-	TransferModule    transfermodule.AppModule
+	AccountKeeper      authkeeper.AccountKeeper
+	BankKeeper         bankkeeper.BaseKeeper
+	Authority          string
+	UpgradeKeeper      *upgradekeeper.Keeper
+	IBCKeeper          *ibckeeper.Keeper
+	IBCModule          ibcmodule.AppModule
+	TransferKeeper     transferkeeper.Keeper
+	TransferModule     transfermodule.AppModule
+	ModuleManager      *module.Manager
+	Configurator       module.Configurator
 }
 
 func NewChainApp(cfg Config) (*ChainApp, error) {
@@ -91,7 +97,7 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		return nil, fmt.Errorf("encode authority address: %w", err)
 	}
 
-	base := baseapp.NewBaseApp(appCfg.AppName, logger, db, txConfig.TxDecoder())
+	base := baseapp.NewBaseApp(appCfg.AppName, logger, db, txConfig.TxDecoder(), baseapp.SetChainID(appCfg.ChainID))
 	multiStore, ok := base.CommitMultiStore().(*rootmulti.Store)
 	if !ok {
 		return nil, fmt.Errorf("unexpected commit multistore type %T", base.CommitMultiStore())
@@ -160,17 +166,80 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		porttypes.NewRouter().AddRoute(transfertypes.ModuleName, transferIBCModule),
 	)
 	transferModule := transfermodule.NewAppModule(transferKeeper)
+	authAppModule := authmodule.NewAppModule(protoCodec, accountKeeper, nil, nil)
+	bankAppModule := bankmodule.NewAppModule(protoCodec, bankKeeper, accountKeeper, nil)
+	moduleManager := module.NewManager(
+		authAppModule,
+		bankAppModule,
+		ibcModule,
+		transferModule,
+	)
+	moduleManager.SetOrderInitGenesis(
+		authtypes.ModuleName,
+		banktypes.ModuleName,
+		ibcexported.ModuleName,
+		transfertypes.ModuleName,
+	)
+	moduleManager.SetOrderBeginBlockers(
+		authtypes.ModuleName,
+		banktypes.ModuleName,
+		ibcexported.ModuleName,
+		transfertypes.ModuleName,
+	)
+	moduleManager.SetOrderEndBlockers(
+		authtypes.ModuleName,
+		banktypes.ModuleName,
+		ibcexported.ModuleName,
+		transfertypes.ModuleName,
+	)
+
+	base.MsgServiceRouter().SetInterfaceRegistry(interfaceRegistry)
+	base.GRPCQueryRouter().SetInterfaceRegistry(interfaceRegistry)
+	configurator := module.NewConfigurator(protoCodec, base.MsgServiceRouter(), base.GRPCQueryRouter())
+	if err := moduleManager.RegisterServices(configurator); err != nil {
+		return nil, fmt.Errorf("register module services: %w", err)
+	}
+	if err := configurator.Error(); err != nil {
+		return nil, fmt.Errorf("configure module services: %w", err)
+	}
+
+	base.SetInitChainer(func(ctx sdk.Context, req *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
+		genesisState := basicModuleManager.DefaultGenesis(protoCodec)
+		if len(req.AppStateBytes) > 0 {
+			if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
+				return nil, fmt.Errorf("decode app state bytes: %w", err)
+			}
+		}
+		if err := initModulesGenesis(ctx, protoCodec, moduleManager, genesisState); err != nil {
+			return nil, err
+		}
+		return &abcitypes.ResponseInitChain{}, nil
+	})
+	base.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
+		return moduleManager.BeginBlock(ctx)
+	})
+	base.SetEndBlocker(func(ctx sdk.Context) (sdk.EndBlock, error) {
+		return moduleManager.EndBlock(ctx)
+	})
+
+	if err := base.LoadLatestVersion(); err != nil {
+		return nil, fmt.Errorf("load latest baseapp version: %w", err)
+	}
+	defaultGenesisState := basicModuleManager.DefaultGenesis(protoCodec)
+	if err := bootstrapDefaultModuleState(base, moduleManager, protoCodec, defaultGenesisState, appCfg.ChainID); err != nil {
+		return nil, err
+	}
 
 	return &ChainApp{
-		AppConfig:         appCfg,
-		Logger:            logger,
-		DB:                db,
-		BaseApp:           base,
-		MultiStore:        multiStore,
-		StoreKeys:         storeKeys,
-		LegacyAmino:       legacyAmino,
-		InterfaceRegistry: interfaceRegistry,
-		Codec:             protoCodec,
+		AppConfig:          appCfg,
+		Logger:             logger,
+		DB:                 db,
+		BaseApp:            base,
+		MultiStore:         multiStore,
+		StoreKeys:          storeKeys,
+		LegacyAmino:        legacyAmino,
+		InterfaceRegistry:  interfaceRegistry,
+		Codec:              protoCodec,
 		TxConfig:           txConfig,
 		BasicModuleManager: basicModuleManager,
 		AccountKeeper:      accountKeeper,
@@ -181,6 +250,8 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		IBCModule:          ibcModule,
 		TransferKeeper:     transferKeeper,
 		TransferModule:     transferModule,
+		ModuleManager:      moduleManager,
+		Configurator:       configurator,
 	}, nil
 }
 
@@ -229,7 +300,7 @@ func networkedStoreKeyNames(moduleNames []string) []string {
 	for _, name := range moduleNames {
 		appendKey(name)
 	}
-	for _, name := range []string{"auth", "bank", "capability", "ibc", "transfer", upgradetypes.StoreKey} {
+	for _, name := range []string{"auth", authtypes.StoreKey, "bank", "capability", "ibc", "transfer", upgradetypes.StoreKey} {
 		appendKey(name)
 	}
 
@@ -239,3 +310,41 @@ func networkedStoreKeyNames(moduleNames []string) []string {
 type noopIBCParamSubspace struct{}
 
 func (noopIBCParamSubspace) GetParamSet(_ sdk.Context, _ paramtypes.ParamSet) {}
+
+func initModulesGenesis(ctx sdk.Context, cdc codec.JSONCodec, moduleManager *module.Manager, genesisState map[string]json.RawMessage) error {
+	if moduleManager == nil {
+		return nil
+	}
+	for _, moduleName := range moduleManager.OrderInitGenesis {
+		moduleGenesis := genesisState[moduleName]
+		if len(moduleGenesis) == 0 {
+			continue
+		}
+		mod := moduleManager.Modules[moduleName]
+		switch typedModule := mod.(type) {
+		case module.HasGenesis:
+			typedModule.InitGenesis(ctx, cdc, moduleGenesis)
+		case module.HasABCIGenesis:
+			typedModule.InitGenesis(ctx, cdc, moduleGenesis)
+		}
+	}
+	return nil
+}
+
+func bootstrapDefaultModuleState(
+	base *baseapp.BaseApp,
+	moduleManager *module.Manager,
+	cdc codec.JSONCodec,
+	genesisState map[string]json.RawMessage,
+	chainID string,
+) error {
+	if base == nil || moduleManager == nil {
+		return nil
+	}
+
+	ctx := base.NewUncachedContext(false, cmtproto.Header{ChainID: chainID})
+	if _, err := moduleManager.InitGenesis(ctx, cdc, genesisState); err != nil && !strings.Contains(err.Error(), "validator set is empty after InitGenesis") {
+		return fmt.Errorf("bootstrap module genesis: %w", err)
+	}
+	return nil
+}
