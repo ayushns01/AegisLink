@@ -5,7 +5,11 @@ export function WalletStatus() {
   const wallet = useBridgeWallet();
 
   if (!wallet.isConnected) {
-    return <div className="wallet-chip">Wallet disconnected</div>;
+    return (
+      <div className="wallet-chip">
+        {wallet.hasInjectedWallet ? "Wallet disconnected" : "No wallet extension"}
+      </div>
+    );
   }
 
   if (wallet.isWrongChain) {

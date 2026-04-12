@@ -1,4 +1,11 @@
 import { useMemo, useState } from "react";
+import type { Address } from "viem";
+import { useWalletClient } from "wagmi";
+import { frontendEnv } from "../../lib/config/env";
+import { submitEthDeposit } from "../../lib/evm/gateway";
+import { useBridgeWallet } from "../wallet/useBridgeWallet";
+import { createSubmittedBridgeSession, type BridgeSession } from "./bridge-session";
+import { ProgressPanel } from "./ProgressPanel";
 
 type Destination = {
   id: string;
@@ -26,10 +33,15 @@ const destinations: Destination[] = [
 ];
 
 export function TransferPage() {
+  const wallet = useBridgeWallet();
+  const { data: walletClient } = useWalletClient();
   const [amount, setAmount] = useState("0.250");
   const [recipient, setRecipient] = useState(
     "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
   );
+  const [session, setSession] = useState<BridgeSession | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const destination = destinations[0];
   const recipientIsValid = useMemo(
     () => recipient.startsWith(destination.prefix) && recipient.length > destination.prefix.length + 8,
@@ -39,6 +51,53 @@ export function TransferPage() {
     const parsed = Number(amount);
     return Number.isFinite(parsed) && parsed > 0;
   }, [amount]);
+
+  const canSubmit =
+    amountIsValid &&
+    recipientIsValid &&
+    wallet.isConnected &&
+    !wallet.isWrongChain &&
+    Boolean(wallet.address) &&
+    Boolean(walletClient) &&
+    !isSubmitting;
+
+  async function handleSubmit() {
+    if (!walletClient || !wallet.address) {
+      setSubmissionError("Connect a Sepolia wallet extension to continue.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmissionError(null);
+
+    try {
+      const txHash = await submitEthDeposit({
+        walletClient,
+        gatewayAddress: frontendEnv.gatewayAddress,
+        account: wallet.address as Address,
+        amountEth: amount,
+        recipient,
+      });
+
+      setSession(
+        createSubmittedBridgeSession({
+          amountEth: amount,
+          destinationChain: destination.name,
+          recipient,
+          sourceAddress: wallet.address,
+          sourceTxHash: txHash,
+        }),
+      );
+    } catch (error) {
+      setSubmissionError(normalizeSubmissionError(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (session) {
+    return <ProgressPanel onReset={() => setSession(null)} session={session} />;
+  }
 
   return (
     <div className="transfer-card">
@@ -51,7 +110,13 @@ export function TransferPage() {
             and bridge ETH from the connected Sepolia wallet.
           </p>
         </div>
-        <div className="wallet-chip">Wallet connected</div>
+        <div className="wallet-chip">
+          {wallet.isWrongChain
+            ? "Wrong chain"
+            : wallet.address
+              ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`
+              : "Wallet connected"}
+        </div>
       </div>
 
       <div className="field-grid">
@@ -123,11 +188,21 @@ export function TransferPage() {
 
       <button
         className="primary-cta"
-        disabled={!amountIsValid || !recipientIsValid}
+        disabled={!canSubmit}
+        onClick={() => void handleSubmit()}
         type="button"
       >
-        Bridge to Osmosis
+        {isSubmitting ? "Submitting Deposit..." : "Bridge to Osmosis"}
       </button>
+      {submissionError ? <p className="field-error field-error--spaced">{submissionError}</p> : null}
     </div>
   );
+}
+
+function normalizeSubmissionError(error: unknown) {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return "The deposit could not be submitted. Please try again.";
 }

@@ -4,6 +4,14 @@ import { useBridgeWallet } from "./useBridgeWallet";
 export function WalletConnectButton() {
   const wallet = useBridgeWallet();
 
+  if (!wallet.hasInjectedWallet) {
+    return (
+      <button className="connect-button connect-button--warning" disabled type="button">
+        Install Wallet Extension
+      </button>
+    );
+  }
+
   if (wallet.isConnected && wallet.isWrongChain) {
     return (
       <button
