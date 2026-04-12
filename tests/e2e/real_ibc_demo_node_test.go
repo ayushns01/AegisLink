@@ -53,10 +53,12 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 		ABCIAddress            string   `json:"abci_address"`
 		ConfigPath             string   `json:"config_path"`
 		CometGenesisPath       string   `json:"comet_genesis_path"`
+		SDKGenesisPath         string   `json:"sdk_genesis_path"`
 		NodeKeyPath            string   `json:"node_key_path"`
 		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
 		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
 		CoreStoreKeys          []string `json:"core_store_keys"`
+		SDKGenesisModules      []string `json:"sdk_genesis_modules"`
 		Healthy                bool     `json:"healthy"`
 	}
 	if err := decodeLastJSONObject(statusOutput, &status); err != nil {
@@ -80,6 +82,7 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 	for _, path := range []string{
 		status.ConfigPath,
 		status.CometGenesisPath,
+		status.SDKGenesisPath,
 		status.NodeKeyPath,
 		status.PrivValidatorKeyPath,
 		status.PrivValidatorStatePath,
@@ -91,6 +94,11 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 	for _, key := range []string{"auth", "bank", "bridge", "ibc", "transfer"} {
 		if !containsStringE2E(status.CoreStoreKeys, key) {
 			t.Fatalf("expected status core store keys to include %q in %+v", key, status.CoreStoreKeys)
+		}
+	}
+	for _, moduleName := range []string{"auth", "bank", "ibc", "transfer"} {
+		if !containsStringE2E(status.SDKGenesisModules, moduleName) {
+			t.Fatalf("expected status sdk genesis modules to include %q in %+v", moduleName, status.SDKGenesisModules)
 		}
 	}
 

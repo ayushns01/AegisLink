@@ -45,10 +45,12 @@ type ReadyState struct {
 	ABCIAddress            string   `json:"abci_address"`
 	ConfigPath             string   `json:"config_path"`
 	CometGenesisPath       string   `json:"comet_genesis_path"`
+	SDKGenesisPath         string   `json:"sdk_genesis_path"`
 	NodeKeyPath            string   `json:"node_key_path"`
 	PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
 	PrivValidatorStatePath string   `json:"priv_validator_state_path"`
 	CoreStoreKeys          []string `json:"core_store_keys"`
+	SDKGenesisModules      []string `json:"sdk_genesis_modules"`
 }
 
 type DemoNode struct {
@@ -86,6 +88,7 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 		return ReadyState{}, err
 	}
 	coreStoreKeys := chainApp.SortedStoreKeyNames()
+	sdkGenesisModules := sortedGenesisModuleNames(chainApp.DefaultGenesis())
 	if err := chainApp.Close(); err != nil {
 		return ReadyState{}, err
 	}
@@ -142,10 +145,12 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 		ABCIAddress:            normalizeTCPAddress(resolved.ABCIAddress),
 		ConfigPath:             nodeHome.ConfigPath,
 		CometGenesisPath:       nodeHome.CometGenesisPath,
+		SDKGenesisPath:         nodeHome.SDKGenesisPath,
 		NodeKeyPath:            nodeHome.NodeKeyPath,
 		PrivValidatorKeyPath:   nodeHome.PrivValidatorKeyPath,
 		PrivValidatorStatePath: nodeHome.PrivValidatorStatePath,
 		CoreStoreKeys:          coreStoreKeys,
+		SDKGenesisModules:      sdkGenesisModules,
 	}
 
 	node := DemoNode{
@@ -492,6 +497,15 @@ func appendCloseErr(errs []error, err error) []error {
 		return errs
 	}
 	return append(errs, err)
+}
+
+func sortedGenesisModuleNames(genesisState map[string]json.RawMessage) []string {
+	names := make([]string, 0, len(genesisState))
+	for moduleName := range genesisState {
+		names = append(names, moduleName)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func writeReadyFile(path string, state ReadyState) error {

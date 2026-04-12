@@ -295,10 +295,12 @@ func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
 		ABCIAddress            string   `json:"abci_address"`
 		ConfigPath             string   `json:"config_path"`
 		CometGenesisPath       string   `json:"comet_genesis_path"`
+		SDKGenesisPath         string   `json:"sdk_genesis_path"`
 		NodeKeyPath            string   `json:"node_key_path"`
 		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
 		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
 		CoreStoreKeys          []string `json:"core_store_keys"`
+		SDKGenesisModules      []string `json:"sdk_genesis_modules"`
 	}
 	waitForReadyFile(t, readyPath, &ready)
 	if ready.Status != "ready" {
@@ -319,6 +321,7 @@ func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
 	for _, path := range []string{
 		ready.ConfigPath,
 		ready.CometGenesisPath,
+		ready.SDKGenesisPath,
 		ready.NodeKeyPath,
 		ready.PrivValidatorKeyPath,
 		ready.PrivValidatorStatePath,
@@ -330,6 +333,11 @@ func TestRunDemoNodeStartEmitsBoundEndpointInfoAndServesHealth(t *testing.T) {
 	for _, key := range []string{"auth", "bank", "bridge", "ibc", "transfer"} {
 		if !containsString(ready.CoreStoreKeys, key) {
 			t.Fatalf("expected core store key %q in %+v", key, ready.CoreStoreKeys)
+		}
+	}
+	for _, moduleName := range []string{"auth", "bank", "ibc", "transfer"} {
+		if !containsString(ready.SDKGenesisModules, moduleName) {
+			t.Fatalf("expected sdk genesis module %q in %+v", moduleName, ready.SDKGenesisModules)
 		}
 	}
 
@@ -416,6 +424,7 @@ func TestRunDemoNodeStartServesPersistedRuntimeState(t *testing.T) {
 		ABCIAddress            string   `json:"abci_address"`
 		ConfigPath             string   `json:"config_path"`
 		CometGenesisPath       string   `json:"comet_genesis_path"`
+		SDKGenesisPath         string   `json:"sdk_genesis_path"`
 		NodeKeyPath            string   `json:"node_key_path"`
 		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
 		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
@@ -519,6 +528,7 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 		ABCIAddress            string `json:"abci_address"`
 		ConfigPath             string `json:"config_path"`
 		CometGenesisPath       string `json:"comet_genesis_path"`
+		SDKGenesisPath         string `json:"sdk_genesis_path"`
 		NodeKeyPath            string `json:"node_key_path"`
 		PrivValidatorKeyPath   string `json:"priv_validator_key_path"`
 		PrivValidatorStatePath string `json:"priv_validator_state_path"`
@@ -545,10 +555,12 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 		ABCIAddress            string   `json:"abci_address"`
 		ConfigPath             string   `json:"config_path"`
 		CometGenesisPath       string   `json:"comet_genesis_path"`
+		SDKGenesisPath         string   `json:"sdk_genesis_path"`
 		NodeKeyPath            string   `json:"node_key_path"`
 		PrivValidatorKeyPath   string   `json:"priv_validator_key_path"`
 		PrivValidatorStatePath string   `json:"priv_validator_state_path"`
 		CoreStoreKeys          []string `json:"core_store_keys"`
+		SDKGenesisModules      []string `json:"sdk_genesis_modules"`
 		Healthy                bool     `json:"healthy"`
 	}
 	if err := json.Unmarshal(statusOut.Bytes(), &status); err != nil {
@@ -572,7 +584,7 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 	if status.ABCIAddress == "" || status.ABCIAddress != ready.ABCIAddress {
 		t.Fatalf("expected status to report abci address, got ready=%+v status=%+v", ready, status)
 	}
-	if status.ConfigPath != ready.ConfigPath || status.CometGenesisPath != ready.CometGenesisPath || status.NodeKeyPath != ready.NodeKeyPath || status.PrivValidatorKeyPath != ready.PrivValidatorKeyPath || status.PrivValidatorStatePath != ready.PrivValidatorStatePath {
+	if status.ConfigPath != ready.ConfigPath || status.CometGenesisPath != ready.CometGenesisPath || status.SDKGenesisPath != ready.SDKGenesisPath || status.NodeKeyPath != ready.NodeKeyPath || status.PrivValidatorKeyPath != ready.PrivValidatorKeyPath || status.PrivValidatorStatePath != ready.PrivValidatorStatePath {
 		t.Fatalf("expected status to report ready-file artifact paths, got ready=%+v status=%+v", ready, status)
 	}
 	if len(status.CoreStoreKeys) == 0 {
@@ -581,6 +593,11 @@ func TestRunDemoNodeStatusReadsReadyFileAndProbesHealth(t *testing.T) {
 	for _, key := range []string{"auth", "bank", "bridge", "ibc", "transfer"} {
 		if !containsString(status.CoreStoreKeys, key) {
 			t.Fatalf("expected status core store keys to include %q in %+v", key, status.CoreStoreKeys)
+		}
+	}
+	for _, moduleName := range []string{"auth", "bank", "ibc", "transfer"} {
+		if !containsString(status.SDKGenesisModules, moduleName) {
+			t.Fatalf("expected status sdk genesis modules to include %q in %+v", moduleName, status.SDKGenesisModules)
 		}
 	}
 

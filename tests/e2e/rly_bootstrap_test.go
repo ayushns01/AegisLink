@@ -234,7 +234,8 @@ func TestRlyBootstrapCanReadSourceEndpointsFromDemoNodeReadyFile(t *testing.T) {
   "node_key_path": "/tmp/aegislink-demo/config/node_key.json",
   "priv_validator_key_path": "/tmp/aegislink-demo/config/priv_validator_key.json",
   "priv_validator_state_path": "/tmp/aegislink-demo/data/priv_validator_state.json",
-  "core_store_keys": ["auth", "bank", "bridge", "ibc", "transfer"]
+  "core_store_keys": ["auth", "bank", "bridge", "ibc", "transfer"],
+  "sdk_genesis_modules": ["auth", "bank", "ibc", "transfer"]
 }`
 	if err := os.WriteFile(readyPath, []byte(readyFixture), 0o644); err != nil {
 		t.Fatalf("write ready fixture: %v", err)
@@ -353,6 +354,78 @@ func TestRlyBootstrapRejectsReadyFileWithoutIBCCoreStoreKeys(t *testing.T) {
 	)
 	if !strings.Contains(err, "missing required source core store keys") {
 		t.Fatalf("expected missing core store keys error, got:\n%s", err)
+	}
+}
+
+func TestRlyBootstrapRejectsReadyFileWithoutIBCGenesisModules(t *testing.T) {
+	t.Parallel()
+
+	repo := repoRoot(t)
+	outputDir := filepath.Join(t.TempDir(), "rly")
+	manifestPath := filepath.Join(t.TempDir(), "osmosis-wallet-delivery.json")
+	destinationMetadataPath := filepath.Join(t.TempDir(), "osmosis-testnet.chain.json")
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+
+	manifestFixture := `{
+  "source_chain_id": "aegislink-public-testnet-1",
+  "destination_chain_id": "osmo-test-5",
+  "provider": "rly",
+  "wallet_prefix": "osmo",
+  "channel_id": "channel-42",
+  "port_id": "transfer",
+  "route_id": "osmosis-public-wallet",
+  "assets": [{"asset_id":"eth","source_denom":"ueth","destination_denom":"ibc/ueth"}]
+}`
+	if err := os.WriteFile(manifestPath, []byte(manifestFixture), 0o644); err != nil {
+		t.Fatalf("write manifest fixture: %v", err)
+	}
+
+	destinationMetadataFixture := `{
+  "chain_name": "osmosistestnet",
+  "chain_id": "osmo-test-5",
+  "bech32_prefix": "osmo",
+  "fees": {"fee_tokens":[{"denom":"uosmo","fixed_min_gas_price":0.025}]},
+  "apis": {
+    "rpc":[{"address":"https://rpc.osmotest5.osmosis.zone:443"}],
+    "grpc":[{"address":"https://grpc.osmotest5.osmosis.zone:443"}]
+  }
+}`
+	if err := os.WriteFile(destinationMetadataPath, []byte(destinationMetadataFixture), 0o644); err != nil {
+		t.Fatalf("write destination metadata fixture: %v", err)
+	}
+
+	readyFixture := `{
+  "status": "ready",
+  "chain_id": "aegislink-public-testnet-1",
+  "node_id": "aegislink-demo-node",
+  "rpc_address": "127.0.0.1:28657",
+  "grpc_address": "127.0.0.1:29090",
+  "core_store_keys": ["auth", "bank", "bridge", "ibc", "transfer"],
+  "sdk_genesis_modules": ["auth", "bank"]
+}`
+	if err := os.WriteFile(readyPath, []byte(readyFixture), 0o644); err != nil {
+		t.Fatalf("write ready fixture: %v", err)
+	}
+
+	err := runShellScriptExpectError(
+		t,
+		repo,
+		"scripts/testnet/bootstrap_rly_path.sh",
+		map[string]string{
+			"AEGISLINK_PUBLIC_IBC_MANIFEST_PATH":         manifestPath,
+			"AEGISLINK_RLY_DESTINATION_METADATA_PATH":    destinationMetadataPath,
+			"AEGISLINK_RLY_OUTPUT_DIR":                   outputDir,
+			"AEGISLINK_RLY_SOURCE_READY_FILE":            readyPath,
+			"AEGISLINK_RLY_SOURCE_KEY_NAME":              "aegislink-demo",
+			"AEGISLINK_RLY_DESTINATION_KEY_NAME":         "osmosis-demo",
+			"AEGISLINK_RLY_DESTINATION_ACCOUNT_PREFIX":   "osmo",
+			"AEGISLINK_RLY_DESTINATION_GAS_PRICE_DENOM":  "uosmo",
+			"AEGISLINK_RLY_DESTINATION_GAS_PRICE_AMOUNT": "0.025",
+			"AEGISLINK_RLY_PATH_NAME":                    "aegislink-osmosis-demo",
+		},
+	)
+	if !strings.Contains(err, "missing required source sdk genesis modules") {
+		t.Fatalf("expected missing sdk genesis modules error, got:\n%s", err)
 	}
 }
 

@@ -1,7 +1,9 @@
 package networked
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ type CometNodeHome struct {
 	NodeID                 string
 	ConfigPath             string
 	CometGenesisPath       string
+	SDKGenesisPath         string
 	NodeKeyPath            string
 	PrivValidatorKeyPath   string
 	PrivValidatorStatePath string
@@ -57,10 +60,28 @@ func ensureCometNodeHome(cfg Config, appCfg aegisapp.Config) (CometNodeHome, err
 
 	configPath := filepath.Join(appCfg.HomeDir, cmtcfg.DefaultConfigDir, cmtcfg.DefaultConfigFileName)
 	cometGenesisPath := filepath.Join(appCfg.HomeDir, cmtcfg.DefaultConfigDir, "comet-genesis.json")
+	sdkGenesisPath := filepath.Join(appCfg.HomeDir, cmtcfg.DefaultConfigDir, "sdk-genesis.json")
 	nodeKeyPath := filepath.Join(appCfg.HomeDir, cmtcfg.DefaultConfigDir, cmtcfg.DefaultNodeKeyName)
 	privValKeyPath := filepath.Join(appCfg.HomeDir, cmtcfg.DefaultConfigDir, cmtcfg.DefaultPrivValKeyName)
 	privValStatePath := filepath.Join(appCfg.HomeDir, cmtcfg.DefaultDataDir, cmtcfg.DefaultPrivValStateName)
 	cometCfg.Genesis = filepath.Join(cmtcfg.DefaultConfigDir, "comet-genesis.json")
+
+	chainApp, err := BuildChainApp(appCfg)
+	if err != nil {
+		return CometNodeHome{}, fmt.Errorf("build chain app: %w", err)
+	}
+	sdkGenesis, err := json.MarshalIndent(chainApp.DefaultGenesis(), "", "  ")
+	closeErr := chainApp.Close()
+	if err != nil {
+		return CometNodeHome{}, fmt.Errorf("marshal sdk genesis: %w", err)
+	}
+	if closeErr != nil {
+		return CometNodeHome{}, fmt.Errorf("close chain app: %w", closeErr)
+	}
+	sdkGenesis = append(sdkGenesis, '\n')
+	if err := os.WriteFile(sdkGenesisPath, sdkGenesis, 0o644); err != nil {
+		return CometNodeHome{}, fmt.Errorf("write sdk genesis: %w", err)
+	}
 
 	cmtcfg.WriteConfigFile(configPath, cometCfg)
 	nodeKey, err := p2p.LoadOrGenNodeKey(nodeKeyPath)
@@ -85,7 +106,7 @@ func ensureCometNodeHome(cfg Config, appCfg aegisapp.Config) (CometNodeHome, err
 				Name:    appCfg.AppName + "-validator",
 			},
 		},
-		AppState: []byte("{}"),
+		AppState: sdkGenesis,
 	}
 	if err := genesis.ValidateAndComplete(); err != nil {
 		return CometNodeHome{}, fmt.Errorf("validate comet genesis: %w", err)
@@ -97,6 +118,7 @@ func ensureCometNodeHome(cfg Config, appCfg aegisapp.Config) (CometNodeHome, err
 		NodeID:                 string(nodeKey.ID()),
 		ConfigPath:             configPath,
 		CometGenesisPath:       cometGenesisPath,
+		SDKGenesisPath:         sdkGenesisPath,
 		NodeKeyPath:            nodeKeyPath,
 		PrivValidatorKeyPath:   privValKeyPath,
 		PrivValidatorStatePath: privValStatePath,

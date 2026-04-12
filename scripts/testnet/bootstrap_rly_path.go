@@ -62,10 +62,11 @@ type pathEnd struct {
 }
 
 type sourceReadyState struct {
-	RPCAddress      string   `json:"rpc_address"`
-	CometRPCAddress string   `json:"comet_rpc_address"`
-	GRPCAddress     string   `json:"grpc_address"`
-	CoreStoreKeys   []string `json:"core_store_keys"`
+	RPCAddress        string   `json:"rpc_address"`
+	CometRPCAddress   string   `json:"comet_rpc_address"`
+	GRPCAddress       string   `json:"grpc_address"`
+	CoreStoreKeys     []string `json:"core_store_keys"`
+	SDKGenesisModules []string `json:"sdk_genesis_modules"`
 }
 
 func main() {
@@ -241,6 +242,9 @@ func resolveSourceEndpoints(readyFilePath, sourceRPC, sourceRPCWS, sourceGRPC st
 		}
 		if !containsAllStrings(ready.CoreStoreKeys, "ibc", "transfer") {
 			return "", "", "", fmt.Errorf("missing required source core store keys: need ibc and transfer in %s", filepath.Clean(readyFilePath))
+		}
+		if !containsAllStrings(ready.SDKGenesisModules, "ibc", "transfer") {
+			return "", "", "", fmt.Errorf("missing required source sdk genesis modules: need ibc and transfer in %s", filepath.Clean(readyFilePath))
 		}
 		readyRPC := strings.TrimSpace(ready.CometRPCAddress)
 		if readyRPC == "" {

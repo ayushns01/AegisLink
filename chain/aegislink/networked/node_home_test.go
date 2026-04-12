@@ -44,6 +44,7 @@ func TestEnsureCometNodeHomeCreatesCometArtifactsAndConfig(t *testing.T) {
 	for _, path := range []string{
 		artifacts.ConfigPath,
 		artifacts.CometGenesisPath,
+		artifacts.SDKGenesisPath,
 		artifacts.NodeKeyPath,
 		artifacts.PrivValidatorKeyPath,
 		artifacts.PrivValidatorStatePath,
@@ -84,6 +85,22 @@ func TestEnsureCometNodeHomeCreatesCometArtifactsAndConfig(t *testing.T) {
 	}
 	if cometGenesis.Validators[0].Power != 1 {
 		t.Fatalf("expected comet genesis validator power 1, got %d", cometGenesis.Validators[0].Power)
+	}
+	if len(cometGenesis.AppState) == 0 || string(cometGenesis.AppState) == "{}" {
+		t.Fatalf("expected comet genesis app state to include sdk genesis, got %s", string(cometGenesis.AppState))
+	}
+
+	sdkGenesisBytes, err := os.ReadFile(artifacts.SDKGenesisPath)
+	if err != nil {
+		t.Fatalf("read sdk genesis: %v", err)
+	}
+	if len(sdkGenesisBytes) == 0 {
+		t.Fatal("expected sdk genesis file to be non-empty")
+	}
+	for _, moduleName := range []string{"auth", "bank", "ibc", "transfer"} {
+		if !strings.Contains(string(sdkGenesisBytes), `"`+moduleName+`"`) {
+			t.Fatalf("expected sdk genesis to contain module %q, got:\n%s", moduleName, string(sdkGenesisBytes))
+		}
 	}
 }
 
