@@ -465,6 +465,78 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 	}
 }
 
+func TestRealIBCDemoNodeQueuedDepositClaimSurvivesNextBlockAtHigherHeight(t *testing.T) {
+	homeDir := filepath.Join(t.TempDir(), "ibc-demo-home")
+	cfg := initSDKDemoNodeHome(t, homeDir)
+	app, err := aegisapp.LoadWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("load sdk runtime app: %v", err)
+	}
+	if err := registerPublicBridgeAssets(t, app); err != nil {
+		t.Fatalf("register public bridge assets: %v", err)
+	}
+	if err := app.Save(); err != nil {
+		t.Fatalf("save sdk runtime app: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("close sdk runtime app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startIBCDemoNodeProcess(t, homeDir, readyPath, map[string]string{
+		"AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS": "10",
+	})
+	defer stopIBCDemoNodeProcess(t, cmd, logs)
+
+	ready := readReadyFileE2E(t, readyPath)
+	cometClient, err := rpchttp.New("http://"+ready.CometRPCAddress, "/websocket")
+	if err != nil {
+		t.Fatalf("create comet rpc client: %v", err)
+	}
+
+	waitForDemoNodeHeightAtLeast(t, cometClient, 8)
+	statusBeforeClaim, err := cometClient.Status(context.Background())
+	if err != nil {
+		t.Fatalf("status before queued deposit claim: %v", err)
+	}
+
+	recipient := "cosmos1w65gcam3phju2gksqd8yq62gn22f96dhcju3fa"
+	claim := depositClaim(t, bridgetypes.SourceAssetKindNativeETH, "", "eth", "0xremote-queued-deposit", 2, 2, recipient, "1000000000000")
+	claim.DestinationChainID = cfg.ChainID
+	attestation := testAttestationForClaim(t, claim)
+
+	if _, err := networked.SubmitDepositClaim(context.Background(), networked.Config{
+		HomeDir:   homeDir,
+		ReadyFile: readyPath,
+	}, claim, attestation); err != nil {
+		t.Fatalf("submit queued deposit claim over running demo node: %v", err)
+	}
+
+	grpcConn, err := grpc.DialContext(
+		context.Background(),
+		ready.GRPCAddress,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("dial demo-node grpc: %v", err)
+	}
+	defer grpcConn.Close()
+
+	waitForSDKBankBalance(t, grpcConn, recipient, "ueth", claim.Amount.String())
+	waitForDemoNodeHeightAtLeast(t, cometClient, statusBeforeClaim.SyncInfo.LatestBlockHeight+2)
+
+	sourceBalanceResp, err := banktypes.NewQueryClient(grpcConn).Balance(context.Background(), &banktypes.QueryBalanceRequest{
+		Address: recipient,
+		Denom:   "ueth",
+	})
+	if err != nil {
+		t.Fatalf("grpc source balance query after queued deposit claim: %v", err)
+	}
+	if sourceBalanceResp.Balance == nil || sourceBalanceResp.Balance.Amount.String() != claim.Amount.String() {
+		t.Fatalf("expected sdk bank balance %sueth after queued deposit claim, got %+v", claim.Amount.String(), sourceBalanceResp.Balance)
+	}
+}
+
 func TestRealIBCDemoNodeFundsSDKAccountOverAdminRPC(t *testing.T) {
 	homeDir := filepath.Join(t.TempDir(), "ibc-demo-home")
 	bootstrapPublicAegisLinkTestnet(t, homeDir)
@@ -611,6 +683,49 @@ func waitForDemoNodeBalances(t *testing.T, homeDir, readyPath, address, denom, a
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for balance %s %s at %s", denom, amount, address)
+}
+
+func waitForDemoNodeHeightAtLeast(t *testing.T, cometClient *rpchttp.HTTP, minHeight int64) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		status, err := cometClient.Status(context.Background())
+		if err == nil && status.SyncInfo.LatestBlockHeight >= minHeight {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	status, err := cometClient.Status(context.Background())
+	if err != nil {
+		t.Fatalf("final comet rpc status while waiting for height %d: %v", minHeight, err)
+	}
+	t.Fatalf("expected demo node to reach height %d, got %d", minHeight, status.SyncInfo.LatestBlockHeight)
+}
+
+func waitForSDKBankBalance(t *testing.T, conn *grpc.ClientConn, address, denom, amount string) {
+	t.Helper()
+	queryClient := banktypes.NewQueryClient(conn)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := queryClient.Balance(context.Background(), &banktypes.QueryBalanceRequest{
+			Address: address,
+			Denom:   denom,
+		})
+		if err == nil && resp.Balance != nil && resp.Balance.Amount.String() == amount {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	resp, err := queryClient.Balance(context.Background(), &banktypes.QueryBalanceRequest{
+		Address: address,
+		Denom:   denom,
+	})
+	if err != nil {
+		t.Fatalf("final grpc balance query for %s/%s: %v", address, denom, err)
+	}
+	t.Fatalf("expected sdk bank balance %s%s for %s, got %+v", amount, denom, address, resp.Balance)
 }
 
 func initSDKDemoNodeHome(t *testing.T, homeDir string) aegisapp.Config {

@@ -403,11 +403,12 @@ func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (Local
 			return LocalhostTransferResult{}, err
 		}
 	} else {
-		if err := a.ensureTransferSenderBalance(ctx, sender, request.Coin); err != nil {
+		if err := a.writeMutableState(headerHeight, func(mutableCtx sdk.Context) error {
+			return a.ensureTransferSenderBalance(mutableCtx, sender, request.Coin)
+		}); err != nil {
 			return LocalhostTransferResult{}, err
 		}
 	}
-	a.MultiStore.Commit()
 
 	msg := transfertypes.NewMsgTransfer(
 		request.SourcePort,
@@ -494,15 +495,11 @@ func (a *ChainApp) FundAccount(address string, coin sdk.Coin) error {
 	if headerHeight <= 0 {
 		headerHeight = 1
 	}
-	ctx := a.BaseApp.NewUncachedContext(false, cmtproto.Header{
-		ChainID: a.AppConfig.ChainID,
-		Height:  headerHeight,
-		Time:    time.Now().UTC(),
-	})
-	if err := a.ensureTransferSenderBalance(ctx, sdk.AccAddress(addressBytes), coin); err != nil {
+	if err := a.writeMutableState(headerHeight, func(mutableCtx sdk.Context) error {
+		return a.ensureTransferSenderBalance(mutableCtx, sdk.AccAddress(addressBytes), coin)
+	}); err != nil {
 		return fmt.Errorf("ensure funded account balance: %w", err)
 	}
-	a.MultiStore.Commit()
 
 	if _, err := a.BaseApp.FinalizeBlock(&abcitypes.RequestFinalizeBlock{
 		Height: a.BaseApp.LastBlockHeight() + 1,
@@ -541,15 +538,28 @@ func (a *ChainApp) SyncAccountBalance(address string, coin sdk.Coin) error {
 	if headerHeight <= 0 {
 		headerHeight = 1
 	}
-	ctx := a.BaseApp.NewUncachedContext(false, cmtproto.Header{
-		ChainID: a.AppConfig.ChainID,
-		Height:  headerHeight,
-		Time:    time.Now().UTC(),
-	})
-	if err := a.setTransferSenderBalance(ctx, sdk.AccAddress(addressBytes), coin); err != nil {
+	if err := a.writeMutableState(headerHeight, func(mutableCtx sdk.Context) error {
+		return a.setTransferSenderBalance(mutableCtx, sdk.AccAddress(addressBytes), coin)
+	}); err != nil {
 		return fmt.Errorf("sync account balance: %w", err)
 	}
-	a.MultiStore.Commit()
+	return nil
+}
+
+func (a *ChainApp) writeMutableState(height int64, mutate func(ctx sdk.Context) error) error {
+	if a == nil || a.MultiStore == nil {
+		return fmt.Errorf("chain app multistore is not initialized")
+	}
+	cache := a.MultiStore.CacheMultiStore()
+	ctx := sdk.NewContext(cache, cmtproto.Header{
+		ChainID: a.AppConfig.ChainID,
+		Height:  height,
+		Time:    time.Now().UTC(),
+	}, false, a.Logger)
+	if err := mutate(ctx); err != nil {
+		return err
+	}
+	cache.Write()
 	return nil
 }
 
