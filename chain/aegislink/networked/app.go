@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/store/rootmulti"
@@ -229,6 +230,9 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 	if err := bootstrapDefaultModuleState(base, moduleManager, protoCodec, defaultGenesisState, appCfg.ChainID); err != nil {
 		return nil, err
 	}
+	if err := bootstrapFirstCommittedBlock(base); err != nil {
+		return nil, err
+	}
 
 	return &ChainApp{
 		AppConfig:          appCfg,
@@ -345,6 +349,22 @@ func bootstrapDefaultModuleState(
 	ctx := base.NewUncachedContext(false, cmtproto.Header{ChainID: chainID})
 	if _, err := moduleManager.InitGenesis(ctx, cdc, genesisState); err != nil && !strings.Contains(err.Error(), "validator set is empty after InitGenesis") {
 		return fmt.Errorf("bootstrap module genesis: %w", err)
+	}
+	return nil
+}
+
+func bootstrapFirstCommittedBlock(base *baseapp.BaseApp) error {
+	if base == nil {
+		return nil
+	}
+	if _, err := base.FinalizeBlock(&abcitypes.RequestFinalizeBlock{
+		Height: 1,
+		Time:   time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("finalize first committed block: %w", err)
+	}
+	if _, err := base.Commit(); err != nil {
+		return fmt.Errorf("commit first block: %w", err)
 	}
 	return nil
 }

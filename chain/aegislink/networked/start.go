@@ -56,6 +56,7 @@ type ReadyState struct {
 type DemoNode struct {
 	appConfig  aegisapp.Config
 	app        *aegisapp.App
+	chainApp   *ChainApp
 	config     Config
 	httpServer *http.Server
 	grpcServer *grpc.Server
@@ -89,30 +90,32 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 	}
 	coreStoreKeys := chainApp.SortedStoreKeyNames()
 	sdkGenesisModules := sortedGenesisModuleNames(chainApp.DefaultGenesis())
-	if err := chainApp.Close(); err != nil {
-		return ReadyState{}, err
-	}
 
 	nodeHome, err := ensureCometNodeHome(resolved, appCfg)
 	if err != nil {
+		_ = chainApp.Close()
 		return ReadyState{}, err
 	}
 	app, err := aegisapp.LoadWithConfig(appCfg)
 	if err != nil {
+		_ = chainApp.Close()
 		return ReadyState{}, err
 	}
-	abciApp := NewABCIApplication(appCfg, app)
+	abciApp := NewABCIApplication(appCfg, app, chainApp)
 	abciSvc, err := abciserver.NewServer(normalizeTCPAddress(resolved.ABCIAddress), "socket", abciApp)
 	if err != nil {
+		_ = chainApp.Close()
 		_ = app.Close()
 		return ReadyState{}, err
 	}
 	if err := abciSvc.Start(); err != nil {
+		_ = chainApp.Close()
 		_ = app.Close()
 		return ReadyState{}, err
 	}
 	cometNode, err := startCometNode(nodeHome, resolved, app)
 	if err != nil {
+		_ = chainApp.Close()
 		_ = abciSvc.Stop()
 		_ = app.Close()
 		return ReadyState{}, err
@@ -120,6 +123,7 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 
 	rpcLn, err := net.Listen("tcp", resolved.RPCAddress)
 	if err != nil {
+		_ = chainApp.Close()
 		_ = cometNode.Stop()
 		_ = abciSvc.Stop()
 		_ = app.Close()
@@ -127,6 +131,7 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 	}
 	grpcLn, err := net.Listen("tcp", resolved.GRPCAddress)
 	if err != nil {
+		_ = chainApp.Close()
 		_ = cometNode.Stop()
 		_ = abciSvc.Stop()
 		_ = rpcLn.Close()
@@ -156,6 +161,7 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 	node := DemoNode{
 		appConfig:  appCfg,
 		app:        app,
+		chainApp:   chainApp,
 		config:     resolved,
 		abciServer: abciSvc,
 		cometNode:  cometNode,
@@ -168,11 +174,7 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 		}),
 	}
 	node.grpcServer = grpc.NewServer()
-
-	if err := writeReadyFile(resolved.ReadyFile, state); err != nil {
-		_ = node.Close()
-		return ReadyState{}, err
-	}
+	chainApp.BaseApp.RegisterGRPCServer(node.grpcServer)
 
 	go func() {
 		_ = node.httpServer.Serve(node.rpcLn)
@@ -180,6 +182,10 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 	go func() {
 		node.grpcServer.Serve(node.grpcLn)
 	}()
+	if err := writeReadyFile(resolved.ReadyFile, state); err != nil {
+		_ = node.Close()
+		return ReadyState{}, err
+	}
 	go func() {
 		<-ctx.Done()
 		_ = node.Close()
@@ -207,6 +213,9 @@ func (n DemoNode) Close() error {
 	}
 	if n.app != nil {
 		errs = append(errs, n.app.Close())
+	}
+	if n.chainApp != nil {
+		errs = append(errs, n.chainApp.Close())
 	}
 	return errors.Join(errs...)
 }
@@ -461,9 +470,9 @@ func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App) error {
 			signatures[validatorIdx] = signedVote.CommitSig()
 		}
 		commit := &cmttypes.Commit{
-			Height: genesisState.LastBlockHeight,
-			Round:  0,
-			BlockID: lastBlockID,
+			Height:     genesisState.LastBlockHeight,
+			Round:      0,
+			BlockID:    lastBlockID,
 			Signatures: signatures,
 		}
 		if err := blockStore.SaveSeenCommit(genesisState.LastBlockHeight, commit); err != nil {

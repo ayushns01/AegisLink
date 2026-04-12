@@ -11,6 +11,7 @@ import (
 
 	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
@@ -20,14 +21,16 @@ type ABCIApplication struct {
 	abcitypes.BaseApplication
 	appConfig aegisapp.Config
 	app       *aegisapp.App
+	chainApp  *ChainApp
 	appHash   []byte
 }
 
-func NewABCIApplication(appCfg aegisapp.Config, app *aegisapp.App) *ABCIApplication {
+func NewABCIApplication(appCfg aegisapp.Config, app *aegisapp.App, chainApp *ChainApp) *ABCIApplication {
 	abciApp := &ABCIApplication{
 		BaseApplication: *abcitypes.NewBaseApplication(),
 		appConfig:       appCfg,
 		app:             app,
+		chainApp:        chainApp,
 	}
 	if app != nil {
 		if hash, err := hashABCIStatus(app.Status()); err == nil {
@@ -158,6 +161,22 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 			Value:  encoded,
 		}, nil
 	default:
+		if a.chainApp != nil && a.chainApp.BaseApp != nil {
+			if grpcHandler := a.chainApp.BaseApp.GRPCQueryRouter().Route(req.Path); grpcHandler != nil {
+				queryReq := *req
+				if queryReq.Height == 0 {
+					queryReq.Height = height
+				}
+				return grpcHandler(
+					a.chainApp.BaseApp.NewUncachedContext(false, cmtproto.Header{
+						ChainID: a.appConfig.ChainID,
+						Height:  queryReq.Height,
+					}),
+					&queryReq,
+				)
+			}
+			return a.chainApp.BaseApp.Query(context.Background(), req)
+		}
 		return &abcitypes.ResponseQuery{
 			Code:   1,
 			Log:    fmt.Sprintf("unknown query path %q", req.Path),

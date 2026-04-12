@@ -18,6 +18,11 @@ import (
 	abcicli "github.com/cometbft/cometbft/abci/client"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	proto "github.com/cosmos/gogoproto/proto"
+	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
@@ -138,6 +143,72 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected demo node startup to create %s: %v", path, err)
 		}
+	}
+
+	bankReqBz, err := proto.Marshal(&banktypes.QueryParamsRequest{})
+	if err != nil {
+		t.Fatalf("marshal bank params request: %v", err)
+	}
+	bankQuery, err := cometClient.ABCIQuery(context.Background(), "/cosmos.bank.v1beta1.Query/Params", bankReqBz)
+	if err != nil {
+		t.Fatalf("comet rpc bank params query: %v", err)
+	}
+	if bankQuery.Response.Code != 0 {
+		t.Fatalf("expected bank params query success, got %+v", bankQuery.Response)
+	}
+	var bankParams banktypes.QueryParamsResponse
+	if err := proto.Unmarshal(bankQuery.Response.Value, &bankParams); err != nil {
+		t.Fatalf("unmarshal bank params response: %v", err)
+	}
+	if len(bankQuery.Response.Value) == 0 {
+		t.Fatalf("expected bank params in comet response, got %+v", bankParams)
+	}
+
+	transferReqBz, err := proto.Marshal(&transfertypes.QueryParamsRequest{})
+	if err != nil {
+		t.Fatalf("marshal transfer params request: %v", err)
+	}
+	transferQuery, err := cometClient.ABCIQuery(context.Background(), "/ibc.applications.transfer.v1.Query/Params", transferReqBz)
+	if err != nil {
+		t.Fatalf("comet rpc transfer params query: %v", err)
+	}
+	if transferQuery.Response.Code != 0 {
+		t.Fatalf("expected transfer params query success, got %+v", transferQuery.Response)
+	}
+	var transferParams transfertypes.QueryParamsResponse
+	if err := proto.Unmarshal(transferQuery.Response.Value, &transferParams); err != nil {
+		t.Fatalf("unmarshal transfer params response: %v", err)
+	}
+	if transferParams.Params == nil {
+		t.Fatalf("expected transfer params in comet response, got %+v", transferParams)
+	}
+
+	grpcConn, err := grpc.DialContext(
+		context.Background(),
+		status.GRPCAddress,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("dial demo-node grpc: %v", err)
+	}
+	defer grpcConn.Close()
+
+	bankQueryClient := banktypes.NewQueryClient(grpcConn)
+	bankQueryResp, err := bankQueryClient.Params(context.Background(), &banktypes.QueryParamsRequest{})
+	if err != nil {
+		t.Fatalf("grpc bank params query: %v", err)
+	}
+	if len(bankQueryResp.Params.SendEnabled) == 0 && !bankQueryResp.Params.DefaultSendEnabled {
+		t.Fatalf("expected bank params from grpc query, got %+v", bankQueryResp)
+	}
+
+	transferQueryClient := transfertypes.NewQueryClient(grpcConn)
+	transferQueryResp, err := transferQueryClient.Params(context.Background(), &transfertypes.QueryParamsRequest{})
+	if err != nil {
+		t.Fatalf("grpc transfer params query: %v", err)
+	}
+	if transferQueryResp.Params == nil {
+		t.Fatalf("expected transfer params from grpc query, got %+v", transferQueryResp)
 	}
 }
 
