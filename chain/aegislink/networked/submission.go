@@ -45,6 +45,7 @@ type submissionPayload struct {
 }
 
 type InitiateIBCTransferPayload struct {
+	Sender        string `json:"sender,omitempty"`
 	RouteID       string `json:"route_id,omitempty"`
 	AssetID       string `json:"asset_id"`
 	Amount        string `json:"amount"`
@@ -122,6 +123,7 @@ func depositClaimAndAttestationFromPayload(payload submissionPayload) (bridgetyp
 }
 
 func decodeInitiateIBCTransferPayload(payload InitiateIBCTransferPayload) (InitiateIBCTransferPayload, *big.Int, error) {
+	payload.Sender = strings.TrimSpace(payload.Sender)
 	if strings.TrimSpace(payload.AssetID) == "" {
 		return InitiateIBCTransferPayload{}, nil, fmt.Errorf("missing asset id")
 	}

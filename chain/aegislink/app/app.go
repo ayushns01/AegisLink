@@ -445,6 +445,24 @@ func (a *App) WalletBalances(address string) ([]bankkeeper.BalanceRecord, error)
 	return a.BankKeeper.Balances(address)
 }
 
+func (a *App) WalletBalance(address, denom string) *big.Int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.BankKeeper.BalanceOf(address, denom)
+}
+
+func (a *App) CreditWallet(address, denom string, amount *big.Int) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.BankKeeper.Credit(address, denom, amount)
+}
+
+func (a *App) DebitWallet(address, denom string, amount *big.Int) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.BankKeeper.Debit(address, denom, amount)
+}
+
 func (a *App) ActiveSignerSet() (bridgekeeper.SignerSet, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

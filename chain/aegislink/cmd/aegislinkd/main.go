@@ -448,6 +448,8 @@ func runTx(args []string, stdout io.Writer) error {
 		return txQueueDepositClaim(args[1:], stdout)
 	case "execute-withdrawal":
 		return txExecuteWithdrawal(args[1:], stdout)
+	case "set-route-profile":
+		return txSetRouteProfile(args[1:], stdout)
 	case "initiate-ibc-transfer":
 		return txInitiateIBCTransfer(args[1:], stdout)
 	case "fail-ibc-transfer":
@@ -932,6 +934,7 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 
 	runtimeFlags := addRuntimeFlags(flags)
 	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "submit to a running demo node via its ready-state file")
+	sender := flags.String("sender", "", "source wallet address to spend when using a running demo node")
 	routeID := flags.String("route-id", "", "route profile identifier")
 	assetID := flags.String("asset-id", "", "asset identifier to route")
 	amountRaw := flags.String("amount", "", "transfer amount")
@@ -963,6 +966,7 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 			HomeDir:   *runtimeFlags.home,
 			ReadyFile: *demoNodeReadyFile,
 		}, networked.InitiateIBCTransferPayload{
+			Sender:        *sender,
 			RouteID:       *routeID,
 			AssetID:       *assetID,
 			Amount:        amount.String(),
@@ -974,6 +978,9 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 			return err
 		}
 		return writeJSON(stdout, transfer)
+	}
+	if strings.TrimSpace(*sender) != "" {
+		return fmt.Errorf("sender is only supported with --demo-node-ready-file")
 	}
 	a, err := loadRuntimeApp(runtimeFlags)
 	if err != nil {
@@ -993,6 +1000,78 @@ func txInitiateIBCTransfer(args []string, stdout io.Writer) error {
 		return err
 	}
 	return writeJSON(stdout, transferJSONResponse(transfer))
+}
+
+func txSetRouteProfile(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("set-route-profile", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	runtimeFlags := addRuntimeFlags(flags)
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "submit to a running demo node via its ready-state file")
+	routeID := flags.String("route-id", "", "route profile identifier")
+	destinationChainID := flags.String("destination-chain-id", "", "destination chain identifier")
+	channelID := flags.String("channel-id", "", "source transfer channel identifier")
+	assetID := flags.String("asset-id", "", "allowed asset identifier")
+	destinationDenom := flags.String("destination-denom", "", "destination denom metadata")
+	enabled := flags.Bool("enabled", true, "enable the route profile")
+	memoPrefixesRaw := flags.String("memo-prefixes", "", "comma-separated allowed memo prefixes")
+	actionTypesRaw := flags.String("action-types", "", "comma-separated allowed action types")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	payload := networked.SetRouteProfilePayload{
+		RouteID:            *routeID,
+		DestinationChainID: *destinationChainID,
+		ChannelID:          *channelID,
+		Enabled:            *enabled,
+		Assets: []ibcroutertypes.AssetRoute{{
+			AssetID:          strings.TrimSpace(*assetID),
+			DestinationDenom: strings.TrimSpace(*destinationDenom),
+		}},
+		AllowedMemoPrefixes: splitCommaSeparated(*memoPrefixesRaw),
+		AllowedActionTypes:  splitCommaSeparated(*actionTypesRaw),
+	}
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		result, err := networked.SubmitSetRouteProfile(context.Background(), networked.Config{
+			HomeDir:   *runtimeFlags.home,
+			ReadyFile: *demoNodeReadyFile,
+		}, payload)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, result)
+	}
+
+	profile, err := networked.DecodeSetRouteProfilePayloadForCLI(payload)
+	if err != nil {
+		return err
+	}
+	a, err := loadRuntimeApp(runtimeFlags)
+	if err != nil {
+		return err
+	}
+	defer closeApp(a)
+	for _, asset := range profile.Assets {
+		if _, ok := a.RegistryKeeper.GetAsset(asset.AssetID); !ok {
+			return fmt.Errorf("asset %s is not registered in the AegisLink runtime", asset.AssetID)
+		}
+	}
+	if err := a.SetRouteProfile(profile); err != nil {
+		return err
+	}
+	if err := a.Save(); err != nil {
+		return err
+	}
+	return writeJSON(stdout, networked.SetRouteProfileResult{
+		RouteID:             profile.RouteID,
+		DestinationChainID:  profile.DestinationChainID,
+		ChannelID:           profile.ChannelID,
+		Enabled:             profile.Enabled,
+		Assets:              append([]ibcroutertypes.AssetRoute(nil), profile.Assets...),
+		AllowedMemoPrefixes: append([]string(nil), profile.Policy.AllowedMemoPrefixes...),
+		AllowedActionTypes:  append([]string(nil), profile.Policy.AllowedActionTypes...),
+	})
 }
 
 func txFailIBCTransfer(args []string, stdout io.Writer) error {

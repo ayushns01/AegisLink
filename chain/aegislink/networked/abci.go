@@ -30,6 +30,7 @@ type ABCIApplication struct {
 	chainApp                *ChainApp
 	appHash                 []byte
 	lastFinalizeUsedBaseApp bool
+	pendingBaseAppCommit    bool
 }
 
 func NewABCIApplication(appCfg aegisapp.Config, app *aegisapp.App, chainApp *ChainApp) *ABCIApplication {
@@ -223,6 +224,7 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 	}
 
 	a.lastFinalizeUsedBaseApp = false
+	a.pendingBaseAppCommit = false
 	targetHeight := uint64(req.Height)
 	current := a.app.Status().CurrentHeight
 
@@ -239,6 +241,25 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 		txResults = append(txResults, result)
 	}
 
+	if a.chainApp != nil && a.chainApp.BaseApp != nil {
+		nextBaseAppHeight := a.chainApp.BaseApp.LastBlockHeight() + 1
+		if req.Height > 0 && nextBaseAppHeight == req.Height {
+			resp, err := a.chainApp.BaseApp.FinalizeBlock(&abcitypes.RequestFinalizeBlock{
+				Height: req.Height,
+				Hash:   req.Hash,
+				Time:   req.Time,
+			})
+			if err != nil {
+				return nil, err
+			}
+			a.lastFinalizeUsedBaseApp = true
+			a.pendingBaseAppCommit = true
+			if len(resp.AppHash) > 0 {
+				a.appHash = append([]byte(nil), resp.AppHash...)
+			}
+		}
+	}
+
 	switch {
 	case targetHeight == 0:
 		a.app.AdvanceBlock()
@@ -253,26 +274,29 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 	if err != nil {
 		return nil, err
 	}
-	a.appHash = hash
+	if !a.pendingBaseAppCommit {
+		a.appHash = hash
+	}
 
 	return &abcitypes.ResponseFinalizeBlock{
-		AppHash:   append([]byte(nil), hash...),
+		AppHash:   append([]byte(nil), a.appHash...),
 		TxResults: txResults,
 	}, nil
 }
 
 func (a *ABCIApplication) Commit(_ context.Context, _ *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
+	if err := a.app.Save(); err != nil {
+		return nil, err
+	}
 	if a.lastFinalizeUsedBaseApp && a.chainApp != nil && a.chainApp.BaseApp != nil {
 		resp, err := a.chainApp.BaseApp.Commit()
 		if err != nil {
 			return nil, err
 		}
 		a.lastFinalizeUsedBaseApp = false
+		a.pendingBaseAppCommit = false
 		a.appHash = append([]byte(nil), a.chainApp.BaseApp.LastCommitID().Hash...)
 		return resp, nil
-	}
-	if err := a.app.Save(); err != nil {
-		return nil, err
 	}
 	return &abcitypes.ResponseCommit{
 		RetainHeight: 0,
@@ -302,15 +326,31 @@ func (a *ABCIApplication) queryBaseApp(height int64, req *abcitypes.RequestQuery
 		queryReq.Height = height
 	}
 	if grpcHandler := a.chainApp.BaseApp.GRPCQueryRouter().Route(queryReq.Path); grpcHandler != nil {
-		return grpcHandler(
+		resp, err := grpcHandler(
 			a.chainApp.BaseApp.NewUncachedContext(false, cmtproto.Header{
 				ChainID: a.appConfig.ChainID,
 				Height:  queryReq.Height,
 			}),
 			&queryReq,
 		)
+		if err != nil {
+			return &abcitypes.ResponseQuery{
+				Code:   1,
+				Log:    err.Error(),
+				Height: queryReq.Height,
+			}, nil
+		}
+		return resp, nil
 	}
-	return a.chainApp.BaseApp.Query(context.Background(), &queryReq)
+	resp, err := a.chainApp.BaseApp.Query(context.Background(), &queryReq)
+	if err != nil {
+		return &abcitypes.ResponseQuery{
+			Code:   1,
+			Log:    err.Error(),
+			Height: queryReq.Height,
+		}, nil
+	}
+	return resp, nil
 }
 
 func (a *ABCIApplication) queryLegacyTransferDenomTraces(height int64, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
@@ -515,29 +555,54 @@ func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPay
 		transfer ibcrouterkeeper.TransferRecord
 		err      error
 	)
+	sender := strings.TrimSpace(payload.Sender)
+	asset, ok := a.app.RegistryKeeper.GetAsset(payload.AssetID)
+	if !ok {
+		return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("networked ibc asset %q is not registered", payload.AssetID)
+	}
+	preTransferBalance := a.app.WalletBalance(sender, asset.Denom)
+	if sender != "" {
+		if preTransferBalance.Cmp(amount) < 0 {
+			return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("wallet %s has insufficient %s balance", sender, asset.Denom)
+		}
+		if a.chainApp != nil {
+			if err := a.chainApp.SyncAccountBalance(sender, sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(preTransferBalance))); err != nil {
+				return ibcrouterkeeper.TransferRecord{}, err
+			}
+		}
+		if err := a.app.DebitWallet(sender, asset.Denom, amount); err != nil {
+			return ibcrouterkeeper.TransferRecord{}, err
+		}
+	}
 	if strings.TrimSpace(payload.RouteID) != "" {
 		transfer, err = a.app.InitiateIBCTransferWithProfile(payload.RouteID, payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
 	} else {
 		transfer, err = a.app.InitiateIBCTransfer(payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
 	}
 	if err != nil {
+		if sender != "" {
+			_ = a.app.CreditWallet(sender, asset.Denom, amount)
+			if a.chainApp != nil {
+				_ = a.chainApp.SyncAccountBalance(sender, sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(preTransferBalance)))
+			}
+		}
 		return ibcrouterkeeper.TransferRecord{}, err
 	}
 	if a.chainApp == nil {
 		return transfer, nil
 	}
-
-	asset, ok := a.app.RegistryKeeper.GetAsset(payload.AssetID)
-	if !ok {
-		return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("networked ibc asset %q is not registered", payload.AssetID)
-	}
 	_, err = a.chainApp.ExecuteLocalhostTransfer(LocalhostTransferRequest{
+		Sender:        sender,
 		Coin:          sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(amount)),
 		Receiver:      payload.Receiver,
 		TimeoutHeight: clienttypes.NewHeight(1, payload.TimeoutHeight),
 		Memo:          payload.Memo,
 	})
 	if err != nil {
+		if sender != "" {
+			_ = a.app.CreditWallet(sender, asset.Denom, amount)
+			_ = a.chainApp.SyncAccountBalance(sender, sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(preTransferBalance)))
+		}
 		if _, failErr := a.app.FailIBCTransfer(transfer.TransferID, "localhost sdk transfer failed: "+err.Error()); failErr != nil {
 			return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("execute localhost transfer: %w (also failed to mark transfer failed: %v)", err, failErr)
 		}

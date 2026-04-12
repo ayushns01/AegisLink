@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
+	"github.com/ayushns01/aegislink/chain/aegislink/networked"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
@@ -47,6 +49,7 @@ func run() error {
 
 	homeDir := flags.String("home", "", "AegisLink home directory")
 	registryPath := flags.String("registry-file", "", "path to bridge-assets.json")
+	demoNodeReadyFile := flags.String("demo-node-ready-file", "", "optional demo-node ready-state file for seeding a running networked node")
 	windowSeconds := flags.Uint64("window-seconds", 600, "default rate-limit window seconds")
 	nativeMaxAmount := flags.String("native-max-amount", "", "optional max amount override for native ETH assets")
 	erc20MaxAmount := flags.String("erc20-max-amount", "", "optional max amount override for ERC-20 assets")
@@ -68,6 +71,40 @@ func run() error {
 		return fmt.Errorf("registry file %s does not contain any assets", filepath.Clean(*registryPath))
 	}
 
+	seedPayload := networked.SeedBridgeAssetsPayload{
+		Assets: make([]registrytypes.Asset, 0, len(payload.Assets)),
+		Limits: make([]networked.SeedBridgeLimitPayload, 0, len(payload.Assets)),
+	}
+	seededAssets := make([]string, 0, len(payload.Assets))
+	for _, asset := range payload.Assets {
+		normalized := normalizeAsset(asset)
+		if err := validateSeedableAsset(normalized); err != nil {
+			return err
+		}
+		maxAmount, err := limitAmountForAsset(normalized, *nativeMaxAmount, *erc20MaxAmount)
+		if err != nil {
+			return err
+		}
+		seedPayload.Assets = append(seedPayload.Assets, normalized)
+		seedPayload.Limits = append(seedPayload.Limits, networked.SeedBridgeLimitPayload{
+			AssetID:       normalized.AssetID,
+			WindowSeconds: *windowSeconds,
+			MaxAmount:     maxAmount.String(),
+		})
+		seededAssets = append(seededAssets, normalized.AssetID)
+	}
+
+	if strings.TrimSpace(*demoNodeReadyFile) != "" {
+		result, err := networked.SubmitSeedBridgeAssets(context.Background(), networked.Config{
+			HomeDir:   strings.TrimSpace(*homeDir),
+			ReadyFile: strings.TrimSpace(*demoNodeReadyFile),
+		}, seedPayload)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+
 	cfg, err := aegisapp.ResolveConfig(aegisapp.Config{
 		HomeDir: strings.TrimSpace(*homeDir),
 	})
@@ -80,27 +117,18 @@ func run() error {
 	}
 	defer func() { _ = app.Close() }()
 
-	seededAssets := make([]string, 0, len(payload.Assets))
-	for _, asset := range payload.Assets {
-		normalized := normalizeAsset(asset)
-		if err := validateSeedableAsset(normalized); err != nil {
+	for i, asset := range seedPayload.Assets {
+		if err := ensureAsset(app, asset); err != nil {
 			return err
 		}
-		if err := ensureAsset(app, normalized); err != nil {
-			return err
-		}
-		maxAmount, err := limitAmountForAsset(normalized, *nativeMaxAmount, *erc20MaxAmount)
-		if err != nil {
-			return err
-		}
+		maxAmount, _ := new(big.Int).SetString(seedPayload.Limits[i].MaxAmount, 10)
 		if err := app.SetLimit(limittypes.RateLimit{
-			AssetID:       normalized.AssetID,
-			WindowSeconds: *windowSeconds,
+			AssetID:       seedPayload.Limits[i].AssetID,
+			WindowSeconds: seedPayload.Limits[i].WindowSeconds,
 			MaxAmount:     maxAmount,
 		}); err != nil {
 			return err
 		}
-		seededAssets = append(seededAssets, normalized.AssetID)
 	}
 
 	if err := app.Save(); err != nil {

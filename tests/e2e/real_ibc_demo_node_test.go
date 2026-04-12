@@ -363,6 +363,7 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 		HomeDir:   homeDir,
 		ReadyFile: readyPath,
 	}, networked.InitiateIBCTransferPayload{
+		Sender:        recipient,
 		AssetID:       "eth",
 		Amount:        claim.Amount.String(),
 		Receiver:      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
@@ -439,6 +440,28 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 	}
 	if len(abciTransfers) != 1 || abciTransfers[0].TransferID != transfer.TransferID || abciTransfers[0].Status != "pending" || abciTransfers[0].AssetID != "eth" {
 		t.Fatalf("unexpected abci transfer query output: %+v", abciTransfers)
+	}
+
+	runtimeBalances, err := networked.QueryBalances(context.Background(), networked.Config{
+		HomeDir:   homeDir,
+		ReadyFile: readyPath,
+	}, recipient)
+	if err != nil {
+		t.Fatalf("query runtime balances after transfer: %v", err)
+	}
+	if len(runtimeBalances) != 0 {
+		t.Fatalf("expected bridged runtime balance to be consumed by transfer, got %+v", runtimeBalances)
+	}
+
+	sourceBalanceResp, err := banktypes.NewQueryClient(grpcConn).Balance(context.Background(), &banktypes.QueryBalanceRequest{
+		Address: recipient,
+		Denom:   "ueth",
+	})
+	if err != nil {
+		t.Fatalf("grpc source balance query after transfer: %v", err)
+	}
+	if sourceBalanceResp.Balance != nil && sourceBalanceResp.Balance.Amount.Sign() != 0 {
+		t.Fatalf("expected sdk source balance to be consumed by transfer, got %+v", sourceBalanceResp.Balance)
 	}
 }
 

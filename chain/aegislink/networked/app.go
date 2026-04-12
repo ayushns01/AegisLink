@@ -379,6 +379,7 @@ func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (Local
 		return LocalhostTransferResult{}, fmt.Errorf("chain app is not initialized")
 	}
 
+	explicitSender := strings.TrimSpace(req.Sender) != ""
 	request, sender, err := a.normalizeLocalhostTransferRequest(req)
 	if err != nil {
 		return LocalhostTransferResult{}, err
@@ -397,8 +398,14 @@ func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (Local
 	if err := a.ensureLocalhostTransferPath(ctx, request.SourcePort, request.SourceChannel, request.CounterpartyChannel); err != nil {
 		return LocalhostTransferResult{}, err
 	}
-	if err := a.ensureTransferSenderBalance(ctx, sender, request.Coin); err != nil {
-		return LocalhostTransferResult{}, err
+	if explicitSender {
+		if err := a.requireTransferSenderBalance(ctx, sender, request.Coin); err != nil {
+			return LocalhostTransferResult{}, err
+		}
+	} else {
+		if err := a.ensureTransferSenderBalance(ctx, sender, request.Coin); err != nil {
+			return LocalhostTransferResult{}, err
+		}
 	}
 	a.MultiStore.Commit()
 
@@ -508,6 +515,41 @@ func (a *ChainApp) FundAccount(address string, coin sdk.Coin) error {
 		return fmt.Errorf("commit funding block: %w", err)
 	}
 
+	return nil
+}
+
+func (a *ChainApp) SyncAccountBalance(address string, coin sdk.Coin) error {
+	if a == nil || a.BaseApp == nil {
+		return fmt.Errorf("chain app is not initialized")
+	}
+	if strings.TrimSpace(address) == "" {
+		return fmt.Errorf("missing synced account address")
+	}
+	if err := coin.Validate(); err != nil {
+		return fmt.Errorf("invalid synced coin: %w", err)
+	}
+	if coin.Amount.IsNegative() {
+		return fmt.Errorf("synced amount must not be negative")
+	}
+
+	addressBytes, err := a.AccountKeeper.AddressCodec().StringToBytes(strings.TrimSpace(address))
+	if err != nil {
+		return fmt.Errorf("decode synced account address: %w", err)
+	}
+
+	headerHeight := a.BaseApp.LastBlockHeight()
+	if headerHeight <= 0 {
+		headerHeight = 1
+	}
+	ctx := a.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: a.AppConfig.ChainID,
+		Height:  headerHeight,
+		Time:    time.Now().UTC(),
+	})
+	if err := a.setTransferSenderBalance(ctx, sdk.AccAddress(addressBytes), coin); err != nil {
+		return fmt.Errorf("sync account balance: %w", err)
+	}
+	a.MultiStore.Commit()
 	return nil
 }
 
@@ -859,6 +901,53 @@ func (a *ChainApp) ensureTransferSenderBalance(ctx sdk.Context, sender sdk.AccAd
 	}
 	if err := a.BankKeeper.SendCoinsFromModuleToAccount(ctx, transfertypes.ModuleName, sender, sdk.NewCoins(fundingCoin)); err != nil {
 		return fmt.Errorf("fund localhost transfer sender: %w", err)
+	}
+
+	return nil
+}
+
+func (a *ChainApp) requireTransferSenderBalance(ctx sdk.Context, sender sdk.AccAddress, coin sdk.Coin) error {
+	if a == nil {
+		return fmt.Errorf("chain app is not initialized")
+	}
+	if account := a.AccountKeeper.GetAccount(ctx, sender); account == nil {
+		return fmt.Errorf("transfer sender %s has no account", sender.String())
+	}
+	current := a.BankKeeper.GetBalance(ctx, sender, coin.Denom)
+	if current.Amount.LT(coin.Amount) {
+		return fmt.Errorf("transfer sender %s has insufficient %s balance", sender.String(), coin.Denom)
+	}
+	return nil
+}
+
+func (a *ChainApp) setTransferSenderBalance(ctx sdk.Context, sender sdk.AccAddress, coin sdk.Coin) error {
+	if a == nil {
+		return fmt.Errorf("chain app is not initialized")
+	}
+	if account := a.AccountKeeper.GetAccount(ctx, sender); account == nil {
+		a.AccountKeeper.SetAccount(ctx, a.AccountKeeper.NewAccountWithAddress(ctx, sender))
+	}
+
+	current := a.BankKeeper.GetBalance(ctx, sender, coin.Denom)
+	switch {
+	case current.Amount.LT(coin.Amount):
+		shortfall := coin.Amount.Sub(current.Amount)
+		fundingCoin := sdk.NewCoin(coin.Denom, shortfall)
+		if err := a.BankKeeper.MintCoins(ctx, transfertypes.ModuleName, sdk.NewCoins(fundingCoin)); err != nil {
+			return fmt.Errorf("mint synced transfer funding: %w", err)
+		}
+		if err := a.BankKeeper.SendCoinsFromModuleToAccount(ctx, transfertypes.ModuleName, sender, sdk.NewCoins(fundingCoin)); err != nil {
+			return fmt.Errorf("fund synced transfer sender: %w", err)
+		}
+	case coin.Amount.LT(current.Amount):
+		excess := current.Amount.Sub(coin.Amount)
+		excessCoin := sdk.NewCoin(coin.Denom, excess)
+		if err := a.BankKeeper.SendCoinsFromAccountToModule(ctx, sender, transfertypes.ModuleName, sdk.NewCoins(excessCoin)); err != nil {
+			return fmt.Errorf("escrow excess synced balance: %w", err)
+		}
+		if err := a.BankKeeper.BurnCoins(ctx, transfertypes.ModuleName, sdk.NewCoins(excessCoin)); err != nil {
+			return fmt.Errorf("burn excess synced balance: %w", err)
+		}
 	}
 
 	return nil

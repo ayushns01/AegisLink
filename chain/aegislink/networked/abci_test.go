@@ -3,12 +3,16 @@ package networked
 import (
 	"bytes"
 	"context"
+	"math/big"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
+	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
+	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
@@ -186,6 +190,193 @@ func TestABCIApplicationRoutesSDKGRPCQueriesToBaseApp(t *testing.T) {
 	}
 	if legacyDenomQuery.DenomTrace == nil || legacyDenomQuery.DenomTrace.BaseDenom != "ueth" {
 		t.Fatalf("expected legacy denom trace for ueth, got %+v", legacyDenomQuery.DenomTrace)
+	}
+}
+
+func TestABCIApplicationReturnsABCIErrorForMissingSDKAccountQuery(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	chainApp, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := chainApp.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	bridgeApp, err := aegisapp.LoadWithConfig(chainApp.AppConfig)
+	if err != nil {
+		t.Fatalf("load bridge app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := bridgeApp.Close(); err != nil {
+			t.Fatalf("close bridge app: %v", err)
+		}
+	})
+
+	abciApp := NewABCIApplication(chainApp.AppConfig, bridgeApp, chainApp)
+
+	accountReqBz, err := proto.Marshal(&authtypes.QueryAccountRequest{
+		Address: "cosmos1w65gcam3phju2gksqd8yq62gn22f96dhcju3fa",
+	})
+	if err != nil {
+		t.Fatalf("marshal auth account request: %v", err)
+	}
+	accountResp, err := abciApp.Query(context.Background(), &abcitypes.RequestQuery{
+		Path: "/cosmos.auth.v1beta1.Query/Account",
+		Data: accountReqBz,
+	})
+	if err != nil {
+		t.Fatalf("query auth account: %v", err)
+	}
+	if accountResp.Code == 0 {
+		t.Fatalf("expected missing account query to return abci error response, got %+v", accountResp)
+	}
+	if !strings.Contains(accountResp.Log, "not found") {
+		t.Fatalf("expected missing account response log to mention not found, got %+v", accountResp)
+	}
+}
+
+func TestABCIApplicationKeepsBaseAppHeightInSyncAfterCustomDepositBlock(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-public-testnet-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	chainApp, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := chainApp.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	bridgeApp, err := aegisapp.LoadWithConfig(chainApp.AppConfig)
+	if err != nil {
+		t.Fatalf("load bridge app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := bridgeApp.Close(); err != nil {
+			t.Fatalf("close bridge app: %v", err)
+		}
+	})
+	if err := bridgeApp.RegisterAsset(registrytypes.Asset{
+		AssetID:         "eth",
+		SourceChainID:   "11155111",
+		SourceAssetKind: bridgetypes.SourceAssetKindNativeETH,
+		Denom:           "ueth",
+		Decimals:        18,
+		DisplayName:     "Ether",
+		DisplaySymbol:   "ETH",
+		Enabled:         true,
+	}); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	if err := bridgeApp.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth",
+		WindowSeconds: 600,
+		MaxAmount:     big.NewInt(2_000_000_000_000_000),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+	abciApp := NewABCIApplication(chainApp.AppConfig, bridgeApp, chainApp)
+
+	claim := bridgetypes.DepositClaim{
+		Identity: bridgetypes.ClaimIdentity{
+			Kind:            bridgetypes.ClaimKindDeposit,
+			SourceAssetKind: bridgetypes.SourceAssetKindNativeETH,
+			SourceChainID:   "11155111",
+			SourceTxHash:    "0xcustom-deposit",
+			SourceLogIndex:  1,
+			Nonce:           1,
+		},
+		DestinationChainID: "aegislink-public-testnet-1",
+		AssetID:            "eth",
+		Amount:             sdkmath.NewInt(1_000_000_000_000_000).BigInt(),
+		Recipient:          "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4",
+		Deadline:           120,
+	}
+	claim.Identity.MessageID = claim.Identity.DerivedMessageID()
+	attestation := bridgetypes.Attestation{
+		MessageID:        claim.Identity.MessageID,
+		PayloadHash:      claim.Digest(),
+		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Threshold:        2,
+		Expiry:           200,
+		SignerSetVersion: 1,
+	}
+	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
+		if err != nil {
+			t.Fatalf("sign attestation: %v", err)
+		}
+		attestation.Proofs = append(attestation.Proofs, proof)
+	}
+
+	txBytes, err := encodeQueueDepositClaimTx(claim, attestation)
+	if err != nil {
+		t.Fatalf("encode queued deposit tx: %v", err)
+	}
+
+	checkResp, err := abciApp.CheckTx(context.Background(), &abcitypes.RequestCheckTx{
+		Type: abcitypes.CheckTxType_New,
+		Tx:   txBytes,
+	})
+	if err != nil {
+		t.Fatalf("check queued deposit tx: %v", err)
+	}
+	if checkResp.Code != 0 {
+		t.Fatalf("expected queued deposit checktx success, got %+v", checkResp)
+	}
+
+	finalizeResp, err := abciApp.FinalizeBlock(context.Background(), &abcitypes.RequestFinalizeBlock{
+		Height: chainApp.BaseApp.LastBlockHeight() + 1,
+		Hash:   chainApp.BaseApp.LastCommitID().Hash,
+		Time:   time.Now().UTC(),
+		Txs:    [][]byte{txBytes},
+	})
+	if err != nil {
+		t.Fatalf("finalize queued deposit tx: %v", err)
+	}
+	if len(finalizeResp.TxResults) != 1 || finalizeResp.TxResults[0].Code != 0 {
+		t.Fatalf("expected queued deposit finalize success, got %+v", finalizeResp.TxResults)
+	}
+	if _, err := abciApp.Commit(context.Background(), &abcitypes.RequestCommit{}); err != nil {
+		t.Fatalf("commit queued deposit tx: %v", err)
+	}
+
+	nextFinalizeResp, err := abciApp.FinalizeBlock(context.Background(), &abcitypes.RequestFinalizeBlock{
+		Height: chainApp.BaseApp.LastBlockHeight() + 1,
+		Hash:   chainApp.BaseApp.LastCommitID().Hash,
+		Time:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("finalize empty block after queued deposit tx: %v", err)
+	}
+	if _, err := abciApp.Commit(context.Background(), &abcitypes.RequestCommit{}); err != nil {
+		t.Fatalf("commit empty block after queued deposit tx: %v", err)
+	}
+	if len(nextFinalizeResp.AppHash) == 0 {
+		t.Fatalf("expected app hash for empty block after queued deposit tx, got %+v", nextFinalizeResp)
 	}
 }
 

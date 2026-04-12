@@ -271,6 +271,22 @@ func (n DemoNode) serveHTTP(w http.ResponseWriter, r *http.Request, ready ReadyS
 		if err := n.handleFundAccount(w, r); err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
 		}
+	case "/tx/seed-bridge-assets":
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error":"method not allowed"}`+"\n", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := n.handleSeedBridgeAssets(w, r); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
+		}
+	case "/tx/set-route-profile":
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error":"method not allowed"}`+"\n", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := n.handleSetRouteProfile(w, r); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
+		}
 	default:
 		http.NotFound(w, r)
 	}
@@ -297,6 +313,7 @@ func (n DemoNode) handleQueueDepositClaim(w http.ResponseWriter, r *http.Request
 
 func (n DemoNode) handleInitiateIBCTransfer(w http.ResponseWriter, r *http.Request) error {
 	var payload struct {
+		Sender        string `json:"sender"`
 		RouteID       string `json:"route_id"`
 		AssetID       string `json:"asset_id"`
 		Amount        string `json:"amount"`
@@ -520,10 +537,10 @@ func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App, chainApp *Ch
 		}
 		if validatorIdx >= 0 {
 			vote := &cmtproto.Vote{
-				Type:             cmtproto.PrecommitType,
-				Height:           int64(currentHeight),
-				Round:            0,
-				BlockID:          blockID.ToProto(),
+				Type:    cmtproto.PrecommitType,
+				Height:  int64(currentHeight),
+				Round:   0,
+				BlockID: blockID.ToProto(),
 				// Height currentHeight+1 uses the previous commit's median time, so the
 				// fabricated commit must be strictly later than the seeded last block.
 				Timestamp:        seededCommitTime,

@@ -1802,6 +1802,87 @@ func TestRunTxInitiateIBCTransferWithRouteProfilePersistsPendingTransfer(t *test
 	}
 }
 
+func TestRunTxSetRouteProfileTargetsDemoNodeReadyFile(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "demo-node-home")
+	cfg := initSDKRuntimeHome(t, homeDir)
+	app := seededSDKRuntimeApp(t, cfg)
+	if err := app.Close(); err != nil {
+		t.Fatalf("close seeded app: %v", err)
+	}
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startDemoNodeProcess(t, homeDir, readyPath, "--tick-interval-ms", "0")
+	defer stopDemoNodeProcess(t, cmd, logs)
+	_ = mustReadReadyRPCAddress(t, readyPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run([]string{
+		"tx", "set-route-profile",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+		"--route-id", "osmosis-public-wallet",
+		"--destination-chain-id", "osmo-test-5",
+		"--channel-id", "channel-0",
+		"--asset-id", "eth.usdc",
+		"--destination-denom", "ibc/uethusdc",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("run tx set-route-profile against demo node: %v\nstderr=%s", err, stderr.String())
+	}
+
+	var result struct {
+		RouteID            string `json:"route_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		ChannelID          string `json:"channel_id"`
+		Enabled            bool   `json:"enabled"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode route profile output: %v\n%s", err, stdout.String())
+	}
+	if result.RouteID != "osmosis-public-wallet" {
+		t.Fatalf("expected route id osmosis-public-wallet, got %q", result.RouteID)
+	}
+	if result.DestinationChainID != "osmo-test-5" || result.ChannelID != "channel-0" || !result.Enabled {
+		t.Fatalf("unexpected route profile result: %+v", result)
+	}
+
+	var transferOut bytes.Buffer
+	var transferErr bytes.Buffer
+	if err := run([]string{
+		"tx", "initiate-ibc-transfer",
+		"--home", homeDir,
+		"--demo-node-ready-file", readyPath,
+		"--route-id", "osmosis-public-wallet",
+		"--asset-id", "eth.usdc",
+		"--amount", "4200",
+		"--receiver", "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+		"--timeout-height", "120",
+	}, &transferOut, &transferErr); err != nil {
+		t.Fatalf("run tx initiate-ibc-transfer with live route profile: %v\nstderr=%s", err, transferErr.String())
+	}
+
+	var transfer struct {
+		TransferID         string `json:"transfer_id"`
+		DestinationChainID string `json:"destination_chain_id"`
+		ChannelID          string `json:"channel_id"`
+		Status             string `json:"status"`
+	}
+	if err := json.Unmarshal(transferOut.Bytes(), &transfer); err != nil {
+		t.Fatalf("decode transfer output: %v\n%s", err, transferOut.String())
+	}
+	if transfer.TransferID == "" {
+		t.Fatal("expected transfer id")
+	}
+	if transfer.DestinationChainID != "osmo-test-5" || transfer.ChannelID != "channel-0" {
+		t.Fatalf("unexpected transfer destination metadata: %+v", transfer)
+	}
+	if transfer.Status != "pending" {
+		t.Fatalf("expected pending transfer status, got %q", transfer.Status)
+	}
+}
+
 func TestRunTxFailAndRefundIBCTransferPersistRecoverableState(t *testing.T) {
 	t.Parallel()
 

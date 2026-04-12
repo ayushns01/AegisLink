@@ -169,6 +169,69 @@ func TestPublicAegisLinkSeedScriptLoadsETHAssetRegistryIntoRuntime(t *testing.T)
 	}
 }
 
+func TestPublicAegisLinkSeedScriptCanSeedRunningDemoNode(t *testing.T) {
+	repo := repoRoot(t)
+	homeDir := filepath.Join(t.TempDir(), "public-networked-seed-home")
+	bootstrapPublicAegisLinkTestnet(t, homeDir)
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startIBCDemoNodeProcess(t, homeDir, readyPath, nil)
+	defer stopIBCDemoNodeProcess(t, cmd, logs)
+
+	tempDir := t.TempDir()
+	deployOutputPath := filepath.Join(tempDir, "bridge-addresses.json")
+	assetsOutputPath := filepath.Join(tempDir, "bridge-assets.json")
+	deployFixture := `{
+  "chain_id": "11155111",
+  "deployer_address": "0x2977e40f9FD046840ED10c09fbf5F0DC63A09f1d",
+  "verifier_address": "0xB44f06A0187D554f4d5847AD62014014962E73fc",
+  "gateway_address": "0x37ecd127529B14253C8a858976e22c4671c6Bd1E"
+}`
+	if err := os.WriteFile(deployOutputPath, []byte(deployFixture), 0o644); err != nil {
+		t.Fatalf("write deploy fixture: %v", err)
+	}
+
+	t.Setenv("AEGISLINK_SEPOLIA_DEPLOY_OUTPUT", deployOutputPath)
+	t.Setenv("AEGISLINK_SEPOLIA_ASSET_REGISTRY", assetsOutputPath)
+	runShellScript(t, repo, "scripts/testnet/register_bridge_assets.sh")
+
+	runGoCommandWithLocalCache(
+		t,
+		repo,
+		"run",
+		"./scripts/testnet/seed_public_bridge_assets.go",
+		"--home",
+		homeDir,
+		"--registry-file",
+		assetsOutputPath,
+		"--demo-node-ready-file",
+		readyPath,
+	)
+
+	summaryOutput := runGoCommandWithLocalCache(
+		t,
+		repo,
+		"run",
+		"./chain/aegislink/cmd/aegislinkd",
+		"query",
+		"summary",
+		"--home",
+		homeDir,
+		"--demo-node-ready-file",
+		readyPath,
+	)
+	var summary struct {
+		Assets int `json:"assets"`
+		Limits int `json:"limits"`
+	}
+	if err := decodeLastJSONObject(summaryOutput, &summary); err != nil {
+		t.Fatalf("decode seeded demo-node summary output: %v\n%s", err, summaryOutput)
+	}
+	if summary.Assets != 1 || summary.Limits != 1 {
+		t.Fatalf("expected running demo node to have one seeded asset and one limit, got %+v", summary)
+	}
+}
+
 func TestPublicAegisLinkSeedScriptRejectsInvalidERC20RegistryEntry(t *testing.T) {
 	repo := repoRoot(t)
 	homeDir := filepath.Join(t.TempDir(), "public-invalid-seed-home")
