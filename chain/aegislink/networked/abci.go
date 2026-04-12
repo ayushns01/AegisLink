@@ -262,10 +262,14 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 
 	switch {
 	case targetHeight == 0:
-		a.app.AdvanceBlock()
+		if err := a.advanceAppAndSyncChain(); err != nil {
+			return nil, err
+		}
 	case targetHeight > current:
 		for a.app.Status().CurrentHeight < targetHeight {
-			a.app.AdvanceBlock()
+			if err := a.advanceAppAndSyncChain(); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -282,6 +286,23 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 		AppHash:   append([]byte(nil), a.appHash...),
 		TxResults: txResults,
 	}, nil
+}
+
+func (a *ABCIApplication) advanceAppAndSyncChain() error {
+	progress := a.app.AdvanceBlock()
+	if a.chainApp == nil {
+		return nil
+	}
+	for _, balance := range progress.AppliedClaimBalances {
+		amount, ok := new(big.Int).SetString(strings.TrimSpace(balance.Amount), 10)
+		if !ok {
+			return fmt.Errorf("invalid applied claim balance amount %q", balance.Amount)
+		}
+		if err := a.chainApp.SyncAccountBalance(balance.Address, sdk.NewCoin(balance.Denom, sdkmath.NewIntFromBigInt(amount))); err != nil {
+			return fmt.Errorf("sync claim balance for %s/%s: %w", balance.Address, balance.Denom, err)
+		}
+	}
+	return nil
 }
 
 func (a *ABCIApplication) Commit(_ context.Context, _ *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {

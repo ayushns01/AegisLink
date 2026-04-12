@@ -21,6 +21,13 @@ type BlockProgress struct {
 	PendingQueuedClaims   int    `json:"pending_queued_claims"`
 	BridgeCurrentHeight   uint64 `json:"bridge_current_height"`
 	LastSubmissionMessage string `json:"last_submission_message,omitempty"`
+	AppliedClaimBalances  []AppliedClaimBalance `json:"applied_claim_balances,omitempty"`
+}
+
+type AppliedClaimBalance struct {
+	Address string `json:"address"`
+	Denom   string `json:"denom"`
+	Amount  string `json:"amount"`
 }
 
 type runtimeNodeState struct {

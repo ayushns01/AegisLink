@@ -500,6 +500,8 @@ Only do this if the requirement is specifically:
 
 ### Task K1: Add real IBC from AegisLink to Osmosis testnet
 
+Current status in this worktree: the live `AegisLink -> Osmosis` IBC leg is now proven. A single-validator AegisLink demo node can link to Osmosis testnet through `rly`, open a real connection and channel, send `ueth` over ICS20, and credit a real `osmo1...` wallet with the resulting `ibc/...` denom. The remaining gap is the stricter source-side coupling: the same Sepolia-backed bridged balance still needs to flow into that spendable SDK bank path without the current workaround.
+
 **Files:**
 - Create: `deploy/testnet/ibc/`
 - Modify: `chain/aegislink/x/ibcrouter/keeper/`
@@ -547,6 +549,8 @@ This plan is successful when:
 For the stronger optional finish line:
 
 - a real Osmosis wallet can receive the bridged asset over real IBC
+
+That stronger finish line is now partially achieved for the current repo scope on the `AegisLink -> Osmosis` leg. The unfinished part is the fully strict Sepolia-backed source path.
 
 ## Recommended execution order
 

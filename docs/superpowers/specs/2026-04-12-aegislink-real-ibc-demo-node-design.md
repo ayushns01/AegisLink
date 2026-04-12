@@ -175,6 +175,8 @@ To keep public claims honest, this work should be measured in three separate mil
 - the real node can send a small bridged asset amount to a real `osmo1...` wallet on Osmosis testnet
 - only at this point should the repo claim live Osmosis wallet delivery
 
+Status note: this milestone is now achieved for the `AegisLink -> Osmosis` leg in the current repo scope. The remaining open work is not the IBC leg itself, but the stricter Sepolia-backed source-balance coupling into that same live path.
+
 ### Redeem Back to Sepolia
 
 The existing redeem flow remains important. The live demo should eventually support:

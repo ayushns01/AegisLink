@@ -378,6 +378,20 @@ func TestABCIApplicationKeepsBaseAppHeightInSyncAfterCustomDepositBlock(t *testi
 	if len(nextFinalizeResp.AppHash) == 0 {
 		t.Fatalf("expected app hash for empty block after queued deposit tx, got %+v", nextFinalizeResp)
 	}
+
+	recipientBytes, err := chainApp.AccountKeeper.AddressCodec().StringToBytes(claim.Recipient)
+	if err != nil {
+		t.Fatalf("decode recipient address: %v", err)
+	}
+	balanceCtx := chainApp.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: chainApp.AppConfig.ChainID,
+		Height:  chainApp.BaseApp.LastBlockHeight(),
+		Time:    time.Now().UTC(),
+	})
+	gotBalance := chainApp.BankKeeper.GetBalance(balanceCtx, sdk.AccAddress(recipientBytes), "ueth")
+	if !gotBalance.Amount.Equal(sdkmath.NewInt(1_000_000_000_000_000)) {
+		t.Fatalf("expected sdk bank balance 1000000000000000ueth after queued deposit, got %s", gotBalance.String())
+	}
 }
 
 func TestABCIApplicationRoutesSDKTransferTxsToBaseApp(t *testing.T) {

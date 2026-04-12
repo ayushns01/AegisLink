@@ -15,7 +15,7 @@ This is a reproducible single-validator public devnet scaffold. It is useful for
 It is not yet:
 
 - a multi-validator public network
-- real public IBC connectivity to Osmosis
+- a fully strict Sepolia-backed one-shot path into Osmosis without the current source-side funding workaround
 
 ## Bootstrap
 
@@ -113,9 +113,9 @@ If you want the relayer to execute Sepolia release transactions during redeem, s
 
 The `...SIGNER_...` form is the canonical name in the codebase. The shorter alias exists so older local env files still work.
 
-## Phase K scaffold
+## Phase K live public IBC path
 
-The future public Osmosis-delivery path has a separate, disabled-by-default env file:
+The public Osmosis-delivery path uses the separate IBC env file:
 
 ```bash
 cp .env.public-ibc.local.example .env.public-ibc.local
@@ -150,15 +150,32 @@ go run ./chain/aegislink/cmd/aegislinkd tx initiate-ibc-transfer \
   --timeout-height 120
 ```
 
-That file and bootstrap flow are only scaffolds for the future public IBC path. They keep:
+That file and bootstrap flow now support a real live IBC leg for the current repo scope:
 
-- `AEGISLINK_ENABLE_REAL_IBC=0` until a live Hermes or IBC-Go path exists
-- local AegisLink and Osmosis home placeholders
-- generated `rly` config/path artifacts for the next local packet-lifecycle milestone
-- a future route-relayer command shape
-- a manifest pointer to `deploy/testnet/ibc/osmosis-wallet-delivery.json`
+- the single-validator AegisLink demo node can be linked to Osmosis testnet through `rly`
+- the live path can open a real connection and channel and deliver `ueth` into a real `osmo1...` wallet
+- the generated `rly` config/path artifacts are still bootstrap inputs, because client, connection, and channel ids remain run-specific
 
-Use it to document the eventual public IBC bootstrap, not to claim live Osmosis wallet delivery today.
+One verified live shape is:
+
+```bash
+./bin/relayer paths new aegislink-public-testnet-1 osmo-test-5 live-osmo-v13 --home /tmp/aegislink-live-rly-v3
+./bin/relayer transact link live-osmo-v13 --home /tmp/aegislink-live-rly-v3 --override --debug --log-level debug
+./bin/relayer transact transfer aegislink-public-testnet-1 osmo-test-5 1000000000000ueth osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8 channel-0 --path live-osmo-v13 --debug --log-level debug --home /tmp/aegislink-live-rly-v3
+./bin/relayer transact flush live-osmo-v13 channel-0 --debug --log-level debug --home /tmp/aegislink-live-rly-v3
+```
+
+The corresponding destination receipt can be checked with the public Osmosis LCD:
+
+```bash
+curl -sS https://lcd.osmotest5.osmosis.zone/cosmos/bank/v1beta1/balances/osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8
+curl -sS https://lcd.osmotest5.osmosis.zone/ibc/apps/transfer/v1/denom_traces/F656E5CA82F49EB267E5A2D73576FA033F1ABD43A41EF7C9B18F87218ACDD75D
+```
+
+That live proof is intentionally narrow and honest:
+
+- it proves `AegisLink -> Osmosis` delivery over real IBC
+- it does not yet claim that the exact Sepolia-backed deposited balance is what traveled on that same final live run
 
 ## Intended endpoints
 
@@ -168,4 +185,4 @@ Use it to document the eventual public IBC bootstrap, not to claim live Osmosis 
 - ABCI: `tcp://127.0.0.1:26658`
 - REST: `http://127.0.0.1:1317`
 
-These are documented operator targets for the scaffold. The current bootstrap remains a local single-validator devnet, so treat these as local public-testnet-shaped endpoints rather than a hosted network promise.
+These are documented operator targets for the single-validator demo node. Treat them as local public-testnet-shaped endpoints rather than a hosted network promise.

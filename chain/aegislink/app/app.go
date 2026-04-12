@@ -282,12 +282,18 @@ func (a *App) AdvanceBlock() BlockProgress {
 	pending := append([]QueuedDepositClaim(nil), a.pendingDepositClaims...)
 	a.pendingDepositClaims = nil
 	for _, submission := range pending {
-		if _, err := a.submitDepositClaimLocked(submission.Claim, submission.Attestation); err != nil {
+		result, err := a.submitDepositClaimLocked(submission.Claim, submission.Attestation)
+		if err != nil {
 			progress.LastSubmissionMessage = err.Error()
 			continue
 		}
 		progress.AppliedQueuedClaims++
 		progress.LastSubmissionMessage = submission.Claim.Identity.MessageID
+		progress.AppliedClaimBalances = append(progress.AppliedClaimBalances, AppliedClaimBalance{
+			Address: submission.Claim.Recipient,
+			Denom:   result.Denom,
+			Amount:  a.BankKeeper.BalanceOf(submission.Claim.Recipient, result.Denom).String(),
+		})
 	}
 	progress.PendingQueuedClaims = len(a.pendingDepositClaims)
 	return progress

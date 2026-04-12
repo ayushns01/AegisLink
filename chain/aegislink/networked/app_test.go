@@ -470,6 +470,9 @@ func TestChainAppExecuteLocalhostTransferCreatesPacketCommitment(t *testing.T) {
 
 	sender := sdk.AccAddress(bytes.Repeat([]byte{0x11}, 20))
 	coin := sdk.NewInt64Coin("ueth", 1_000_000)
+	if err := app.FundAccount(sender.String(), coin); err != nil {
+		t.Fatalf("fund explicit sender: %v", err)
+	}
 
 	result, err := app.ExecuteLocalhostTransfer(LocalhostTransferRequest{
 		Sender:        sender.String(),

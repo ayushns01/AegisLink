@@ -257,6 +257,8 @@ git commit -m "test: prove local packet lifecycle on aegislink demo node"
 
 ## Task 6: Add a Gated Live Osmosis Wallet Smoke Test
 
+Current status in this worktree: the live `AegisLink -> Osmosis` wallet-delivery proof now exists. The remaining value of this task is turning that manually proven path into a gated repeatable smoke test and documenting the operator procedure cleanly.
+
 **Files:**
 - Modify: `tests/e2e/osmosis_wallet_delivery_test.go`
 - Modify: `docs/runbooks/public-bridge-ops.md`
@@ -288,6 +290,8 @@ Explain:
 - how to verify receipt in the target Osmosis wallet
 - that this test is the first point where the repo may claim live Osmosis wallet delivery
 
+That claim boundary is now crossed for the `AegisLink -> Osmosis` leg in the current repo scope. What remains is the automated gated test and the stricter Sepolia-backed source coupling into the same live path.
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -306,7 +310,7 @@ git commit -m "test: add gated live osmosis wallet smoke"
 ## Notes for Workers
 
 - Keep current harness paths working while the real demo-node path is being added.
-- Do not claim live Osmosis delivery until the gated live test actually passes.
+- The repo now has a manually proven live Osmosis-delivery run for the `AegisLink -> Osmosis` leg, but keep the stricter Sepolia-backed boundary explicit until the gated live test and source-side coupling are both complete.
 - Pull unstable chain metadata from current sources during bootstrap where possible instead of freezing assumptions into checked-in constants.
 - Prefer `rly` first. Only pivot to Hermes if `rly` proves clearly incompatible with the final node shape.
 - Treat Task 5 as the local IBC milestone and Task 6 as the first live Osmosis milestone. Do not collapse those into one claim.

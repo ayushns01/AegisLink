@@ -8,9 +8,11 @@ Current scope:
 - keep destination-chain inputs chain-registry-compatible
 - store generated files under `deploy/testnet/ibc/rly/generated/`
 
-Current non-goal:
+Current status:
 
-- this does **not** claim live packet relay or live Osmosis delivery yet
+- these bootstrap assets are now strong enough to support a real live `rly` path against the single-validator AegisLink demo node and Osmosis testnet
+- the repo has now proved live packet relay and live Osmosis wallet delivery through that path
+- the generated files are still bootstrap inputs, not permanent checked-in client/connection/channel ids
 
 Bootstrap flow:
 

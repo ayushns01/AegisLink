@@ -1,4 +1,4 @@
-# Public IBC Scaffold
+# Public IBC Assets
 
 This directory is the landing zone for the optional Phase K work:
 
@@ -9,11 +9,12 @@ This directory is the landing zone for the optional Phase K work:
 
 Current status:
 
-- the scaffold exists so operators have a stable place for future public IBC assets
-- real Hermes or IBC-Go connectivity is **not** enabled by default
-- the repo does **not** claim public Osmosis wallet delivery is live yet
+- the checked-in assets still act as the stable landing zone for public IBC metadata and bootstrap config
+- real Hermes is still not enabled by default
+- the repo now does claim a live `AegisLink -> Osmosis` wallet-delivery proof through `rly` on the single-validator demo node
+- the repo still does **not** claim the fully strict Sepolia-backed one-shot delivery path is finished yet
 
-The checked-in example manifest stays explicitly disabled until a real public IBC path is wired and verified.
+The checked-in example manifest still stays explicitly disabled by default so operators do not trigger live IBC actions accidentally.
 
 Expected local bootstrap files:
 
@@ -36,6 +37,6 @@ That bootstrap is intentionally honest:
 
 - it turns the public bridge asset registry into a route-profile manifest for Osmosis-style delivery
 - it seeds that route profile into the AegisLink runtime
-- it still keeps `AEGISLINK_ENABLE_REAL_IBC=0` by default, so the manifest is documented and queryable without pretending live Hermes or Osmosis connectivity already exists
+- it still keeps `AEGISLINK_ENABLE_REAL_IBC=0` by default, so the manifest is documented and queryable without forcing live network actions during normal local setup
 
-The env example stays disabled by default via `AEGISLINK_ENABLE_REAL_IBC=0` so it documents the future operator flow without accidentally implying a live Osmosis or Hermes deployment.
+The env example stays disabled by default via `AEGISLINK_ENABLE_REAL_IBC=0` so it documents the operator flow without accidentally kicking off a live Osmosis or relayer run.

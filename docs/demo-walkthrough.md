@@ -109,8 +109,8 @@ This is still a strong local prototype, not a production bridge:
 
 - Ethereum observation and release are live locally.
 - AegisLink is a persistent single-node runtime with a daemon block loop, not yet a full networked Cosmos node.
-- The destination side now has its own bootstrapped runtime home and Hermes-shaped local packet flow, but it is still not a full IBC-Go or Hermes-connected Osmosis node.
-- Real Osmosis wallet delivery is still not live in this repo; that next step is only scaffolded behind the optional Phase K IBC config seam.
+- The original destination-side walkthrough still uses its own bootstrapped runtime home and Hermes-shaped local packet flow for the local demo path.
+- Real Osmosis wallet delivery is now live for the `AegisLink -> Osmosis` leg through the optional Phase K IBC seam, but the strict Sepolia-backed one-shot delivery path is still not the default demo claim.
 
 That honesty makes the project stronger, not weaker.
 
