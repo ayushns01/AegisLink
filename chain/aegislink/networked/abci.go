@@ -2,6 +2,7 @@ package networked
 
 import (
 	"context"
+	"encoding/hex"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	proto "github.com/cosmos/gogoproto/proto"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
@@ -167,28 +170,12 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 			Height: height,
 			Value:  encoded,
 		}, nil
+	case "/ibc.applications.transfer.v1.Query/DenomTraces":
+		return a.queryLegacyTransferDenomTraces(height, req)
+	case "/ibc.applications.transfer.v1.Query/DenomTrace":
+		return a.queryLegacyTransferDenomTrace(height, req)
 	default:
-		if a.chainApp != nil && a.chainApp.BaseApp != nil {
-			if grpcHandler := a.chainApp.BaseApp.GRPCQueryRouter().Route(req.Path); grpcHandler != nil {
-				queryReq := *req
-				if queryReq.Height == 0 {
-					queryReq.Height = height
-				}
-				return grpcHandler(
-					a.chainApp.BaseApp.NewUncachedContext(false, cmtproto.Header{
-						ChainID: a.appConfig.ChainID,
-						Height:  queryReq.Height,
-					}),
-					&queryReq,
-				)
-			}
-			return a.chainApp.BaseApp.Query(context.Background(), req)
-		}
-		return &abcitypes.ResponseQuery{
-			Code:   1,
-			Log:    fmt.Sprintf("unknown query path %q", req.Path),
-			Height: height,
-		}, nil
+		return a.queryBaseApp(height, req)
 	}
 }
 
@@ -299,6 +286,153 @@ func hashABCIStatus(status aegisapp.Status) ([]byte, error) {
 	}
 	sum := sha256.Sum256(encoded)
 	return sum[:], nil
+}
+
+func (a *ABCIApplication) queryBaseApp(height int64, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
+	if a.chainApp == nil || a.chainApp.BaseApp == nil {
+		return &abcitypes.ResponseQuery{
+			Code:   1,
+			Log:    fmt.Sprintf("unknown query path %q", req.Path),
+			Height: height,
+		}, nil
+	}
+
+	queryReq := *req
+	if queryReq.Height == 0 {
+		queryReq.Height = height
+	}
+	if grpcHandler := a.chainApp.BaseApp.GRPCQueryRouter().Route(queryReq.Path); grpcHandler != nil {
+		return grpcHandler(
+			a.chainApp.BaseApp.NewUncachedContext(false, cmtproto.Header{
+				ChainID: a.appConfig.ChainID,
+				Height:  queryReq.Height,
+			}),
+			&queryReq,
+		)
+	}
+	return a.chainApp.BaseApp.Query(context.Background(), &queryReq)
+}
+
+func (a *ABCIApplication) queryLegacyTransferDenomTraces(height int64, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
+	var legacyReq legacyQueryDenomTracesRequest
+	if len(req.Data) > 0 {
+		if err := proto.Unmarshal(req.Data, &legacyReq); err != nil {
+			return &abcitypes.ResponseQuery{
+				Code:   1,
+				Log:    fmt.Sprintf("decode legacy denom traces query: %v", err),
+				Height: height,
+			}, nil
+		}
+	}
+
+	modernReqBz, err := proto.Marshal(&transfertypes.QueryDenomsRequest{
+		Pagination: legacyReq.Pagination,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.queryBaseApp(height, &abcitypes.RequestQuery{
+		Path:   "/ibc.applications.transfer.v1.Query/Denoms",
+		Data:   modernReqBz,
+		Height: req.Height,
+		Prove:  req.Prove,
+	})
+	if err != nil || resp.Code != 0 {
+		return resp, err
+	}
+
+	var modernResp transfertypes.QueryDenomsResponse
+	if err := proto.Unmarshal(resp.Value, &modernResp); err != nil {
+		return nil, err
+	}
+	legacyResp := legacyQueryDenomTracesResponse{
+		Pagination: modernResp.Pagination,
+	}
+	for _, denom := range modernResp.Denoms {
+		legacyResp.DenomTraces = append(legacyResp.DenomTraces, legacyTransferTraceFromDenom(denom))
+	}
+	encoded, err := proto.Marshal(&legacyResp)
+	if err != nil {
+		return nil, err
+	}
+	return &abcitypes.ResponseQuery{
+		Code:   resp.Code,
+		Log:    resp.Log,
+		Info:   resp.Info,
+		Index:  resp.Index,
+		Key:    resp.Key,
+		Value:  encoded,
+		ProofOps: resp.ProofOps,
+		Height: resp.Height,
+		Codespace: resp.Codespace,
+	}, nil
+}
+
+func (a *ABCIApplication) queryLegacyTransferDenomTrace(height int64, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
+	var legacyReq legacyQueryDenomTraceRequest
+	if len(req.Data) > 0 {
+		if err := proto.Unmarshal(req.Data, &legacyReq); err != nil {
+			return &abcitypes.ResponseQuery{
+				Code:   1,
+				Log:    fmt.Sprintf("decode legacy denom trace query: %v", err),
+				Height: height,
+			}, nil
+		}
+	}
+
+	if legacyReq.Hash != "" && !strings.HasPrefix(legacyReq.Hash, "ibc/") {
+		if _, err := hex.DecodeString(legacyReq.Hash); err != nil {
+			legacyResp := legacyQueryDenomTraceResponse{
+				DenomTrace: legacyTransferTraceFromDenom(transfertypes.NewDenom(legacyReq.Hash)),
+			}
+			encoded, marshalErr := proto.Marshal(&legacyResp)
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			return &abcitypes.ResponseQuery{
+				Height: height,
+				Value:  encoded,
+			}, nil
+		}
+	}
+
+	modernReqBz, err := proto.Marshal(&transfertypes.QueryDenomRequest{Hash: legacyReq.Hash})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.queryBaseApp(height, &abcitypes.RequestQuery{
+		Path:   "/ibc.applications.transfer.v1.Query/Denom",
+		Data:   modernReqBz,
+		Height: req.Height,
+		Prove:  req.Prove,
+	})
+	if err != nil || resp.Code != 0 {
+		return resp, err
+	}
+
+	var modernResp transfertypes.QueryDenomResponse
+	if err := proto.Unmarshal(resp.Value, &modernResp); err != nil {
+		return nil, err
+	}
+	legacyResp := legacyQueryDenomTraceResponse{}
+	if modernResp.Denom != nil {
+		legacyResp.DenomTrace = legacyTransferTraceFromDenom(*modernResp.Denom)
+	}
+	encoded, err := proto.Marshal(&legacyResp)
+	if err != nil {
+		return nil, err
+	}
+	return &abcitypes.ResponseQuery{
+		Code:   resp.Code,
+		Log:    resp.Log,
+		Info:   resp.Info,
+		Index:  resp.Index,
+		Key:    resp.Key,
+		Value:  encoded,
+		ProofOps: resp.ProofOps,
+		Height: resp.Height,
+		Codespace: resp.Codespace,
+	}, nil
 }
 
 func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResult, error) {

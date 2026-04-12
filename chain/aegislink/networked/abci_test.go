@@ -14,6 +14,7 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	proto "github.com/cosmos/gogoproto/proto"
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
@@ -98,6 +99,93 @@ func TestABCIApplicationRoutesSDKGRPCQueriesToBaseApp(t *testing.T) {
 	}
 	if transferParams.Params == nil {
 		t.Fatalf("expected transfer params in response, got %+v", transferParams)
+	}
+
+	signer := "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4"
+	if err := chainApp.FundAccount(signer, sdk.NewCoin(sdk.DefaultBondDenom, sdkmath.NewInt(1_000_000))); err != nil {
+		t.Fatalf("fund signer account: %v", err)
+	}
+
+	accountReqBz, err := proto.Marshal(&authtypes.QueryAccountRequest{Address: signer})
+	if err != nil {
+		t.Fatalf("marshal auth account request: %v", err)
+	}
+	accountResp, err := abciApp.Query(context.Background(), &abcitypes.RequestQuery{
+		Path: "/cosmos.auth.v1beta1.Query/Account",
+		Data: accountReqBz,
+	})
+	if err != nil {
+		t.Fatalf("query auth account: %v", err)
+	}
+	if accountResp.Code != 0 {
+		t.Fatalf("expected auth account query success, got %+v", accountResp)
+	}
+	var accountQuery authtypes.QueryAccountResponse
+	if err := proto.Unmarshal(accountResp.Value, &accountQuery); err != nil {
+		t.Fatalf("unmarshal auth account response: %v", err)
+	}
+	if accountQuery.Account == nil {
+		t.Fatalf("expected auth account query payload, got %+v", accountQuery)
+	}
+
+	denomTracesReqBz, err := proto.Marshal(&transfertypes.QueryDenomsRequest{})
+	if err != nil {
+		t.Fatalf("marshal denom traces request: %v", err)
+	}
+	denomTracesResp, err := abciApp.Query(context.Background(), &abcitypes.RequestQuery{
+		Path: "/ibc.applications.transfer.v1.Query/Denoms",
+		Data: denomTracesReqBz,
+	})
+	if err != nil {
+		t.Fatalf("query transfer denom traces: %v", err)
+	}
+	if denomTracesResp.Code != 0 {
+		t.Fatalf("expected denom traces query success, got %+v", denomTracesResp)
+	}
+	var denomTraceQuery transfertypes.QueryDenomsResponse
+	if err := proto.Unmarshal(denomTracesResp.Value, &denomTraceQuery); err != nil {
+		t.Fatalf("unmarshal denom traces response: %v", err)
+	}
+
+	legacyDenomTracesReqBz, err := proto.Marshal(&legacyQueryDenomTracesRequest{})
+	if err != nil {
+		t.Fatalf("marshal legacy denom traces request: %v", err)
+	}
+	legacyDenomTracesResp, err := abciApp.Query(context.Background(), &abcitypes.RequestQuery{
+		Path: "/ibc.applications.transfer.v1.Query/DenomTraces",
+		Data: legacyDenomTracesReqBz,
+	})
+	if err != nil {
+		t.Fatalf("query legacy transfer denom traces: %v", err)
+	}
+	if legacyDenomTracesResp.Code != 0 {
+		t.Fatalf("expected legacy denom traces query success, got %+v", legacyDenomTracesResp)
+	}
+	var legacyDenomTraceQuery legacyQueryDenomTracesResponse
+	if err := proto.Unmarshal(legacyDenomTracesResp.Value, &legacyDenomTraceQuery); err != nil {
+		t.Fatalf("unmarshal legacy denom traces response: %v", err)
+	}
+
+	legacyDenomTraceReqBz, err := proto.Marshal(&legacyQueryDenomTraceRequest{Hash: "ueth"})
+	if err != nil {
+		t.Fatalf("marshal legacy denom trace request: %v", err)
+	}
+	legacyDenomTraceResp, err := abciApp.Query(context.Background(), &abcitypes.RequestQuery{
+		Path: "/ibc.applications.transfer.v1.Query/DenomTrace",
+		Data: legacyDenomTraceReqBz,
+	})
+	if err != nil {
+		t.Fatalf("query legacy transfer denom trace: %v", err)
+	}
+	if legacyDenomTraceResp.Code != 0 {
+		t.Fatalf("expected legacy denom trace query success, got %+v", legacyDenomTraceResp)
+	}
+	var legacyDenomQuery legacyQueryDenomTraceResponse
+	if err := proto.Unmarshal(legacyDenomTraceResp.Value, &legacyDenomQuery); err != nil {
+		t.Fatalf("unmarshal legacy denom trace response: %v", err)
+	}
+	if legacyDenomQuery.DenomTrace == nil || legacyDenomQuery.DenomTrace.BaseDenom != "ueth" {
+		t.Fatalf("expected legacy denom trace for ueth, got %+v", legacyDenomQuery.DenomTrace)
 	}
 }
 

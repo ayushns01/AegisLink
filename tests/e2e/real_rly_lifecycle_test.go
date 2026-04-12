@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/networked"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
@@ -86,6 +88,141 @@ func TestRealRlyLinksTwoDemoNodes(t *testing.T) {
 
 	assertIBCHandshakeState(t, srcReady.GRPCAddress)
 	assertIBCHandshakeState(t, dstReady.GRPCAddress)
+}
+
+func TestRealRlyRelaysICS20TransferBetweenTwoDemoNodes(t *testing.T) {
+	if os.Getenv("AEGISLINK_ENABLE_REAL_RLY") != "1" {
+		t.Skip("set AEGISLINK_ENABLE_REAL_RLY=1 to run the live local relayer lifecycle test")
+	}
+
+	relayerBin := filepath.Join(repoRoot(t), "bin", "relayer")
+	if _, err := os.Stat(relayerBin); err != nil {
+		t.Skipf("local relayer binary not available at %s: %v", relayerBin, err)
+	}
+
+	tempDir := t.TempDir()
+	srcHome := filepath.Join(tempDir, "src-home")
+	dstHome := filepath.Join(tempDir, "dst-home")
+	srcReadyPath := filepath.Join(tempDir, "src-ready.json")
+	dstReadyPath := filepath.Join(tempDir, "dst-ready.json")
+	rlyHome := filepath.Join(tempDir, "rly-home")
+
+	bootstrapPublicAegisLinkTestnetWithChainID(t, srcHome, "aegislink-src-1")
+	bootstrapPublicAegisLinkTestnetWithChainID(t, dstHome, "aegislink-dst-1")
+
+	srcCmd, srcLogs := startIBCDemoNodeProcess(t, srcHome, srcReadyPath, map[string]string{
+		"AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS": "10",
+	})
+	defer stopIBCDemoNodeProcess(t, srcCmd, srcLogs)
+	dstCmd, dstLogs := startIBCDemoNodeProcess(t, dstHome, dstReadyPath, map[string]string{
+		"AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS": "10",
+	})
+	defer stopIBCDemoNodeProcess(t, dstCmd, dstLogs)
+
+	srcReady := readReadyFileE2E(t, srcReadyPath)
+	dstReady := readReadyFileE2E(t, dstReadyPath)
+
+	writeRealRlyConfig(t, filepath.Join(rlyHome, "config", "config.yaml"), realRlyConfig{
+		SourceChainID: "aegislink-src-1",
+		SourceRPC:     "http://" + srcReady.CometRPCAddress,
+		SourceRPCWS:   "ws://" + srcReady.CometRPCAddress + "/websocket",
+		SourceGRPC:    "http://" + srcReady.GRPCAddress,
+		DestChainID:   "aegislink-dst-1",
+		DestRPC:       "http://" + dstReady.CometRPCAddress,
+		DestRPCWS:     "ws://" + dstReady.CometRPCAddress + "/websocket",
+		DestGRPC:      "http://" + dstReady.GRPCAddress,
+	})
+
+	runRelayerBinary(t, relayerBin, rlyHome, nil, "keys", "add", "aegislink-src-1", "srckey")
+	runRelayerBinary(t, relayerBin, rlyHome, nil, "keys", "add", "aegislink-dst-1", "dstkey")
+
+	srcRelayerAddr := strings.TrimSpace(runRelayerBinary(t, relayerBin, rlyHome, nil, "keys", "show", "aegislink-src-1", "srckey"))
+	dstRelayerAddr := strings.TrimSpace(runRelayerBinary(t, relayerBin, rlyHome, nil, "keys", "show", "aegislink-dst-1", "dstkey"))
+
+	for _, funded := range []struct {
+		cfg     networked.Config
+		address string
+		denom   string
+		amount  string
+	}{
+		{
+			cfg: networked.Config{
+				HomeDir:   srcHome,
+				ReadyFile: srcReadyPath,
+			},
+			address: srcRelayerAddr,
+			denom:   "stake",
+			amount:  "1000000000",
+		},
+		{
+			cfg: networked.Config{
+				HomeDir:   srcHome,
+				ReadyFile: srcReadyPath,
+			},
+			address: srcRelayerAddr,
+			denom:   "ueth",
+			amount:  "777",
+		},
+		{
+			cfg: networked.Config{
+				HomeDir:   dstHome,
+				ReadyFile: dstReadyPath,
+			},
+			address: dstRelayerAddr,
+			denom:   "stake",
+			amount:  "1000000000",
+		},
+	} {
+		if _, err := networked.SubmitFundAccount(context.Background(), funded.cfg, funded.address, funded.denom, funded.amount); err != nil {
+			t.Fatalf("fund %s account %s on %s: %v", funded.denom, funded.address, funded.cfg.HomeDir, err)
+		}
+	}
+
+	runRelayerBinary(t, relayerBin, rlyHome, nil, "paths", "new", "aegislink-src-1", "aegislink-dst-1", "demo")
+	runRelayerBinary(t, relayerBin, rlyHome, []*bytes.Buffer{srcLogs, dstLogs}, "transact", "link", "demo", "--debug", "--log-level", "debug")
+
+	srcChannel := firstTransferChannelID(t, srcReady.GRPCAddress)
+	runRelayerBinary(
+		t,
+		relayerBin,
+		rlyHome,
+		[]*bytes.Buffer{srcLogs, dstLogs},
+		"transact",
+		"transfer",
+		"aegislink-src-1",
+		"aegislink-dst-1",
+		"777ueth",
+		dstRelayerAddr,
+		srcChannel,
+		"--path",
+		"demo",
+		"--debug",
+		"--log-level",
+		"debug",
+	)
+
+	expectedDenom := transfertypes.ParseDenomTrace(
+		transfertypes.GetPrefixedDenom(transfertypes.PortID, srcChannel, "ueth"),
+	).IBCDenom()
+
+	waitForRelayedBalance(
+		t,
+		relayerBin,
+		rlyHome,
+		srcChannel,
+		dstReady.GRPCAddress,
+		dstRelayerAddr,
+		expectedDenom,
+		"777",
+		[]*bytes.Buffer{srcLogs, dstLogs},
+	)
+	assertNoPacketCommitments(t, srcReady.GRPCAddress, transfertypes.PortID, srcChannel)
+	assertIBCDenomRegistered(t, dstReady.GRPCAddress, expectedDenom, "ueth")
+
+	sourceBalance := queryBankBalance(t, srcReady.GRPCAddress, srcRelayerAddr, "ueth")
+	if sourceBalance != "0" {
+		t.Fatalf("expected source ueth balance to be debited after transfer, got %s", sourceBalance)
+	}
 }
 
 type realRlyConfig struct {
@@ -240,5 +377,108 @@ func assertIBCHandshakeState(t *testing.T, grpcAddress string) {
 	}
 	if len(channelResp.Channels) == 0 {
 		t.Fatalf("expected at least one ibc channel on %s, got %+v", grpcAddress, channelResp)
+	}
+}
+
+func firstTransferChannelID(t *testing.T, grpcAddress string) string {
+	t.Helper()
+
+	grpcConn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial ibc demo node grpc %s: %v", grpcAddress, err)
+	}
+	defer grpcConn.Close()
+
+	channelResp, err := channeltypes.NewQueryClient(grpcConn).Channels(context.Background(), &channeltypes.QueryChannelsRequest{})
+	if err != nil {
+		t.Fatalf("query ibc channels from %s: %v", grpcAddress, err)
+	}
+	for _, channel := range channelResp.Channels {
+		if channel.PortId == transfertypes.PortID && channel.State == channeltypes.OPEN {
+			return channel.ChannelId
+		}
+	}
+	t.Fatalf("expected an open transfer channel on %s, got %+v", grpcAddress, channelResp.Channels)
+	return ""
+}
+
+func waitForRelayedBalance(t *testing.T, relayerBin, home, srcChannelID, grpcAddress, address, denom, amount string, extraLogs []*bytes.Buffer) {
+	t.Helper()
+
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		runRelayerBinary(t, relayerBin, home, extraLogs, "transact", "flush", "demo", srcChannelID, "--debug", "--log-level", "debug")
+		if queryBankBalance(t, grpcAddress, address, denom) == amount {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for relayed balance %s%s at %s", amount, denom, address)
+}
+
+func queryBankBalance(t *testing.T, grpcAddress, address, denom string) string {
+	t.Helper()
+
+	grpcConn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial ibc demo node grpc %s: %v", grpcAddress, err)
+	}
+	defer grpcConn.Close()
+
+	resp, err := banktypes.NewQueryClient(grpcConn).Balance(context.Background(), &banktypes.QueryBalanceRequest{
+		Address: address,
+		Denom:   denom,
+	})
+	if err != nil {
+		t.Fatalf("query bank balance %s on %s: %v", denom, grpcAddress, err)
+	}
+	if resp.Balance == nil {
+		return "0"
+	}
+	return resp.Balance.Amount.String()
+}
+
+func assertNoPacketCommitments(t *testing.T, grpcAddress, portID, channelID string) {
+	t.Helper()
+
+	grpcConn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial ibc demo node grpc %s: %v", grpcAddress, err)
+	}
+	defer grpcConn.Close()
+
+	resp, err := channeltypes.NewQueryClient(grpcConn).PacketCommitments(context.Background(), &channeltypes.QueryPacketCommitmentsRequest{
+		PortId:    portID,
+		ChannelId: channelID,
+	})
+	if err != nil {
+		t.Fatalf("query packet commitments %s/%s: %v", portID, channelID, err)
+	}
+	if len(resp.Commitments) != 0 {
+		t.Fatalf("expected no outstanding packet commitments on %s/%s, got %+v", portID, channelID, resp.Commitments)
+	}
+}
+
+func assertIBCDenomRegistered(t *testing.T, grpcAddress, ibcDenom, baseDenom string) {
+	t.Helper()
+
+	grpcConn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial ibc demo node grpc %s: %v", grpcAddress, err)
+	}
+	defer grpcConn.Close()
+
+	resp, err := transfertypes.NewQueryClient(grpcConn).Denom(context.Background(), &transfertypes.QueryDenomRequest{
+		Hash: ibcDenom,
+	})
+	if err != nil {
+		t.Fatalf("query ibc denom %s on %s: %v", ibcDenom, grpcAddress, err)
+	}
+	if resp.Denom == nil {
+		t.Fatalf("expected denom registration for %s on %s", ibcDenom, grpcAddress)
+	}
+	if resp.Denom.Base != baseDenom {
+		t.Fatalf("expected ibc denom %s to trace back to %s, got %+v", ibcDenom, baseDenom, resp.Denom)
 	}
 }

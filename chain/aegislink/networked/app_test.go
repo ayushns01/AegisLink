@@ -349,9 +349,11 @@ func TestBuildChainAppRegistersSDKModuleServicesAndInitializesGenesis(t *testing
 
 	for _, path := range []string{
 		"/cosmos.auth.v1beta1.Query/Accounts",
+		"/cosmos.auth.v1beta1.Query/Account",
 		"/cosmos.bank.v1beta1.Query/Params",
 		"/ibc.core.client.v1.Query/ClientStates",
 		"/ibc.applications.transfer.v1.Query/Params",
+		"/ibc.applications.transfer.v1.Query/Denoms",
 	} {
 		if route := app.BaseApp.GRPCQueryRouter().Route(path); route == nil {
 			t.Fatalf("expected grpc query route %q to be registered", path)
