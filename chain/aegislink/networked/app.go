@@ -10,6 +10,7 @@ import (
 	"cosmossdk.io/log"
 	"cosmossdk.io/store/rootmulti"
 	storetypes "cosmossdk.io/store/types"
+	signing "cosmossdk.io/x/tx/signing"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -32,10 +33,13 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	"github.com/cosmos/gogoproto/proto"
 	transfermodule "github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	transferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	ibcmodule "github.com/cosmos/ibc-go/v10/modules/core"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
@@ -67,6 +71,33 @@ type ChainApp struct {
 	Configurator       module.Configurator
 }
 
+const (
+	DemoLocalhostTransferPortID              = transfertypes.PortID
+	DemoLocalhostTransferChannelID           = "channel-0"
+	DemoLocalhostTransferCounterpartyChannel = "channel-1"
+)
+
+type LocalhostTransferRequest struct {
+	Sender              string
+	Coin                sdk.Coin
+	Receiver            string
+	TimeoutHeight       clienttypes.Height
+	TimeoutTimestamp    uint64
+	Memo                string
+	SourcePort          string
+	SourceChannel       string
+	CounterpartyChannel string
+}
+
+type LocalhostTransferResult struct {
+	Sender                string
+	PortID                string
+	ChannelID             string
+	CounterpartyChannelID string
+	Sequence              uint64
+	PacketCommitment      []byte
+}
+
 func NewChainApp(cfg Config) (*ChainApp, error) {
 	_, appCfg, err := ResolveConfig(cfg)
 	if err != nil {
@@ -79,7 +110,17 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 	logger := log.NewNopLogger()
 	db := dbm.NewMemDB()
 	legacyAmino := codec.NewLegacyAmino()
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	accountAddressCodec := addresscodec.NewBech32Codec("cosmos")
+	interfaceRegistry, err := codectypes.NewInterfaceRegistryWithOptions(codectypes.InterfaceRegistryOptions{
+		ProtoFiles: proto.HybridResolver,
+		SigningOptions: signing.Options{
+			AddressCodec:          accountAddressCodec,
+			ValidatorAddressCodec: addresscodec.NewBech32Codec("cosmosvaloper"),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build interface registry: %w", err)
+	}
 	protoCodec := codec.NewProtoCodec(interfaceRegistry)
 	basicModuleManager := module.NewBasicManager(
 		authmodule.AppModuleBasic{},
@@ -92,13 +133,13 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 	txConfig := authtx.NewTxConfig(protoCodec, []txsigning.SignMode{
 		txsigning.SignMode_SIGN_MODE_DIRECT,
 	})
-	accountAddressCodec := addresscodec.NewBech32Codec("cosmos")
 	authority, err := accountAddressCodec.BytesToString(authtypes.NewModuleAddress("gov"))
 	if err != nil {
 		return nil, fmt.Errorf("encode authority address: %w", err)
 	}
 
 	base := baseapp.NewBaseApp(appCfg.AppName, logger, db, txConfig.TxDecoder(), baseapp.SetChainID(appCfg.ChainID))
+	base.SetInterfaceRegistry(interfaceRegistry)
 	multiStore, ok := base.CommitMultiStore().(*rootmulti.Store)
 	if !ok {
 		return nil, fmt.Errorf("unexpected commit multistore type %T", base.CommitMultiStore())
@@ -194,8 +235,6 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		transfertypes.ModuleName,
 	)
 
-	base.MsgServiceRouter().SetInterfaceRegistry(interfaceRegistry)
-	base.GRPCQueryRouter().SetInterfaceRegistry(interfaceRegistry)
 	configurator := module.NewConfigurator(protoCodec, base.MsgServiceRouter(), base.GRPCQueryRouter())
 	if err := moduleManager.RegisterServices(configurator); err != nil {
 		return nil, fmt.Errorf("register module services: %w", err)
@@ -286,6 +325,96 @@ func (a *ChainApp) DefaultGenesis() map[string]json.RawMessage {
 	return a.BasicModuleManager.DefaultGenesis(a.Codec)
 }
 
+func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (LocalhostTransferResult, error) {
+	if a == nil || a.BaseApp == nil {
+		return LocalhostTransferResult{}, fmt.Errorf("chain app is not initialized")
+	}
+
+	request, sender, err := a.normalizeLocalhostTransferRequest(req)
+	if err != nil {
+		return LocalhostTransferResult{}, err
+	}
+
+	headerHeight := a.BaseApp.LastBlockHeight()
+	if headerHeight <= 0 {
+		headerHeight = 1
+	}
+	ctx := a.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: a.AppConfig.ChainID,
+		Height:  headerHeight,
+		Time:    time.Now().UTC(),
+	})
+
+	if err := a.ensureLocalhostTransferPath(ctx, request.SourcePort, request.SourceChannel, request.CounterpartyChannel); err != nil {
+		return LocalhostTransferResult{}, err
+	}
+	if err := a.ensureTransferSenderBalance(ctx, sender, request.Coin); err != nil {
+		return LocalhostTransferResult{}, err
+	}
+	a.MultiStore.Commit()
+
+	msg := transfertypes.NewMsgTransfer(
+		request.SourcePort,
+		request.SourceChannel,
+		request.Coin,
+		request.Sender,
+		request.Receiver,
+		request.TimeoutHeight,
+		request.TimeoutTimestamp,
+		request.Memo,
+	)
+	txBuilder := a.TxConfig.NewTxBuilder()
+	if err := txBuilder.SetMsgs(msg); err != nil {
+		return LocalhostTransferResult{}, fmt.Errorf("set localhost transfer tx msg: %w", err)
+	}
+	txBytes, err := a.TxConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		return LocalhostTransferResult{}, fmt.Errorf("encode localhost transfer tx: %w", err)
+	}
+	finalizeResponse, err := a.BaseApp.FinalizeBlock(&abcitypes.RequestFinalizeBlock{
+		Height: a.BaseApp.LastBlockHeight() + 1,
+		Time:   time.Now().UTC(),
+		Txs:    [][]byte{txBytes},
+	})
+	if err != nil {
+		return LocalhostTransferResult{}, fmt.Errorf("finalize localhost transfer block: %w", err)
+	}
+	if len(finalizeResponse.TxResults) != 1 {
+		return LocalhostTransferResult{}, fmt.Errorf("expected exactly one localhost transfer tx result, got %d", len(finalizeResponse.TxResults))
+	}
+	if finalizeResponse.TxResults[0].Code != 0 {
+		return LocalhostTransferResult{}, fmt.Errorf("execute localhost transfer tx: %s", finalizeResponse.TxResults[0].Log)
+	}
+	if _, err := a.BaseApp.Commit(); err != nil {
+		return LocalhostTransferResult{}, fmt.Errorf("commit localhost transfer block: %w", err)
+	}
+
+	ctx = a.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: a.AppConfig.ChainID,
+		Height:  a.BaseApp.LastBlockHeight(),
+		Time:    time.Now().UTC(),
+	})
+	nextSequence, found := a.IBCKeeper.ChannelKeeper.GetNextSequenceSend(ctx, request.SourcePort, request.SourceChannel)
+	if !found || nextSequence <= 1 {
+		return LocalhostTransferResult{}, fmt.Errorf("localhost transfer next send sequence was not recorded for %s/%s", request.SourcePort, request.SourceChannel)
+	}
+	sequence := nextSequence - 1
+
+	commitment := a.IBCKeeper.ChannelKeeper.GetPacketCommitment(ctx, request.SourcePort, request.SourceChannel, sequence)
+	if len(commitment) == 0 {
+		return LocalhostTransferResult{}, fmt.Errorf("missing packet commitment for %s/%s sequence %d", request.SourcePort, request.SourceChannel, sequence)
+	}
+
+	return LocalhostTransferResult{
+		Sender:                request.Sender,
+		PortID:                request.SourcePort,
+		ChannelID:             request.SourceChannel,
+		CounterpartyChannelID: request.CounterpartyChannel,
+		Sequence:              sequence,
+		PacketCommitment:      append([]byte(nil), commitment...),
+	}, nil
+}
+
 func networkedStoreKeyNames(moduleNames []string) []string {
 	seen := map[string]struct{}{}
 	keys := make([]string, 0, len(moduleNames)+5)
@@ -366,5 +495,123 @@ func bootstrapFirstCommittedBlock(base *baseapp.BaseApp) error {
 	if _, err := base.Commit(); err != nil {
 		return fmt.Errorf("commit first block: %w", err)
 	}
+	return nil
+}
+
+func (a *ChainApp) normalizeLocalhostTransferRequest(req LocalhostTransferRequest) (LocalhostTransferRequest, sdk.AccAddress, error) {
+	if a == nil || a.AccountKeeper.AddressCodec() == nil {
+		return LocalhostTransferRequest{}, nil, fmt.Errorf("account keeper address codec is not initialized")
+	}
+	if strings.TrimSpace(req.Sender) == "" {
+		sender, err := a.defaultLocalhostTransferSender()
+		if err != nil {
+			return LocalhostTransferRequest{}, nil, err
+		}
+		req.Sender = sender
+	}
+	senderBytes, err := a.AccountKeeper.AddressCodec().StringToBytes(strings.TrimSpace(req.Sender))
+	if err != nil {
+		return LocalhostTransferRequest{}, nil, fmt.Errorf("decode localhost transfer sender: %w", err)
+	}
+	if err := req.Coin.Validate(); err != nil {
+		return LocalhostTransferRequest{}, nil, fmt.Errorf("invalid localhost transfer coin: %w", err)
+	}
+	if !req.Coin.IsPositive() {
+		return LocalhostTransferRequest{}, nil, fmt.Errorf("localhost transfer amount must be positive")
+	}
+	if strings.TrimSpace(req.Receiver) == "" {
+		return LocalhostTransferRequest{}, nil, fmt.Errorf("missing localhost transfer receiver")
+	}
+	if req.TimeoutHeight.IsZero() && req.TimeoutTimestamp == 0 {
+		return LocalhostTransferRequest{}, nil, fmt.Errorf("missing localhost transfer timeout")
+	}
+	if strings.TrimSpace(req.SourcePort) == "" {
+		req.SourcePort = DemoLocalhostTransferPortID
+	}
+	if strings.TrimSpace(req.SourceChannel) == "" {
+		req.SourceChannel = DemoLocalhostTransferChannelID
+	}
+	if strings.TrimSpace(req.CounterpartyChannel) == "" {
+		req.CounterpartyChannel = DemoLocalhostTransferCounterpartyChannel
+	}
+
+	req.Sender = strings.TrimSpace(req.Sender)
+	req.Receiver = strings.TrimSpace(req.Receiver)
+	req.SourcePort = strings.TrimSpace(req.SourcePort)
+	req.SourceChannel = strings.TrimSpace(req.SourceChannel)
+	req.CounterpartyChannel = strings.TrimSpace(req.CounterpartyChannel)
+
+	return req, sdk.AccAddress(senderBytes), nil
+}
+
+func (a *ChainApp) ensureLocalhostTransferPath(ctx sdk.Context, sourcePort, sourceChannel, counterpartyChannel string) error {
+	if a == nil {
+		return fmt.Errorf("chain app is not initialized")
+	}
+	if _, found := a.IBCKeeper.ConnectionKeeper.GetConnection(ctx, ibcexported.LocalhostConnectionID); !found {
+		a.IBCKeeper.ConnectionKeeper.CreateSentinelLocalhostConnection(ctx)
+	}
+	a.IBCKeeper.ConnectionKeeper.SetClientConnectionPaths(ctx, ibcexported.LocalhostClientID, []string{ibcexported.LocalhostConnectionID})
+
+	if _, found := a.IBCKeeper.ChannelKeeper.GetChannel(ctx, sourcePort, sourceChannel); !found {
+		channel := channeltypes.NewChannel(
+			channeltypes.OPEN,
+			channeltypes.UNORDERED,
+			channeltypes.NewCounterparty(sourcePort, counterpartyChannel),
+			[]string{ibcexported.LocalhostConnectionID},
+			transfertypes.V1,
+		)
+		a.IBCKeeper.ChannelKeeper.SetChannel(ctx, sourcePort, sourceChannel, channel)
+	}
+	if _, found := a.IBCKeeper.ChannelKeeper.GetNextSequenceSend(ctx, sourcePort, sourceChannel); !found {
+		a.IBCKeeper.ChannelKeeper.SetNextSequenceSend(ctx, sourcePort, sourceChannel, 1)
+	}
+	if _, found := a.IBCKeeper.ChannelKeeper.GetNextSequenceRecv(ctx, sourcePort, sourceChannel); !found {
+		a.IBCKeeper.ChannelKeeper.SetNextSequenceRecv(ctx, sourcePort, sourceChannel, 1)
+	}
+	if _, found := a.IBCKeeper.ChannelKeeper.GetNextSequenceAck(ctx, sourcePort, sourceChannel); !found {
+		a.IBCKeeper.ChannelKeeper.SetNextSequenceAck(ctx, sourcePort, sourceChannel, 1)
+	}
+
+	return nil
+}
+
+func (a *ChainApp) defaultLocalhostTransferSender() (string, error) {
+	if a == nil || a.AccountKeeper.AddressCodec() == nil {
+		return "", fmt.Errorf("account keeper address codec is not initialized")
+	}
+	return a.AccountKeeper.AddressCodec().BytesToString(bytesRepeat(0x42, 20))
+}
+
+func bytesRepeat(b byte, count int) []byte {
+	buf := make([]byte, count)
+	for i := range buf {
+		buf[i] = b
+	}
+	return buf
+}
+
+func (a *ChainApp) ensureTransferSenderBalance(ctx sdk.Context, sender sdk.AccAddress, coin sdk.Coin) error {
+	if a == nil {
+		return fmt.Errorf("chain app is not initialized")
+	}
+	if account := a.AccountKeeper.GetAccount(ctx, sender); account == nil {
+		a.AccountKeeper.SetAccount(ctx, a.AccountKeeper.NewAccountWithAddress(ctx, sender))
+	}
+
+	current := a.BankKeeper.GetBalance(ctx, sender, coin.Denom)
+	if !current.Amount.LT(coin.Amount) {
+		return nil
+	}
+
+	shortfall := coin.Amount.Sub(current.Amount)
+	fundingCoin := sdk.NewCoin(coin.Denom, shortfall)
+	if err := a.BankKeeper.MintCoins(ctx, transfertypes.ModuleName, sdk.NewCoins(fundingCoin)); err != nil {
+		return fmt.Errorf("mint localhost transfer funding: %w", err)
+	}
+	if err := a.BankKeeper.SendCoinsFromModuleToAccount(ctx, transfertypes.ModuleName, sender, sdk.NewCoins(fundingCoin)); err != nil {
+		return fmt.Errorf("fund localhost transfer sender: %w", err)
+	}
+
 	return nil
 }

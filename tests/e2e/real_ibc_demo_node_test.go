@@ -21,6 +21,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	proto "github.com/cosmos/gogoproto/proto"
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -318,6 +319,24 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 		t.Fatalf("unexpected transfer response: %+v", transfer)
 	}
 
+	grpcConn, err := grpc.NewClient(ready.GRPCAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial demo-node grpc for packet commitment: %v", err)
+	}
+	defer grpcConn.Close()
+
+	packetCommitment, err := channeltypes.NewQueryClient(grpcConn).PacketCommitment(context.Background(), &channeltypes.QueryPacketCommitmentRequest{
+		PortId:    networked.DemoLocalhostTransferPortID,
+		ChannelId: networked.DemoLocalhostTransferChannelID,
+		Sequence:  1,
+	})
+	if err != nil {
+		t.Fatalf("query packet commitment after transfer initiation: %v", err)
+	}
+	if len(packetCommitment.Commitment) == 0 {
+		t.Fatal("expected packet commitment after transfer initiation")
+	}
+
 	transfersOutput := runGoCommandWithLocalCache(
 		t,
 		repoRoot(t),
@@ -435,12 +454,14 @@ func waitForReadyFileE2E(t *testing.T, path string) {
 func readReadyFileE2E(t *testing.T, path string) struct {
 	RPCAddress      string `json:"rpc_address"`
 	CometRPCAddress string `json:"comet_rpc_address"`
+	GRPCAddress     string `json:"grpc_address"`
 	ABCIAddress     string `json:"abci_address"`
 } {
 	t.Helper()
 	var ready struct {
 		RPCAddress      string `json:"rpc_address"`
 		CometRPCAddress string `json:"comet_rpc_address"`
+		GRPCAddress     string `json:"grpc_address"`
 		ABCIAddress     string `json:"abci_address"`
 	}
 	data, err := os.ReadFile(path)

@@ -9,9 +9,12 @@ import (
 	"sort"
 	"strings"
 
+	sdkmath "cosmossdk.io/math"
 	bridgecli "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/client/cli"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
@@ -312,10 +315,39 @@ func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResu
 }
 
 func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPayload, amount *big.Int) (ibcrouterkeeper.TransferRecord, error) {
+	var (
+		transfer ibcrouterkeeper.TransferRecord
+		err      error
+	)
 	if strings.TrimSpace(payload.RouteID) != "" {
-		return a.app.InitiateIBCTransferWithProfile(payload.RouteID, payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
+		transfer, err = a.app.InitiateIBCTransferWithProfile(payload.RouteID, payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
+	} else {
+		transfer, err = a.app.InitiateIBCTransfer(payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
 	}
-	return a.app.InitiateIBCTransfer(payload.AssetID, amount, payload.Receiver, payload.TimeoutHeight, payload.Memo)
+	if err != nil {
+		return ibcrouterkeeper.TransferRecord{}, err
+	}
+	if a.chainApp == nil {
+		return transfer, nil
+	}
+
+	asset, ok := a.app.RegistryKeeper.GetAsset(payload.AssetID)
+	if !ok {
+		return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("networked ibc asset %q is not registered", payload.AssetID)
+	}
+	_, err = a.chainApp.ExecuteLocalhostTransfer(LocalhostTransferRequest{
+		Coin:          sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(amount)),
+		Receiver:      payload.Receiver,
+		TimeoutHeight: clienttypes.NewHeight(1, payload.TimeoutHeight),
+		Memo:          payload.Memo,
+	})
+	if err != nil {
+		if _, failErr := a.app.FailIBCTransfer(transfer.TransferID, "localhost sdk transfer failed: "+err.Error()); failErr != nil {
+			return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("execute localhost transfer: %w (also failed to mark transfer failed: %v)", err, failErr)
+		}
+		return ibcrouterkeeper.TransferRecord{}, err
+	}
+	return transfer, nil
 }
 
 func transferViewsFromRecords(transfers []ibcrouterkeeper.TransferRecord) []TransferView {

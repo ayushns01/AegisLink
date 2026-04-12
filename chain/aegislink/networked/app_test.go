@@ -1,6 +1,7 @@
 package networked
 
 import (
+	"bytes"
 	"path/filepath"
 	"testing"
 
@@ -310,5 +311,75 @@ func TestBuildChainAppRegistersSDKModuleServicesAndInitializesGenesis(t *testing
 	ctx := app.BaseApp.NewUncachedContext(false, cmtproto.Header{ChainID: "aegislink-networked-1"})
 	if got := app.TransferKeeper.GetPort(ctx); got != transfertypes.PortID {
 		t.Fatalf("expected initialized transfer port %q, got %q", transfertypes.PortID, got)
+	}
+}
+
+func TestChainAppExecuteLocalhostTransferCreatesPacketCommitment(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	sender := sdk.AccAddress(bytes.Repeat([]byte{0x11}, 20))
+	coin := sdk.NewInt64Coin("ueth", 1_000_000)
+
+	result, err := app.ExecuteLocalhostTransfer(LocalhostTransferRequest{
+		Sender:        sender.String(),
+		Coin:          coin,
+		Receiver:      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+		TimeoutHeight: clienttypes.NewHeight(1, 50),
+		Memo:          "localhost-demo",
+	})
+	if err != nil {
+		t.Fatalf("execute localhost transfer: %v", err)
+	}
+
+	if result.PortID != transfertypes.PortID {
+		t.Fatalf("expected source port %q, got %q", transfertypes.PortID, result.PortID)
+	}
+	if result.ChannelID == "" {
+		t.Fatal("expected localhost transfer channel id")
+	}
+	if result.Sequence != 1 {
+		t.Fatalf("expected first localhost packet sequence 1, got %d", result.Sequence)
+	}
+	if len(result.PacketCommitment) == 0 {
+		t.Fatal("expected packet commitment to be recorded")
+	}
+
+	ctx := app.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: app.AppConfig.ChainID,
+		Height:  app.BaseApp.LastBlockHeight(),
+	})
+	nextSeq, found := app.IBCKeeper.ChannelKeeper.GetNextSequenceSend(ctx, result.PortID, result.ChannelID)
+	if !found {
+		t.Fatalf("expected next send sequence for %s/%s", result.PortID, result.ChannelID)
+	}
+	if nextSeq != 2 {
+		t.Fatalf("expected next send sequence 2, got %d", nextSeq)
+	}
+
+	commitment := app.IBCKeeper.ChannelKeeper.GetPacketCommitment(ctx, result.PortID, result.ChannelID, result.Sequence)
+	if len(commitment) == 0 {
+		t.Fatal("expected stored packet commitment")
+	}
+	if !bytes.Equal(commitment, result.PacketCommitment) {
+		t.Fatalf("expected stored packet commitment %X, got %X", result.PacketCommitment, commitment)
 	}
 }
