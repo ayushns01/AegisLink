@@ -97,8 +97,20 @@ describe("App", () => {
     await user.click(screen.getByRole("menuitem", { name: /transfer/i }));
 
     expect(
+      screen.getByRole("heading", { name: /^transfer$/i }).closest(".landing-transfer-card"),
+    ).toHaveClass("landing-transfer-card--compact");
+    expect(
       screen.getByRole("heading", { name: /^transfer$/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/osmosis testnet/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: /connect ethereum to the cosmos ecosystem/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/ethereum to cosmos bridge surface/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/sepolia source/i)).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TransferPage } from "./TransferPage";
@@ -50,11 +50,43 @@ describe("TransferPage", () => {
     seedConnectedWallet();
     render(<TransferPage />);
 
-    expect(screen.getByRole("button", { name: /osmosis testnet/i })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(
+      screen.getByText(/osmosis testnet \(osmo\)/i),
+    ).toHaveClass("destination-trigger__label--active");
+    expect(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis testnet \(osmo\)/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows mainnet and testnet destination options in the dropdown", async () => {
+    seedConnectedWallet();
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis testnet \(osmo\)/i,
+      }),
     );
-    expect(screen.getByRole("button", { name: /cosmos hub/i })).toBeDisabled();
+
+    expect(screen.getByRole("menuitem", { name: /osmosis testnet \(osmo\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /osmosis mainnet \(osmo\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /celestia mainnet \(tia\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /celestia mocha testnet \(tia\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /injective mainnet \(inj\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /injective testnet \(inj\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /dydx mainnet \(dydx\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /dydx testnet \(dydx\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /akash mainnet \(akt\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /akash sandbox \(akt\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menu")).toHaveClass("destination-menu--scrollable");
+    expect(
+      within(
+        screen.getByRole("menuitem", { name: /osmosis testnet \(osmo\)/i }),
+      ).getByText(/osmosis testnet \(osmo\)/i),
+    ).toHaveClass("destination-option__title--active");
   });
 
   it("updates the transfer form inputs and validates the osmosis recipient", async () => {

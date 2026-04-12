@@ -123,7 +123,8 @@ button {
 }
 
 .hero--with-card {
-  padding-bottom: 88px;
+  padding-top: 24px;
+  padding-bottom: 36px;
 }
 
 .eyebrow {
@@ -171,6 +172,11 @@ button {
 .landing-transfer-card {
   width: min(100%, 620px);
   margin-top: 42px;
+}
+
+.landing-transfer-card--compact {
+  width: min(100%, 520px);
+  margin-top: 24px;
 }
 
 .page--app {
@@ -247,6 +253,59 @@ button {
 
 .page--landing .transfer-card {
   text-align: left;
+  padding: 20px;
+  border-radius: 28px;
+}
+
+.page--landing .transfer-card__header {
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.page--landing .transfer-card h2 {
+  font-size: 22px;
+}
+
+.page--landing .field-grid {
+  gap: 10px;
+}
+
+.page--landing .field-card {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.page--landing .field-card small,
+.page--landing .field-label {
+  margin-bottom: 8px;
+}
+
+.page--landing .field-input-wrap {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
+.page--landing .field-input--amount {
+  font-size: 30px;
+}
+
+.page--landing .field-input--recipient {
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.page--landing .wallet-chip {
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
+.page--landing .primary-cta {
+  margin-top: 12px;
+  padding: 14px 16px;
+}
+
+.page--landing .destination-menu--scrollable {
+  max-height: 240px;
 }
 
 .transfer-card__header {
@@ -268,7 +327,7 @@ button {
 }
 
 .transfer-card__copy,
-.field-card span {
+.field-helper {
   margin: 0;
   color: var(--surface-light-muted);
   line-height: 1.6;
@@ -377,12 +436,12 @@ button {
   color: rgba(9, 9, 11, 0.52);
 }
 
-.chain-list {
-  display: grid;
-  gap: 10px;
+.destination-picker {
+  position: relative;
 }
 
-.chain-row {
+.destination-trigger,
+.destination-option {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -394,45 +453,110 @@ button {
   text-align: left;
 }
 
-.chain-row--active {
+.destination-trigger {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+}
+
+.destination-trigger__label {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.destination-trigger__label--active {
+  color: var(--text);
+}
+
+.destination-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: min(100%, 360px);
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(9, 9, 11, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 10px;
+  box-shadow: 0 18px 40px rgba(9, 9, 11, 0.12);
+  z-index: 4;
+}
+
+.destination-menu--scrollable {
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.destination-option--active,
+.destination-trigger {
   background: var(--panel-strong);
   border-color: var(--panel-strong);
   color: var(--text);
 }
 
-.chain-row:disabled {
+.destination-option {
+  width: 100%;
+  color: var(--surface-light-text);
+}
+
+.destination-option:disabled {
   cursor: not-allowed;
-  opacity: 0.78;
+  opacity: 1;
 }
 
-.chain-row strong {
-  font-size: 15px;
-  margin-bottom: 4px;
+.destination-trigger strong,
+.destination-option strong {
+  font-size: 14px;
+  margin-bottom: 3px;
 }
 
-.chain-row div span {
+.destination-option--active .destination-option__title,
+.destination-option__title--active {
+  color: #f5f5f7 !important;
+  -webkit-text-fill-color: #f5f5f7 !important;
+  opacity: 1;
+}
+
+.destination-trigger div span,
+.destination-option div span {
   color: var(--surface-light-muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.chain-row--active div span {
+.destination-trigger div span,
+.destination-option--active div span {
   color: rgba(255, 255, 255, 0.68);
 }
 
-.chain-row em {
+.destination-trigger em,
+.destination-option em {
   border: 1px solid rgba(9, 9, 11, 0.12);
   border-radius: 999px;
   font-style: normal;
   padding: 7px 10px;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(9, 9, 11, 0.6);
 }
 
-.chain-row--active em {
+.destination-trigger em,
+.destination-option--active em {
   border-color: rgba(255, 255, 255, 0.2);
   color: var(--text);
+}
+
+.destination-option:not(.destination-option--active) strong {
+  color: var(--surface-light-text);
+}
+
+.destination-option:not(.destination-option--active) em {
+  color: rgba(9, 9, 11, 0.58);
+  border-color: rgba(9, 9, 11, 0.12);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .recipient-preview {

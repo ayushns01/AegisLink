@@ -9,7 +9,8 @@ import { ProgressPanel } from "./ProgressPanel";
 
 type Destination = {
   id: string;
-  name: string;
+  label: string;
+  symbol: string;
   helper: string;
   enabled: boolean;
   prefix: string;
@@ -17,18 +18,84 @@ type Destination = {
 
 const destinations: Destination[] = [
   {
-    id: "osmosis-testnet",
-    name: "Osmosis Testnet",
+    id: "osmosis-testnet-osmo",
+    label: "Osmosis Testnet (OSMO)",
+    symbol: "OSMO",
     helper: "Live route available now",
     enabled: true,
     prefix: "osmo1",
   },
   {
-    id: "cosmos-hub",
-    name: "Cosmos Hub",
-    helper: "Visible destination, route not live yet",
+    id: "osmosis-mainnet-osmo",
+    label: "Osmosis Mainnet (OSMO)",
+    symbol: "OSMO",
+    helper: "Coming soon",
     enabled: false,
-    prefix: "cosmos1",
+    prefix: "osmo1",
+  },
+  {
+    id: "celestia-mainnet-tia",
+    label: "Celestia Mainnet (TIA)",
+    symbol: "TIA",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "celestia1",
+  },
+  {
+    id: "celestia-mocha-testnet-tia",
+    label: "Celestia Mocha Testnet (TIA)",
+    symbol: "TIA",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "celestia1",
+  },
+  {
+    id: "injective-mainnet-inj",
+    label: "Injective Mainnet (INJ)",
+    symbol: "INJ",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "inj1",
+  },
+  {
+    id: "injective-testnet-inj",
+    label: "Injective Testnet (INJ)",
+    symbol: "INJ",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "inj1",
+  },
+  {
+    id: "dydx-mainnet-dydx",
+    label: "dYdX Mainnet (DYDX)",
+    symbol: "DYDX",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "dydx1",
+  },
+  {
+    id: "dydx-testnet-dydx",
+    label: "dYdX Testnet (DYDX)",
+    symbol: "DYDX",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "dydx1",
+  },
+  {
+    id: "akash-mainnet-akt",
+    label: "Akash Mainnet (AKT)",
+    symbol: "AKT",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "akash1",
+  },
+  {
+    id: "akash-sandbox-akt",
+    label: "Akash Sandbox (AKT)",
+    symbol: "AKT",
+    helper: "Coming soon",
+    enabled: false,
+    prefix: "akash1",
   },
 ];
 
@@ -39,10 +106,15 @@ export function TransferPage() {
   const [recipient, setRecipient] = useState(
     "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
   );
+  const [selectedDestinationId, setSelectedDestinationId] = useState(
+    () => destinations.find((destination) => destination.enabled)?.id ?? destinations[0].id,
+  );
+  const [isDestinationMenuOpen, setIsDestinationMenuOpen] = useState(false);
   const [session, setSession] = useState<BridgeSession | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const destination = destinations[0];
+  const destination =
+    destinations.find((entry) => entry.id === selectedDestinationId) ?? destinations[0];
   const recipientIsValid = useMemo(
     () => recipient.startsWith(destination.prefix) && recipient.length > destination.prefix.length + 8,
     [destination.prefix, recipient],
@@ -106,8 +178,8 @@ export function TransferPage() {
           <p className="eyebrow eyebrow--dark">Bridge</p>
           <h2>Transfer</h2>
           <p className="transfer-card__copy">
-            Select a destination chain, enter the matching recipient address,
-            and bridge ETH from the connected Sepolia wallet.
+            Select a supported Cosmos destination, enter the matching recipient
+            address, and bridge ETH from the connected Sepolia wallet.
           </p>
         </div>
         <div className="wallet-chip">
@@ -135,36 +207,67 @@ export function TransferPage() {
             />
             <span className="field-suffix">ETH</span>
           </div>
-          <span>ETH from connected Sepolia wallet</span>
+          <span className="field-helper">ETH from connected Sepolia wallet</span>
         </div>
 
         <div className="field-card">
           <small>Destination chain</small>
-          <div className="chain-list">
+          <div className="destination-picker">
             <button
-              aria-label="Osmosis Testnet"
-              aria-pressed="true"
-              className="chain-row chain-row--active"
+              aria-expanded={isDestinationMenuOpen}
+              aria-haspopup="menu"
+              aria-label={`Destination chain: ${destination.label}`}
+              className="destination-trigger"
+              onClick={() => setIsDestinationMenuOpen((value) => !value)}
               type="button"
             >
-              <div>
-                <strong>Osmosis Testnet</strong>
-                <span>Live route available now</span>
-              </div>
-              <em>Enabled</em>
+              <span className="destination-trigger__label destination-trigger__label--active">
+                {destination.label}
+              </span>
+              <em>{destination.symbol}</em>
             </button>
-            <button
-              aria-label="Cosmos Hub"
-              className="chain-row"
-              disabled
-              type="button"
-            >
-              <div>
-                <strong>Cosmos Hub</strong>
-                <span>Visible destination, route not live yet</span>
+
+            {isDestinationMenuOpen ? (
+              <div className="destination-menu destination-menu--scrollable" role="menu">
+                {destinations.map((option) => (
+                  <button
+                    className={
+                      option.id === destination.id
+                        ? "destination-option destination-option--active"
+                        : "destination-option"
+                    }
+                    disabled={!option.enabled}
+                    key={option.id}
+                    onClick={() => {
+                      if (!option.enabled) {
+                        return;
+                      }
+
+                      setSelectedDestinationId(option.id);
+                      setRecipient("");
+                      setSubmissionError(null);
+                      setIsDestinationMenuOpen(false);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <div>
+                      <strong
+                        className={
+                          option.id === destination.id
+                            ? "destination-option__title destination-option__title--active"
+                            : "destination-option__title"
+                        }
+                      >
+                        {option.label}
+                      </strong>
+                      <span>{option.helper}</span>
+                    </div>
+                    <em>{option.enabled ? "Live" : "Soon"}</em>
+                  </button>
+                ))}
               </div>
-              <em>Soon</em>
-            </button>
+            ) : null}
           </div>
         </div>
 
@@ -179,9 +282,14 @@ export function TransferPage() {
             onChange={(event) => setRecipient(event.target.value)}
             value={recipient}
           />
-          <span>Recipient format adapts to the selected chain.</span>
+          <span className="field-helper">
+            Recipient must match the selected chain prefix. Current route support
+            is live for Osmosis only.
+          </span>
           {!recipientIsValid ? (
-            <p className="field-error">Enter a valid osmo1 recipient.</p>
+            <p className="field-error">
+              Enter a valid {destination.prefix} recipient.
+            </p>
           ) : null}
         </div>
       </div>

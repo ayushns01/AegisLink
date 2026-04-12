@@ -55,24 +55,26 @@ export function LandingPage() {
           activeView === "transfer" ? "hero hero--with-card" : "hero"
         }
       >
-        <p className="eyebrow">Ethereum to Cosmos bridge surface</p>
-        <h1>Connect Ethereum to the Cosmos ecosystem.</h1>
-        <p className="hero-copy">
-          AegisLink gives users one clear bridge action, one premium entry
-          point, and one place to track a transfer from Sepolia through final
-          destination delivery.
-        </p>
-        <div className="hero-meta">
-          <span>Sepolia source</span>
-          <span>Cosmos destinations</span>
-          <span>Transaction visibility</span>
-        </div>
-
         {activeView === "transfer" ? (
-          <div className="landing-transfer-card">
+          <div className="landing-transfer-card landing-transfer-card--compact">
             <TransferPage />
           </div>
-        ) : null}
+        ) : (
+          <>
+            <p className="eyebrow">Ethereum to Cosmos bridge surface</p>
+            <h1>Connect Ethereum to the Cosmos ecosystem.</h1>
+            <p className="hero-copy">
+              AegisLink gives users one clear bridge action, one premium entry
+              point, and one place to track a transfer from Sepolia through final
+              destination delivery.
+            </p>
+            <div className="hero-meta">
+              <span>Sepolia source</span>
+              <span>Cosmos destinations</span>
+              <span>Transaction visibility</span>
+            </div>
+          </>
+        )}
       </section>
     </main>
   );
