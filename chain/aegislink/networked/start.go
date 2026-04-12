@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	abciserver "github.com/cometbft/cometbft/abci/server"
@@ -31,6 +32,7 @@ import (
 	sm "github.com/cometbft/cometbft/state"
 	cmtstore "github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/grpc"
 )
 
@@ -113,7 +115,7 @@ func Start(ctx context.Context, cfg Config) (ReadyState, error) {
 		_ = app.Close()
 		return ReadyState{}, err
 	}
-	cometNode, err := startCometNode(nodeHome, resolved, app)
+	cometNode, err := startCometNode(nodeHome, resolved, app, chainApp)
 	if err != nil {
 		_ = chainApp.Close()
 		_ = abciSvc.Stop()
@@ -261,6 +263,14 @@ func (n DemoNode) serveHTTP(w http.ResponseWriter, r *http.Request, ready ReadyS
 		if err := n.handleInitiateIBCTransfer(w, r); err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
 		}
+	case "/tx/fund-account":
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error":"method not allowed"}`+"\n", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := n.handleFundAccount(w, r); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
+		}
 	default:
 		http.NotFound(w, r)
 	}
@@ -327,6 +337,49 @@ func (n DemoNode) handleInitiateIBCTransfer(w http.ResponseWriter, r *http.Reque
 	return json.NewEncoder(w).Encode(transferJSONResponse(transfer))
 }
 
+func (n DemoNode) handleFundAccount(w http.ResponseWriter, r *http.Request) error {
+	if n.chainApp == nil {
+		return fmt.Errorf("fund account requires chain app")
+	}
+	var payload FundAccountPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		return err
+	}
+	payload, amount, err := decodeFundAccountPayload(payload)
+	if err != nil {
+		return err
+	}
+	txBytes, err := n.chainApp.BuildDemoFaucetSendTx(payload.Address, sdk.NewCoin(payload.Denom, sdkmath.NewIntFromBigInt(amount)))
+	if err != nil {
+		return err
+	}
+	cometClient, err := rpchttp.New("http://"+strings.TrimSpace(n.config.CometRPCAddress), "/websocket")
+	if err != nil {
+		return err
+	}
+	resp, err := cometClient.BroadcastTxCommit(r.Context(), cmttypes.Tx(txBytes))
+	if err != nil {
+		return err
+	}
+	if resp.CheckTx.Code != 0 {
+		return fmt.Errorf("fund account check tx failed: %s", resp.CheckTx.Log)
+	}
+	if resp.TxResult.Code != 0 {
+		return fmt.Errorf("fund account tx failed: %s", resp.TxResult.Log)
+	}
+	if len(resp.TxResult.Data) > 0 {
+		var result FundAccountResult
+		if err := json.Unmarshal(resp.TxResult.Data, &result); err == nil {
+			return json.NewEncoder(w).Encode(result)
+		}
+	}
+	return json.NewEncoder(w).Encode(FundAccountResult{
+		Address: payload.Address,
+		Denom:   payload.Denom,
+		Amount:  amount.String(),
+	})
+}
+
 func transferJSONResponseList(transfers []ibcrouterkeeper.TransferRecord) []map[string]any {
 	items := make([]map[string]any, 0, len(transfers))
 	for _, transfer := range transfers {
@@ -351,8 +404,8 @@ func transferJSONResponse(transfer ibcrouterkeeper.TransferRecord) map[string]an
 	}
 }
 
-func startCometNode(nodeHome CometNodeHome, cfg Config, app *aegisapp.App) (*cmtnode.Node, error) {
-	if err := bootstrapCometState(nodeHome, app); err != nil {
+func startCometNode(nodeHome CometNodeHome, cfg Config, app *aegisapp.App, chainApp *ChainApp) (*cmtnode.Node, error) {
+	if err := bootstrapCometState(nodeHome, app, chainApp); err != nil {
 		return nil, err
 	}
 
@@ -369,7 +422,7 @@ func startCometNode(nodeHome CometNodeHome, cfg Config, app *aegisapp.App) (*cmt
 		cmtnode.DefaultGenesisDocProviderFunc(nodeHome.Config),
 		cmtcfg.DefaultDBProvider,
 		cmtnode.DefaultMetricsProvider(nodeHome.Config.Instrumentation),
-		cmtlog.NewNopLogger(),
+		cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stderr)),
 	)
 	if err != nil {
 		return nil, err
@@ -384,13 +437,29 @@ func startCometNode(nodeHome CometNodeHome, cfg Config, app *aegisapp.App) (*cmt
 	return cometNode, nil
 }
 
-func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App) error {
-	if app == nil {
+func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App, chainApp *ChainApp) error {
+	if app == nil && chainApp == nil {
 		return nil
 	}
 
-	status := app.Status()
-	if status.CurrentHeight == 0 {
+	currentHeight := uint64(0)
+	appHash := []byte(nil)
+	if chainApp != nil && chainApp.BaseApp != nil {
+		currentHeight = uint64(chainApp.BaseApp.LastBlockHeight())
+		appHash = append([]byte(nil), chainApp.BaseApp.LastCommitID().Hash...)
+	}
+	if currentHeight == 0 && app != nil {
+		status := app.Status()
+		currentHeight = status.CurrentHeight
+		if currentHeight > 0 {
+			var err error
+			appHash, err = hashABCIStatus(status)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if currentHeight == 0 {
 		return nil
 	}
 	blockStoreDB, err := cmtcfg.DefaultDBProvider(&cmtcfg.DBContext{ID: "blockstore", Config: nodeHome.Config})
@@ -420,43 +489,44 @@ func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App) error {
 		return nil
 	}
 
-	appHash, err := hashABCIStatus(status)
-	if err != nil {
-		return err
-	}
 	genesisState, err := sm.MakeGenesisStateFromFile(nodeHome.Config.GenesisFile())
 	if err != nil {
 		return err
 	}
-	genesisState.LastBlockHeight = int64(status.CurrentHeight)
-	genesisState.LastBlockTime = time.Now().UTC()
+	seededBlockTime := time.Now().UTC().Add(-1 * time.Second)
+	seededCommitTime := seededBlockTime.Add(1 * time.Second)
+	genesisState.LastBlockTime = seededBlockTime
 	genesisState.LastValidators = genesisState.Validators.Copy()
 	genesisState.AppHash = appHash
-	lastBlockID := cmttypes.BlockID{
-		Hash: appHash,
-		PartSetHeader: cmttypes.PartSetHeader{
-			Total: 1,
-			Hash:  appHash,
-		},
-	}
-	genesisState.LastBlockID = lastBlockID
-	if err := stateStore.Bootstrap(genesisState); err != nil {
-		return err
-	}
-	if genesisState.LastBlockHeight > 0 && blockStore.LoadSeenCommit(genesisState.LastBlockHeight) == nil {
+	var (
+		commit *cmttypes.Commit
+		block  *cmttypes.Block
+	)
+	if currentHeight > 0 {
 		filePV := privval.LoadFilePV(nodeHome.Config.PrivValidatorKeyFile(), nodeHome.Config.PrivValidatorStateFile())
 		signatures := make([]cmttypes.CommitSig, len(genesisState.LastValidators.Validators))
 		for idx := range signatures {
 			signatures[idx] = cmttypes.NewCommitSigAbsent()
 		}
 		validatorIdx, _ := genesisState.LastValidators.GetByAddress(filePV.GetAddress())
+		block = genesisState.MakeBlock(int64(currentHeight), nil, &cmttypes.Commit{}, nil, filePV.GetAddress())
+		partSet, err := block.MakePartSet(cmttypes.BlockPartSizeBytes)
+		if err != nil {
+			return err
+		}
+		blockID := cmttypes.BlockID{
+			Hash:          block.Hash(),
+			PartSetHeader: partSet.Header(),
+		}
 		if validatorIdx >= 0 {
 			vote := &cmtproto.Vote{
 				Type:             cmtproto.PrecommitType,
-				Height:           genesisState.LastBlockHeight,
+				Height:           int64(currentHeight),
 				Round:            0,
-				BlockID:          lastBlockID.ToProto(),
-				Timestamp:        genesisState.LastBlockTime,
+				BlockID:          blockID.ToProto(),
+				// Height currentHeight+1 uses the previous commit's median time, so the
+				// fabricated commit must be strictly later than the seeded last block.
+				Timestamp:        seededCommitTime,
 				ValidatorAddress: filePV.GetAddress(),
 				ValidatorIndex:   int32(validatorIdx),
 			}
@@ -469,15 +539,24 @@ func bootstrapCometState(nodeHome CometNodeHome, app *aegisapp.App) error {
 			}
 			signatures[validatorIdx] = signedVote.CommitSig()
 		}
-		commit := &cmttypes.Commit{
-			Height:     genesisState.LastBlockHeight,
+		commit = &cmttypes.Commit{
+			Height:     int64(currentHeight),
 			Round:      0,
-			BlockID:    lastBlockID,
+			BlockID:    blockID,
 			Signatures: signatures,
 		}
-		if err := blockStore.SaveSeenCommit(genesisState.LastBlockHeight, commit); err != nil {
+		genesisState.LastBlockHeight = int64(currentHeight)
+		genesisState.LastBlockID = blockID
+	}
+	if err := stateStore.Bootstrap(genesisState); err != nil {
+		return err
+	}
+	if block != nil && commit != nil && blockStore.Height() < int64(currentHeight) {
+		partSet, err := block.MakePartSet(cmttypes.BlockPartSizeBytes)
+		if err != nil {
 			return err
 		}
+		blockStore.SaveBlock(block, partSet, commit)
 	}
 	return stateStore.SetOfflineStateSyncHeight(genesisState.LastBlockHeight)
 }

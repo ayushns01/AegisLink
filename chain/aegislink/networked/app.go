@@ -18,21 +18,28 @@ import (
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
+	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	addresscodec "github.com/cosmos/cosmos-sdk/codec/address"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/std"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	txsigning "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authmodule "github.com/cosmos/cosmos-sdk/x/auth"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bankmodule "github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	stakingmodule "github.com/cosmos/cosmos-sdk/x/staking"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/gogoproto/proto"
 	transfermodule "github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	transferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
@@ -43,6 +50,7 @@ import (
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
+	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 )
@@ -61,6 +69,7 @@ type ChainApp struct {
 	BasicModuleManager module.BasicManager
 	AccountKeeper      authkeeper.AccountKeeper
 	BankKeeper         bankkeeper.BaseKeeper
+	StakingKeeper      *stakingkeeper.Keeper
 	Authority          string
 	UpgradeKeeper      *upgradekeeper.Keeper
 	IBCKeeper          *ibckeeper.Keeper
@@ -69,12 +78,14 @@ type ChainApp struct {
 	TransferModule     transfermodule.AppModule
 	ModuleManager      *module.Manager
 	Configurator       module.Configurator
+	DefaultGenesisJSON map[string]json.RawMessage
 }
 
 const (
 	DemoLocalhostTransferPortID              = transfertypes.PortID
 	DemoLocalhostTransferChannelID           = "channel-0"
 	DemoLocalhostTransferCounterpartyChannel = "channel-1"
+	demoFaucetSecret                         = "aegislink-demo-faucet"
 )
 
 type LocalhostTransferRequest struct {
@@ -96,6 +107,12 @@ type LocalhostTransferResult struct {
 	CounterpartyChannelID string
 	Sequence              uint64
 	PacketCommitment      []byte
+}
+
+type FundAccountResult struct {
+	Address string
+	Denom   string
+	Amount  string
 }
 
 func NewChainApp(cfg Config) (*ChainApp, error) {
@@ -122,10 +139,14 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		return nil, fmt.Errorf("build interface registry: %w", err)
 	}
 	protoCodec := codec.NewProtoCodec(interfaceRegistry)
+	std.RegisterLegacyAminoCodec(legacyAmino)
+	std.RegisterInterfaces(interfaceRegistry)
 	basicModuleManager := module.NewBasicManager(
 		authmodule.AppModuleBasic{},
 		bankmodule.AppModuleBasic{},
+		stakingmodule.AppModuleBasic{},
 		ibcmodule.AppModuleBasic{},
+		ibctm.AppModuleBasic{},
 		transfermodule.AppModuleBasic{},
 	)
 	basicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
@@ -156,7 +177,9 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 	base.MountStores(mountKeys...)
 
 	moduleAccountPermissions := map[string][]string{
-		transfertypes.ModuleName: {authtypes.Minter, authtypes.Burner},
+		transfertypes.ModuleName:       {authtypes.Minter, authtypes.Burner},
+		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
+		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 	}
 	accountKeeper := authkeeper.NewAccountKeeper(
 		protoCodec,
@@ -175,6 +198,15 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		authority,
 		logger,
 	)
+	stakingKeeper := stakingkeeper.NewKeeper(
+		protoCodec,
+		runtime.NewKVStoreService(storeKeys[stakingtypes.StoreKey]),
+		accountKeeper,
+		bankKeeper,
+		authority,
+		addresscodec.NewBech32Codec("cosmosvaloper"),
+		addresscodec.NewBech32Codec("cosmosvalcons"),
+	)
 
 	upgradeKeeper := upgradekeeper.NewKeeper(
 		map[int64]bool{},
@@ -191,6 +223,8 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		upgradeKeeper,
 		authority,
 	)
+	tmLightClientModule := ibctm.NewLightClientModule(protoCodec, ibcKeeper.ClientKeeper.GetStoreProvider())
+	ibcKeeper.ClientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
 	ibcModule := ibcmodule.NewAppModule(ibcKeeper)
 	transferKeeper := transferkeeper.NewKeeper(
 		protoCodec,
@@ -210,41 +244,52 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 	transferModule := transfermodule.NewAppModule(transferKeeper)
 	authAppModule := authmodule.NewAppModule(protoCodec, accountKeeper, nil, nil)
 	bankAppModule := bankmodule.NewAppModule(protoCodec, bankKeeper, accountKeeper, nil)
+	stakingAppModule := stakingmodule.NewAppModule(protoCodec, stakingKeeper, accountKeeper, bankKeeper, nil)
 	moduleManager := module.NewManager(
 		authAppModule,
 		bankAppModule,
+		stakingAppModule,
 		ibcModule,
 		transferModule,
 	)
 	moduleManager.SetOrderInitGenesis(
 		authtypes.ModuleName,
 		banktypes.ModuleName,
+		stakingtypes.ModuleName,
 		ibcexported.ModuleName,
 		transfertypes.ModuleName,
 	)
 	moduleManager.SetOrderBeginBlockers(
 		authtypes.ModuleName,
 		banktypes.ModuleName,
+		stakingtypes.ModuleName,
 		ibcexported.ModuleName,
 		transfertypes.ModuleName,
 	)
 	moduleManager.SetOrderEndBlockers(
 		authtypes.ModuleName,
 		banktypes.ModuleName,
+		stakingtypes.ModuleName,
 		ibcexported.ModuleName,
 		transfertypes.ModuleName,
 	)
+
+	defaultGenesisState, err := withDemoFaucetGenesis(protoCodec, basicModuleManager.DefaultGenesis(protoCodec))
+	if err != nil {
+		return nil, fmt.Errorf("prepare default genesis: %w", err)
+	}
 
 	configurator := module.NewConfigurator(protoCodec, base.MsgServiceRouter(), base.GRPCQueryRouter())
 	if err := moduleManager.RegisterServices(configurator); err != nil {
 		return nil, fmt.Errorf("register module services: %w", err)
 	}
+	authtx.RegisterTxService(base.GRPCQueryRouter(), client.Context{}, base.Simulate, interfaceRegistry)
 	if err := configurator.Error(); err != nil {
 		return nil, fmt.Errorf("configure module services: %w", err)
 	}
 
 	base.SetInitChainer(func(ctx sdk.Context, req *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
-		genesisState := basicModuleManager.DefaultGenesis(protoCodec)
+		genesisState := copyGenesisState(defaultGenesisState)
 		if len(req.AppStateBytes) > 0 {
 			if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
 				return nil, fmt.Errorf("decode app state bytes: %w", err)
@@ -265,8 +310,7 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 	if err := base.LoadLatestVersion(); err != nil {
 		return nil, fmt.Errorf("load latest baseapp version: %w", err)
 	}
-	defaultGenesisState := basicModuleManager.DefaultGenesis(protoCodec)
-	if err := bootstrapDefaultModuleState(base, moduleManager, protoCodec, defaultGenesisState, appCfg.ChainID); err != nil {
+	if err := bootstrapDefaultModuleState(base, moduleManager, protoCodec, copyGenesisState(defaultGenesisState), appCfg.ChainID); err != nil {
 		return nil, err
 	}
 	if err := bootstrapFirstCommittedBlock(base); err != nil {
@@ -287,6 +331,7 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		BasicModuleManager: basicModuleManager,
 		AccountKeeper:      accountKeeper,
 		BankKeeper:         bankKeeper,
+		StakingKeeper:      stakingKeeper,
 		Authority:          authority,
 		UpgradeKeeper:      upgradeKeeper,
 		IBCKeeper:          ibcKeeper,
@@ -295,6 +340,7 @@ func BuildChainApp(appCfg aegisapp.Config) (*ChainApp, error) {
 		TransferModule:     transferModule,
 		ModuleManager:      moduleManager,
 		Configurator:       configurator,
+		DefaultGenesisJSON: copyGenesisState(defaultGenesisState),
 	}, nil
 }
 
@@ -319,10 +365,13 @@ func (a *ChainApp) SortedStoreKeyNames() []string {
 }
 
 func (a *ChainApp) DefaultGenesis() map[string]json.RawMessage {
-	if a == nil || a.BasicModuleManager == nil || a.Codec == nil {
+	if a == nil {
 		return nil
 	}
-	return a.BasicModuleManager.DefaultGenesis(a.Codec)
+	if len(a.DefaultGenesisJSON) == 0 {
+		return nil
+	}
+	return copyGenesisState(a.DefaultGenesisJSON)
 }
 
 func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (LocalhostTransferResult, error) {
@@ -415,6 +464,131 @@ func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (Local
 	}, nil
 }
 
+func (a *ChainApp) FundAccount(address string, coin sdk.Coin) error {
+	if a == nil || a.BaseApp == nil {
+		return fmt.Errorf("chain app is not initialized")
+	}
+	if strings.TrimSpace(address) == "" {
+		return fmt.Errorf("missing funded account address")
+	}
+	if err := coin.Validate(); err != nil {
+		return fmt.Errorf("invalid funded coin: %w", err)
+	}
+	if !coin.IsPositive() {
+		return fmt.Errorf("funded amount must be positive")
+	}
+
+	addressBytes, err := a.AccountKeeper.AddressCodec().StringToBytes(strings.TrimSpace(address))
+	if err != nil {
+		return fmt.Errorf("decode funded account address: %w", err)
+	}
+
+	headerHeight := a.BaseApp.LastBlockHeight()
+	if headerHeight <= 0 {
+		headerHeight = 1
+	}
+	ctx := a.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: a.AppConfig.ChainID,
+		Height:  headerHeight,
+		Time:    time.Now().UTC(),
+	})
+	if err := a.ensureTransferSenderBalance(ctx, sdk.AccAddress(addressBytes), coin); err != nil {
+		return fmt.Errorf("ensure funded account balance: %w", err)
+	}
+	a.MultiStore.Commit()
+
+	if _, err := a.BaseApp.FinalizeBlock(&abcitypes.RequestFinalizeBlock{
+		Height: a.BaseApp.LastBlockHeight() + 1,
+		Hash:   a.BaseApp.LastCommitID().Hash,
+		Time:   time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("finalize funding block: %w", err)
+	}
+	if _, err := a.BaseApp.Commit(); err != nil {
+		return fmt.Errorf("commit funding block: %w", err)
+	}
+
+	return nil
+}
+
+func (a *ChainApp) BuildDemoFaucetSendTx(address string, coin sdk.Coin) ([]byte, error) {
+	if a == nil || a.BaseApp == nil {
+		return nil, fmt.Errorf("chain app is not initialized")
+	}
+	if strings.TrimSpace(address) == "" {
+		return nil, fmt.Errorf("missing funded account address")
+	}
+	if err := coin.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid funded coin: %w", err)
+	}
+	if !coin.IsPositive() {
+		return nil, fmt.Errorf("funded amount must be positive")
+	}
+
+	faucetPrivKey := demoFaucetPrivKey()
+	faucetAddress := sdk.AccAddress(faucetPrivKey.PubKey().Address())
+	ctx := a.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: a.AppConfig.ChainID,
+		Height:  a.BaseApp.LastBlockHeight(),
+		Time:    time.Now().UTC(),
+	})
+	account := a.AccountKeeper.GetAccount(ctx, faucetAddress)
+	if account == nil {
+		return nil, fmt.Errorf("demo faucet account %s is not initialized", faucetAddress.String())
+	}
+
+	txBuilder := a.TxConfig.NewTxBuilder()
+	txBuilder.SetFeeAmount(sdk.NewCoins())
+	txBuilder.SetGasLimit(200_000)
+	if err := txBuilder.SetMsgs(&banktypes.MsgSend{
+		FromAddress: faucetAddress.String(),
+		ToAddress:   strings.TrimSpace(address),
+		Amount:      sdk.NewCoins(coin),
+	}); err != nil {
+		return nil, fmt.Errorf("set demo faucet send msg: %w", err)
+	}
+
+	signMode := txsigning.SignMode_SIGN_MODE_DIRECT
+	placeholderSig := txsigning.SignatureV2{
+		PubKey: faucetPrivKey.PubKey(),
+		Data: &txsigning.SingleSignatureData{
+			SignMode:  signMode,
+			Signature: nil,
+		},
+		Sequence: account.GetSequence(),
+	}
+	if err := txBuilder.SetSignatures(placeholderSig); err != nil {
+		return nil, fmt.Errorf("set demo faucet placeholder signature: %w", err)
+	}
+
+	signerData := authsigning.SignerData{
+		ChainID:       a.AppConfig.ChainID,
+		AccountNumber: account.GetAccountNumber(),
+		Sequence:      account.GetSequence(),
+		PubKey:        faucetPrivKey.PubKey(),
+	}
+	signedSig, err := clienttx.SignWithPrivKey(
+		ctx.Context(),
+		signMode,
+		signerData,
+		txBuilder,
+		faucetPrivKey,
+		a.TxConfig,
+		account.GetSequence(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sign demo faucet send tx: %w", err)
+	}
+	if err := txBuilder.SetSignatures(signedSig); err != nil {
+		return nil, fmt.Errorf("set demo faucet signature: %w", err)
+	}
+	txBytes, err := a.TxConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		return nil, fmt.Errorf("encode demo faucet send tx: %w", err)
+	}
+	return txBytes, nil
+}
+
 func networkedStoreKeyNames(moduleNames []string) []string {
 	seen := map[string]struct{}{}
 	keys := make([]string, 0, len(moduleNames)+5)
@@ -433,11 +607,85 @@ func networkedStoreKeyNames(moduleNames []string) []string {
 	for _, name := range moduleNames {
 		appendKey(name)
 	}
-	for _, name := range []string{"auth", authtypes.StoreKey, "bank", "capability", "ibc", "transfer", upgradetypes.StoreKey} {
+	for _, name := range []string{"auth", authtypes.StoreKey, "bank", stakingtypes.StoreKey, "capability", "ibc", "transfer", upgradetypes.StoreKey} {
 		appendKey(name)
 	}
 
 	return keys
+}
+
+func copyGenesisState(genesisState map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(genesisState) == 0 {
+		return nil
+	}
+	cloned := make(map[string]json.RawMessage, len(genesisState))
+	for moduleName, raw := range genesisState {
+		cloned[moduleName] = append(json.RawMessage(nil), raw...)
+	}
+	return cloned
+}
+
+func withDemoFaucetGenesis(cdc codec.Codec, genesisState map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	enriched := copyGenesisState(genesisState)
+	faucetPrivKey := demoFaucetPrivKey()
+	faucetAddress := sdk.AccAddress(faucetPrivKey.PubKey().Address())
+
+	authGenesis := authtypes.GetGenesisStateFromAppState(cdc, enriched)
+	genAccounts, err := authtypes.UnpackAccounts(authGenesis.Accounts)
+	if err != nil {
+		return nil, fmt.Errorf("unpack auth genesis accounts: %w", err)
+	}
+	if !containsGenesisAccount(genAccounts, faucetAddress.String()) {
+		genAccounts = append(genAccounts, authtypes.NewBaseAccount(faucetAddress, faucetPrivKey.PubKey(), 0, 0))
+	}
+	authGenesis = *authtypes.NewGenesisState(authGenesis.Params, genAccounts)
+	authJSON, err := cdc.MarshalJSON(&authGenesis)
+	if err != nil {
+		return nil, fmt.Errorf("marshal auth genesis: %w", err)
+	}
+	enriched[authtypes.ModuleName] = authJSON
+
+	bankGenesis := banktypes.GetGenesisStateFromAppState(cdc, enriched)
+	faucetCoins := sdk.NewCoins(
+		sdk.NewInt64Coin(sdk.DefaultBondDenom, 1_000_000_000_000),
+		sdk.NewInt64Coin("ueth", 1_000_000_000_000),
+	)
+	if !containsBalanceEntry(bankGenesis.Balances, faucetAddress.String()) {
+		bankGenesis.Balances = append(bankGenesis.Balances, banktypes.Balance{
+			Address: faucetAddress.String(),
+			Coins:   faucetCoins,
+		})
+		bankGenesis.Supply = bankGenesis.Supply.Add(faucetCoins...)
+	}
+	bankJSON, err := cdc.MarshalJSON(bankGenesis)
+	if err != nil {
+		return nil, fmt.Errorf("marshal bank genesis: %w", err)
+	}
+	enriched[banktypes.ModuleName] = bankJSON
+
+	return enriched, nil
+}
+
+func containsGenesisAccount(accounts authtypes.GenesisAccounts, address string) bool {
+	for _, account := range accounts {
+		if account.GetAddress().String() == address {
+			return true
+		}
+	}
+	return false
+}
+
+func containsBalanceEntry(balances []banktypes.Balance, address string) bool {
+	for _, balance := range balances {
+		if balance.Address == address {
+			return true
+		}
+	}
+	return false
+}
+
+func demoFaucetPrivKey() *secp256k1.PrivKey {
+	return secp256k1.GenPrivKeyFromSecret([]byte(demoFaucetSecret))
 }
 
 type noopIBCParamSubspace struct{}

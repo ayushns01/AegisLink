@@ -7,9 +7,12 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -63,6 +66,7 @@ func TestNewChainAppBuildsBaseAppAndMountsCoreStoreKeys(t *testing.T) {
 	expectedKeys := []string{
 		"auth",
 		"bank",
+		"staking",
 		"bridge",
 		"registry",
 		"limits",
@@ -114,6 +118,7 @@ func TestBuildChainAppRegistersIBCModuleBasicsAndDefaultGenesis(t *testing.T) {
 	for _, moduleName := range []string{
 		authtypes.ModuleName,
 		banktypes.ModuleName,
+		stakingtypes.ModuleName,
 		ibcexported.ModuleName,
 		transfertypes.ModuleName,
 	} {
@@ -216,6 +221,51 @@ func TestBuildChainAppConstructsSDKAccountAndBankKeepers(t *testing.T) {
 	if moduleAddr := app.AccountKeeper.GetModuleAddress(transfertypes.ModuleName); moduleAddr == nil {
 		t.Fatalf("expected transfer module address to be derived from auth keeper permissions")
 	}
+	if moduleAddr := app.AccountKeeper.GetModuleAddress(stakingtypes.BondedPoolName); moduleAddr == nil {
+		t.Fatalf("expected bonded staking pool module address to be derived from auth keeper permissions")
+	}
+	if moduleAddr := app.AccountKeeper.GetModuleAddress(stakingtypes.NotBondedPoolName); moduleAddr == nil {
+		t.Fatalf("expected not bonded staking pool module address to be derived from auth keeper permissions")
+	}
+}
+
+func TestBuildChainAppConstructsStakingKeeperAndDefaultParams(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	if app.StakingKeeper == nil {
+		t.Fatal("expected staking keeper to be initialized")
+	}
+
+	ctx := app.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: app.AppConfig.ChainID,
+		Height:  app.BaseApp.LastBlockHeight(),
+	})
+	params, err := app.StakingKeeper.GetParams(ctx)
+	if err != nil {
+		t.Fatalf("get staking params: %v", err)
+	}
+	if params.UnbondingTime <= 0 {
+		t.Fatalf("expected positive staking unbonding time, got %+v", params)
+	}
 }
 
 func TestBuildChainAppConstructsTransferKeeperAndSealsIBCRouter(t *testing.T) {
@@ -314,6 +364,86 @@ func TestBuildChainAppRegistersSDKModuleServicesAndInitializesGenesis(t *testing
 	}
 }
 
+func TestBuildChainAppRegistersSDKTxService(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	if handler := app.BaseApp.GRPCQueryRouter().Route("/cosmos.tx.v1beta1.Service/Simulate"); handler == nil {
+		t.Fatal("expected tx simulate service to be registered on the BaseApp gRPC query router")
+	}
+}
+
+func TestBuildChainAppTxDecoderHandlesSecp256k1SignerPubKeys(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	privKey := secp256k1.GenPrivKey()
+	from := sdk.AccAddress(privKey.PubKey().Address()).String()
+
+	txBuilder := app.TxConfig.NewTxBuilder()
+	if err := txBuilder.SetMsgs(&banktypes.MsgSend{
+		FromAddress: from,
+		ToAddress:   "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4",
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("stake", 1)),
+	}); err != nil {
+		t.Fatalf("set bank send msg: %v", err)
+	}
+	if err := txBuilder.SetSignatures(signingtypes.SignatureV2{
+		PubKey: privKey.PubKey(),
+		Data: &signingtypes.SingleSignatureData{
+			SignMode:  signingtypes.SignMode_SIGN_MODE_DIRECT,
+			Signature: []byte("demo-signature"),
+		},
+		Sequence: 0,
+	}); err != nil {
+		t.Fatalf("set signature with secp256k1 pubkey: %v", err)
+	}
+
+	txBytes, err := app.TxConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		t.Fatalf("encode signed tx: %v", err)
+	}
+	if _, err := app.TxConfig.TxDecoder()(txBytes); err != nil {
+		t.Fatalf("decode signed tx with secp256k1 pubkey: %v", err)
+	}
+}
+
 func TestChainAppExecuteLocalhostTransferCreatesPacketCommitment(t *testing.T) {
 	t.Parallel()
 
@@ -381,5 +511,54 @@ func TestChainAppExecuteLocalhostTransferCreatesPacketCommitment(t *testing.T) {
 	}
 	if !bytes.Equal(commitment, result.PacketCommitment) {
 		t.Fatalf("expected stored packet commitment %X, got %X", result.PacketCommitment, commitment)
+	}
+}
+
+func TestChainAppFundAccountCommitsBalance(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	app, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	address, err := app.AccountKeeper.AddressCodec().BytesToString(bytes.Repeat([]byte{0x33}, 20))
+	if err != nil {
+		t.Fatalf("encode test account address: %v", err)
+	}
+	coin := sdk.NewInt64Coin("ueth", 42_000)
+
+	if err := app.FundAccount(address, coin); err != nil {
+		t.Fatalf("fund account: %v", err)
+	}
+
+	ctx := app.BaseApp.NewUncachedContext(false, cmtproto.Header{
+		ChainID: app.AppConfig.ChainID,
+		Height:  app.BaseApp.LastBlockHeight(),
+	})
+	accountBytes, err := app.AccountKeeper.AddressCodec().StringToBytes(address)
+	if err != nil {
+		t.Fatalf("decode funded account address: %v", err)
+	}
+	balance := app.BankKeeper.GetBalance(ctx, sdk.AccAddress(accountBytes), coin.Denom)
+	if !balance.IsEqual(coin) {
+		t.Fatalf("expected funded balance %s, got %s", coin, balance)
+	}
+	if app.BaseApp.LastBlockHeight() < 2 {
+		t.Fatalf("expected baseapp height to advance after funding, got %d", app.BaseApp.LastBlockHeight())
 	}
 }

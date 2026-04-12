@@ -19,6 +19,7 @@ import (
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	proto "github.com/cosmos/gogoproto/proto"
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
@@ -27,8 +28,6 @@ import (
 )
 
 func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
-	t.Parallel()
-
 	homeDir := filepath.Join(t.TempDir(), "ibc-demo-home")
 	bootstrapPublicAegisLinkTestnet(t, homeDir)
 
@@ -102,7 +101,7 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 			t.Fatalf("expected status core store keys to include %q in %+v", key, status.CoreStoreKeys)
 		}
 	}
-	for _, moduleName := range []string{"auth", "bank", "ibc", "transfer"} {
+	for _, moduleName := range []string{"auth", "bank", "staking", "ibc", "transfer"} {
 		if !containsStringE2E(status.SDKGenesisModules, moduleName) {
 			t.Fatalf("expected status sdk genesis modules to include %q in %+v", moduleName, status.SDKGenesisModules)
 		}
@@ -184,6 +183,25 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 		t.Fatalf("expected transfer params in comet response, got %+v", transferParams)
 	}
 
+	stakingReqBz, err := proto.Marshal(&stakingtypes.QueryParamsRequest{})
+	if err != nil {
+		t.Fatalf("marshal staking params request: %v", err)
+	}
+	stakingQuery, err := cometClient.ABCIQuery(context.Background(), "/cosmos.staking.v1beta1.Query/Params", stakingReqBz)
+	if err != nil {
+		t.Fatalf("comet rpc staking params query: %v", err)
+	}
+	if stakingQuery.Response.Code != 0 {
+		t.Fatalf("expected staking params query success, got %+v", stakingQuery.Response)
+	}
+	var stakingParams stakingtypes.QueryParamsResponse
+	if err := proto.Unmarshal(stakingQuery.Response.Value, &stakingParams); err != nil {
+		t.Fatalf("unmarshal staking params response: %v", err)
+	}
+	if stakingParams.Params.UnbondingTime <= 0 {
+		t.Fatalf("expected positive staking unbonding time in comet response, got %+v", stakingParams.Params)
+	}
+
 	grpcConn, err := grpc.DialContext(
 		context.Background(),
 		status.GRPCAddress,
@@ -211,11 +229,50 @@ func TestRealIBCDemoNodeStartsAndExposesEndpoints(t *testing.T) {
 	if transferQueryResp.Params == nil {
 		t.Fatalf("expected transfer params from grpc query, got %+v", transferQueryResp)
 	}
+
+	stakingQueryClient := stakingtypes.NewQueryClient(grpcConn)
+	stakingQueryResp, err := stakingQueryClient.Params(context.Background(), &stakingtypes.QueryParamsRequest{})
+	if err != nil {
+		t.Fatalf("grpc staking params query: %v", err)
+	}
+	if stakingQueryResp.Params.UnbondingTime <= 0 {
+		t.Fatalf("expected positive staking params from grpc query, got %+v", stakingQueryResp.Params)
+	}
+}
+
+func TestRealIBCDemoNodeAdvancesBeyondSeededHeight(t *testing.T) {
+	homeDir := filepath.Join(t.TempDir(), "ibc-demo-home")
+	bootstrapPublicAegisLinkTestnet(t, homeDir)
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startIBCDemoNodeProcess(t, homeDir, readyPath, map[string]string{
+		"AEGISLINK_DEMO_NODE_TICK_INTERVAL_MS": "10",
+	})
+	defer stopIBCDemoNodeProcess(t, cmd, logs)
+
+	ready := readReadyFileE2E(t, readyPath)
+	cometClient, err := rpchttp.New("http://"+ready.CometRPCAddress, "/websocket")
+	if err != nil {
+		t.Fatalf("create comet rpc client: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		status, err := cometClient.Status(context.Background())
+		if err == nil && status.SyncInfo.LatestBlockHeight > 1 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	status, err := cometClient.Status(context.Background())
+	if err != nil {
+		t.Fatalf("final comet rpc status after waiting for height advance: %v", err)
+	}
+	t.Fatalf("expected demo node to advance beyond seeded height 1, got latest height %d", status.SyncInfo.LatestBlockHeight)
 }
 
 func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
-	t.Parallel()
-
 	homeDir := filepath.Join(t.TempDir(), "ibc-demo-home")
 	cfg := initSDKDemoNodeHome(t, homeDir)
 	app, err := aegisapp.LoadWithConfig(cfg)
@@ -385,6 +442,46 @@ func TestRealIBCDemoNodeRemoteWorkflow(t *testing.T) {
 	}
 }
 
+func TestRealIBCDemoNodeFundsSDKAccountOverAdminRPC(t *testing.T) {
+	homeDir := filepath.Join(t.TempDir(), "ibc-demo-home")
+	bootstrapPublicAegisLinkTestnet(t, homeDir)
+
+	readyPath := filepath.Join(t.TempDir(), "demo-node-ready.json")
+	cmd, logs := startIBCDemoNodeProcess(t, homeDir, readyPath, nil)
+	defer stopIBCDemoNodeProcess(t, cmd, logs)
+
+	ready := readReadyFileE2E(t, readyPath)
+	address := testCosmosWalletAddress()
+
+	funded, err := networked.SubmitFundAccount(context.Background(), networked.Config{
+		HomeDir:   homeDir,
+		ReadyFile: readyPath,
+	}, address, "ueth", "42000")
+	if err != nil {
+		t.Fatalf("submit fund account over admin rpc: %v", err)
+	}
+	if funded.Address != address || funded.Denom != "ueth" || funded.Amount != "42000" {
+		t.Fatalf("unexpected funded account response: %+v", funded)
+	}
+
+	grpcConn, err := grpc.NewClient(ready.GRPCAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial demo-node grpc: %v", err)
+	}
+	defer grpcConn.Close()
+
+	balanceResp, err := banktypes.NewQueryClient(grpcConn).Balance(context.Background(), &banktypes.QueryBalanceRequest{
+		Address: address,
+		Denom:   "ueth",
+	})
+	if err != nil {
+		t.Fatalf("grpc balance query after funding: %v", err)
+	}
+	if balanceResp.Balance == nil || balanceResp.Balance.Amount.String() != "42000" {
+		t.Fatalf("expected funded grpc balance 42000ueth, got %+v", balanceResp.Balance)
+	}
+}
+
 func startIBCDemoNodeProcess(t *testing.T, homeDir, readyPath string, extraEnv map[string]string) (*exec.Cmd, *bytes.Buffer) {
 	t.Helper()
 
@@ -415,7 +512,7 @@ func startIBCDemoNodeProcess(t *testing.T, homeDir, readyPath string, extraEnv m
 		t.Fatalf("start ibc demo node process: %v", err)
 	}
 
-	waitForReadyFileE2E(t, readyPath)
+	waitForReadyFileE2E(t, readyPath, cmd, &logs)
 	return cmd, &logs
 }
 
@@ -439,16 +536,19 @@ func stopIBCDemoNodeProcess(t *testing.T, cmd *exec.Cmd, logs *bytes.Buffer) {
 	}
 }
 
-func waitForReadyFileE2E(t *testing.T, path string) {
+func waitForReadyFileE2E(t *testing.T, path string, cmd *exec.Cmd, logs *bytes.Buffer) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
 			return
 		}
+		if cmd != nil && cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+			t.Fatalf("demo node exited before writing ready file %s\n%s", path, logs.String())
+		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for ready file %s", path)
+	t.Fatalf("timed out waiting for ready file %s\n%s", path, logs.String())
 }
 
 func readReadyFileE2E(t *testing.T, path string) struct {

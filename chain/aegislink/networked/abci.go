@@ -22,10 +22,11 @@ import (
 
 type ABCIApplication struct {
 	abcitypes.BaseApplication
-	appConfig aegisapp.Config
-	app       *aegisapp.App
-	chainApp  *ChainApp
-	appHash   []byte
+	appConfig               aegisapp.Config
+	app                     *aegisapp.App
+	chainApp                *ChainApp
+	appHash                 []byte
+	lastFinalizeUsedBaseApp bool
 }
 
 func NewABCIApplication(appCfg aegisapp.Config, app *aegisapp.App, chainApp *ChainApp) *ABCIApplication {
@@ -44,6 +45,9 @@ func NewABCIApplication(appCfg aegisapp.Config, app *aegisapp.App, chainApp *Cha
 }
 
 func (a *ABCIApplication) Info(_ context.Context, _ *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
+	if a.chainApp != nil && a.chainApp.BaseApp != nil {
+		return a.chainApp.BaseApp.Info(&abcitypes.RequestInfo{})
+	}
 	status := a.app.Status()
 	return &abcitypes.ResponseInfo{
 		Data:             a.appConfig.AppName,
@@ -189,16 +193,49 @@ func (a *ABCIApplication) Query(_ context.Context, req *abcitypes.RequestQuery) 
 }
 
 func (a *ABCIApplication) CheckTx(_ context.Context, req *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
-	if _, err := decodeDemoNodeTx(req.Tx); err != nil {
-		return &abcitypes.ResponseCheckTx{
-			Code: 1,
-			Log:  err.Error(),
-		}, nil
+	if _, err := decodeDemoNodeTx(req.Tx); err == nil {
+		return &abcitypes.ResponseCheckTx{Code: 0}, nil
 	}
-	return &abcitypes.ResponseCheckTx{Code: 0}, nil
+	if a.chainApp != nil && a.chainApp.BaseApp != nil {
+		return a.chainApp.BaseApp.CheckTx(req)
+	}
+	return &abcitypes.ResponseCheckTx{
+		Code: 1,
+		Log:  "unsupported tx format",
+	}, nil
 }
 
 func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
+	hasDemoTx, hasSDKTx := false, false
+	for _, tx := range req.Txs {
+		if _, err := decodeDemoNodeTx(tx); err == nil {
+			hasDemoTx = true
+			continue
+		}
+		hasSDKTx = true
+	}
+	if hasDemoTx && hasSDKTx {
+		return &abcitypes.ResponseFinalizeBlock{
+			TxResults: []*abcitypes.ExecTxResult{{
+				Code: 1,
+				Log:  "mixed demo-node and sdk txs are not supported in the same block",
+			}},
+		}, nil
+	}
+	if !hasDemoTx && a.chainApp != nil && a.chainApp.BaseApp != nil {
+		resp, err := a.chainApp.BaseApp.FinalizeBlock(req)
+		if err != nil {
+			return nil, err
+		}
+		a.lastFinalizeUsedBaseApp = true
+		a.appHash = append([]byte(nil), resp.AppHash...)
+		if a.app != nil && req.Height > 0 {
+			a.app.SetCurrentHeight(uint64(req.Height))
+		}
+		return resp, nil
+	}
+
+	a.lastFinalizeUsedBaseApp = false
 	targetHeight := uint64(req.Height)
 	current := a.app.Status().CurrentHeight
 
@@ -238,11 +275,20 @@ func (a *ABCIApplication) FinalizeBlock(_ context.Context, req *abcitypes.Reques
 }
 
 func (a *ABCIApplication) Commit(_ context.Context, _ *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
+	if a.lastFinalizeUsedBaseApp && a.chainApp != nil && a.chainApp.BaseApp != nil {
+		resp, err := a.chainApp.BaseApp.Commit()
+		if err != nil {
+			return nil, err
+		}
+		a.lastFinalizeUsedBaseApp = false
+		a.appHash = append([]byte(nil), a.chainApp.BaseApp.LastCommitID().Hash...)
+		return resp, nil
+	}
 	if err := a.app.Save(); err != nil {
 		return nil, err
 	}
 	return &abcitypes.ResponseCommit{
-		RetainHeight: int64(a.app.Status().CurrentHeight),
+		RetainHeight: 0,
 	}, nil
 }
 
@@ -300,6 +346,22 @@ func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResu
 			return nil, err
 		}
 		result = bridgecli.ExecuteWithdrawalResponse(withdrawal)
+	case "fund_account":
+		if a.chainApp == nil {
+			return nil, fmt.Errorf("fund account requires chain app")
+		}
+		payload, amount, err := decodeFundAccountPayload(*tx.FundAccount)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.chainApp.FundAccount(payload.Address, sdk.NewCoin(payload.Denom, sdkmath.NewIntFromBigInt(amount))); err != nil {
+			return nil, err
+		}
+		result = FundAccountResult{
+			Address: payload.Address,
+			Denom:   payload.Denom,
+			Amount:  amount.String(),
+		}
 	default:
 		return nil, fmt.Errorf("unsupported demo node tx type %q", tx.Type)
 	}

@@ -1,6 +1,7 @@
 package networked
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -62,11 +63,18 @@ type ExecuteWithdrawalPayload struct {
 	Height          uint64 `json:"height,omitempty"`
 }
 
+type FundAccountPayload struct {
+	Address string `json:"address"`
+	Denom   string `json:"denom"`
+	Amount  string `json:"amount"`
+}
+
 type demoNodeTx struct {
 	Type                string                      `json:"type"`
 	QueueDepositClaim   *submissionPayload          `json:"queue_deposit_claim,omitempty"`
 	InitiateIBCTransfer *InitiateIBCTransferPayload `json:"initiate_ibc_transfer,omitempty"`
 	ExecuteWithdrawal   *ExecuteWithdrawalPayload   `json:"execute_withdrawal,omitempty"`
+	FundAccount         *FundAccountPayload         `json:"fund_account,omitempty"`
 }
 
 func decodeSubmission(r *http.Request) (bridgetypes.DepositClaim, bridgetypes.Attestation, error) {
@@ -164,6 +172,26 @@ func decodeExecuteWithdrawalPayload(payload ExecuteWithdrawalPayload) (ExecuteWi
 	return payload, amount, signature, nil
 }
 
+func decodeFundAccountPayload(payload FundAccountPayload) (FundAccountPayload, *big.Int, error) {
+	if strings.TrimSpace(payload.Address) == "" {
+		return FundAccountPayload{}, nil, fmt.Errorf("missing funded account address")
+	}
+	if strings.TrimSpace(payload.Denom) == "" {
+		return FundAccountPayload{}, nil, fmt.Errorf("missing funded account denom")
+	}
+	amount, ok := new(big.Int).SetString(strings.TrimSpace(payload.Amount), 10)
+	if !ok {
+		return FundAccountPayload{}, nil, fmt.Errorf("invalid funded account amount %q", payload.Amount)
+	}
+	if amount.Sign() <= 0 {
+		return FundAccountPayload{}, nil, fmt.Errorf("funded account amount must be positive")
+	}
+	payload.Address = strings.TrimSpace(payload.Address)
+	payload.Denom = strings.TrimSpace(payload.Denom)
+	payload.Amount = amount.String()
+	return payload, amount, nil
+}
+
 func encodeQueueDepositClaimTx(claim bridgetypes.DepositClaim, attestation bridgetypes.Attestation) ([]byte, error) {
 	payload := submissionPayload{}
 	payload.Claim.Kind = string(claim.Identity.Kind)
@@ -216,6 +244,17 @@ func encodeExecuteWithdrawalTx(payload ExecuteWithdrawalPayload) ([]byte, error)
 	})
 }
 
+func encodeFundAccountTx(payload FundAccountPayload) ([]byte, error) {
+	payload, _, err := decodeFundAccountPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(demoNodeTx{
+		Type:        "fund_account",
+		FundAccount: &payload,
+	})
+}
+
 func decodeDemoNodeTx(txBytes []byte) (demoNodeTx, error) {
 	var tx demoNodeTx
 	if err := json.Unmarshal(txBytes, &tx); err != nil {
@@ -241,6 +280,13 @@ func decodeDemoNodeTx(txBytes []byte) (demoNodeTx, error) {
 			return demoNodeTx{}, fmt.Errorf("missing execute withdrawal payload")
 		}
 		if _, _, _, err := decodeExecuteWithdrawalPayload(*tx.ExecuteWithdrawal); err != nil {
+			return demoNodeTx{}, err
+		}
+	case "fund_account":
+		if tx.FundAccount == nil {
+			return demoNodeTx{}, fmt.Errorf("missing fund account payload")
+		}
+		if _, _, err := decodeFundAccountPayload(*tx.FundAccount); err != nil {
 			return demoNodeTx{}, err
 		}
 	default:
@@ -317,6 +363,50 @@ func SubmitExecuteWithdrawal(ctx context.Context, cfg Config, payload ExecuteWit
 		return WithdrawalView{}, err
 	}
 	return withdrawal, nil
+}
+
+func SubmitFundAccount(ctx context.Context, cfg Config, address, denom, amount string) (FundAccountResult, error) {
+	payload := FundAccountPayload{
+		Address: address,
+		Denom:   denom,
+		Amount:  amount,
+	}
+	payload, _, err := decodeFundAccountPayload(payload)
+	if err != nil {
+		return FundAccountResult{}, err
+	}
+	ready, err := readReadyState(cfg)
+	if err != nil {
+		return FundAccountResult{}, err
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return FundAccountResult{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+strings.TrimSpace(ready.RPCAddress)+"/tx/fund-account", bytes.NewReader(body))
+	if err != nil {
+		return FundAccountResult{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return FundAccountResult{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		var failure map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&failure); err == nil {
+			if message, ok := failure["error"].(string); ok && strings.TrimSpace(message) != "" {
+				return FundAccountResult{}, fmt.Errorf("fund account request failed: %s", message)
+			}
+		}
+		return FundAccountResult{}, fmt.Errorf("fund account request failed with status %s", resp.Status)
+	}
+	var result FundAccountResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return FundAccountResult{}, err
+	}
+	return result, nil
 }
 
 func broadcastTxJSON(ctx context.Context, cfg Config, txBytes []byte, target any) error {
