@@ -2,11 +2,18 @@ import { frontendEnv } from "../../lib/config/env";
 import type { BridgeSession } from "./bridge-session";
 
 type ProgressPanelProps = {
+  isPolling?: boolean;
   onReset: () => void;
+  pollError?: string | null;
   session: BridgeSession;
 };
 
-export function ProgressPanel({ onReset, session }: ProgressPanelProps) {
+export function ProgressPanel({
+  isPolling = false,
+  onReset,
+  pollError = null,
+  session,
+}: ProgressPanelProps) {
   const milestones = [
     { label: "Deposit submitted on Sepolia", done: true },
     {
@@ -23,6 +30,7 @@ export function ProgressPanel({ onReset, session }: ProgressPanelProps) {
       done: session.status === "completed",
     },
   ];
+  const progressLabel = progressChipLabel(session.status, isPolling);
 
   return (
     <div className="transfer-card transfer-card--progress">
@@ -35,7 +43,7 @@ export function ProgressPanel({ onReset, session }: ProgressPanelProps) {
             transfer until the Osmosis receipt is available.
           </p>
         </div>
-        <div className="wallet-chip">Awaiting bridge progress</div>
+        <div className="wallet-chip">{progressLabel}</div>
       </div>
 
       <div className="progress-layout">
@@ -58,6 +66,31 @@ export function ProgressPanel({ onReset, session }: ProgressPanelProps) {
             {shortHash(session.sourceTxHash)}
           </a>
           <span>{session.sourceAddress}</span>
+        </div>
+
+        <div className="progress-card">
+          <small>Osmosis receipt</small>
+          {session.destinationTxHash ? (
+            session.destinationTxUrl ? (
+              <a
+                className="tx-link"
+                href={session.destinationTxUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {shortHash(session.destinationTxHash)}
+              </a>
+            ) : (
+              <strong>{shortHash(session.destinationTxHash)}</strong>
+            )
+          ) : (
+            <strong>Waiting for final destination hash</strong>
+          )}
+          <span>
+            {session.destinationTxHash
+              ? "Confirmed by the configured bridge status source."
+              : "This appears as soon as the operator tracking endpoint observes the Osmosis receipt."}
+          </span>
         </div>
 
         <div className="progress-card">
@@ -88,6 +121,8 @@ export function ProgressPanel({ onReset, session }: ProgressPanelProps) {
         </div>
       </div>
 
+      {pollError ? <p className="progress-alert">{pollError}</p> : null}
+
       <div className="progress-actions">
         <button className="secondary-cta" onClick={onReset} type="button">
           Start New Transfer
@@ -99,4 +134,17 @@ export function ProgressPanel({ onReset, session }: ProgressPanelProps) {
 
 function shortHash(hash: string) {
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
+}
+
+function progressChipLabel(status: BridgeSession["status"], isPolling: boolean) {
+  if (status === "completed") {
+    return "Delivered to Osmosis";
+  }
+  if (status === "failed") {
+    return "Needs attention";
+  }
+  if (isPolling) {
+    return "Tracking live progress";
+  }
+  return "Awaiting bridge progress";
 }

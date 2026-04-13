@@ -11,12 +11,13 @@ import (
 const canonicalNativeETHAddress = "0x0000000000000000000000000000000000000000"
 
 type ClaimRecord struct {
-	MessageID string
-	Denom     string
-	AssetID   string
-	Recipient string
-	Amount    *big.Int
-	Status    ClaimStatus
+	MessageID    string
+	SourceTxHash string
+	Denom        string
+	AssetID      string
+	Recipient    string
+	Amount       *big.Int
+	Status       ClaimStatus
 }
 
 type WithdrawalRecord struct {
@@ -34,12 +35,13 @@ func (k *Keeper) acceptDepositClaim(claimKey string, claim bridgetypes.DepositCl
 	denom := bridgeDenomForAsset(asset)
 	k.mintRepresentation(denom, claim.Amount)
 	k.processedClaims[claimKey] = ClaimRecord{
-		MessageID: claim.Identity.MessageID,
-		Denom:     denom,
-		AssetID:   claim.AssetID,
-		Recipient: claim.Recipient,
-		Amount:    cloneAmount(claim.Amount),
-		Status:    ClaimStatusAccepted,
+		MessageID:    claim.Identity.MessageID,
+		SourceTxHash: claim.Identity.SourceTxHash,
+		Denom:        denom,
+		AssetID:      claim.AssetID,
+		Recipient:    claim.Recipient,
+		Amount:       cloneAmount(claim.Amount),
+		Status:       ClaimStatusAccepted,
 	}
 
 	return ClaimResult{

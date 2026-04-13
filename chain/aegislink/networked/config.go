@@ -10,14 +10,15 @@ import (
 )
 
 type Config struct {
-	HomeDir         string
-	RPCAddress      string
-	CometRPCAddress string
-	GRPCAddress     string
-	ABCIAddress     string
-	P2PAddress      string
-	ReadyFile       string
-	TickInterval    time.Duration
+	HomeDir               string
+	RPCAddress            string
+	CometRPCAddress       string
+	GRPCAddress           string
+	ABCIAddress           string
+	P2PAddress            string
+	ReadyFile             string
+	DestinationLCDBaseURL string
+	TickInterval          time.Duration
 }
 
 func ResolveConfig(cfg Config) (Config, aegisapp.Config, error) {

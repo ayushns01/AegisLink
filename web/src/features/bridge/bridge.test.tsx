@@ -1,11 +1,20 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { frontendEnv } from "../../lib/config/env";
 import { TransferPage } from "./TransferPage";
 
 const useBridgeWalletMock = vi.fn();
 const useWalletClientMock = vi.fn();
 const submitEthDepositMock = vi.fn();
+const fetchMock = vi.fn();
+
+const originalStatusApiBaseUrl = frontendEnv.statusApiBaseUrl;
+
+Object.defineProperty(globalThis, "fetch", {
+  configurable: true,
+  value: fetchMock,
+});
 
 vi.mock("../wallet/useBridgeWallet", () => ({
   useBridgeWallet: () => useBridgeWalletMock(),
@@ -23,6 +32,11 @@ vi.mock("wagmi", async () => {
 vi.mock("../../lib/evm/gateway", () => ({
   submitEthDeposit: (...args: unknown[]) => submitEthDepositMock(...args),
 }));
+
+afterEach(() => {
+  frontendEnv.statusApiBaseUrl = originalStatusApiBaseUrl;
+  fetchMock.mockReset();
+});
 
 describe("TransferPage", () => {
   function seedConnectedWallet() {
@@ -130,5 +144,46 @@ describe("TransferPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/deposit submitted on sepolia/i)).toBeInTheDocument();
     expect(screen.getByText(/0x12345678/i)).toBeInTheDocument();
+  });
+
+  it("polls a configured bridge status api and shows the final Osmosis tx hash", async () => {
+    seedConnectedWallet();
+    frontendEnv.statusApiBaseUrl = "https://status.aegislink.test";
+    submitEthDepositMock.mockResolvedValue(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    );
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        sourceTxHash:
+          "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        status: "completed",
+        destinationTxHash: "5E40ED4BF5B065DA159D66785534EAAEEE376876749DADAF639F6A51524B2F7D",
+        destinationTxUrl:
+          "https://www.mintscan.io/osmosis-testnet/txs/5E40ED4BF5B065DA159D66785534EAAEEE376876749DADAF639F6A51524B2F7D",
+      }),
+    });
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://status.aegislink.test/bridge-status?sourceTxHash=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    expect(screen.getByText(/confirmed by the configured bridge status source/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: /5e40ed4bf5/i,
+      }),
+    ).toHaveAttribute(
+      "href",
+      "https://www.mintscan.io/osmosis-testnet/txs/5E40ED4BF5B065DA159D66785534EAAEEE376876749DADAF639F6A51524B2F7D",
+    );
   });
 });

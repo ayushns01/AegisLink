@@ -15,6 +15,7 @@ export type BridgeSession = {
   status: BridgeSessionStatus;
   createdAt: number;
   destinationTxHash?: string;
+  destinationTxUrl?: string;
   errorMessage?: string;
 };
 

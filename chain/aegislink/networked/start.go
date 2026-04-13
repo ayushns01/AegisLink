@@ -247,6 +247,22 @@ func (n DemoNode) serveHTTP(w http.ResponseWriter, r *http.Request, ready ReadyS
 			return transfers[i].TransferID < transfers[j].TransferID
 		})
 		_ = json.NewEncoder(w).Encode(transferJSONResponseList(transfers))
+	case "/bridge-status":
+		sourceTxHash := strings.TrimSpace(r.URL.Query().Get("sourceTxHash"))
+		if sourceTxHash == "" {
+			http.Error(w, `{"error":"missing sourceTxHash"}`+"\n", http.StatusBadRequest)
+			return
+		}
+		var resolver DestinationTxResolver
+		if strings.TrimSpace(n.config.DestinationLCDBaseURL) != "" {
+			resolver = LCDDestinationTxResolver{BaseURL: n.config.DestinationLCDBaseURL}
+		}
+		status, err := ResolveBridgeSessionView(r.Context(), n.app, sourceTxHash, resolver)
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(status)
 	case "/tx/queue-deposit-claim":
 		if r.Method != http.MethodPost {
 			http.Error(w, `{"error":"method not allowed"}`+"\n", http.StatusMethodNotAllowed)

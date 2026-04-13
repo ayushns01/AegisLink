@@ -36,13 +36,14 @@ type SignerSetSnapshot struct {
 }
 
 type ClaimRecordSnapshot struct {
-	ClaimKey  string      `json:"claim_key"`
-	MessageID string      `json:"message_id"`
-	Denom     string      `json:"denom"`
-	AssetID   string      `json:"asset_id"`
-	Recipient string      `json:"recipient,omitempty"`
-	Amount    string      `json:"amount"`
-	Status    ClaimStatus `json:"status"`
+	ClaimKey     string      `json:"claim_key"`
+	MessageID    string      `json:"message_id"`
+	SourceTxHash string      `json:"source_tx_hash"`
+	Denom        string      `json:"denom"`
+	AssetID      string      `json:"asset_id"`
+	Recipient    string      `json:"recipient,omitempty"`
+	Amount       string      `json:"amount"`
+	Status       ClaimStatus `json:"status"`
 }
 
 type WithdrawalRecordSnapshot struct {
@@ -80,13 +81,14 @@ func (k *Keeper) ExportState() StateSnapshot {
 	}
 	for claimKey, record := range k.processedClaims {
 		state.ProcessedClaims = append(state.ProcessedClaims, ClaimRecordSnapshot{
-			ClaimKey:  claimKey,
-			MessageID: record.MessageID,
-			Denom:     record.Denom,
-			AssetID:   record.AssetID,
-			Recipient: record.Recipient,
-			Amount:    record.Amount.String(),
-			Status:    record.Status,
+			ClaimKey:     claimKey,
+			MessageID:    record.MessageID,
+			SourceTxHash: record.SourceTxHash,
+			Denom:        record.Denom,
+			AssetID:      record.AssetID,
+			Recipient:    record.Recipient,
+			Amount:       record.Amount.String(),
+			Status:       record.Status,
 		})
 	}
 	for denom, amount := range k.supplyByDenom {
@@ -139,12 +141,13 @@ func (k *Keeper) ImportState(state StateSnapshot) error {
 			return fmt.Errorf("invalid processed claim amount %q", claim.Amount)
 		}
 		k.processedClaims[claim.ClaimKey] = ClaimRecord{
-			MessageID: claim.MessageID,
-			Denom:     claim.Denom,
-			AssetID:   claim.AssetID,
-			Recipient: claim.Recipient,
-			Amount:    amount,
-			Status:    claim.Status,
+			MessageID:    claim.MessageID,
+			SourceTxHash: claim.SourceTxHash,
+			Denom:        claim.Denom,
+			AssetID:      claim.AssetID,
+			Recipient:    claim.Recipient,
+			Amount:       amount,
+			Status:       claim.Status,
 		}
 	}
 
@@ -229,12 +232,13 @@ func (k *Keeper) loadFromPrefixStore() error {
 			return fmt.Errorf("invalid processed claim amount %q", claim.Amount)
 		}
 		k.processedClaims[claim.ClaimKey] = ClaimRecord{
-			MessageID: claim.MessageID,
-			Denom:     claim.Denom,
-			AssetID:   claim.AssetID,
-			Recipient: claim.Recipient,
-			Amount:    amount,
-			Status:    claim.Status,
+			MessageID:    claim.MessageID,
+			SourceTxHash: claim.SourceTxHash,
+			Denom:        claim.Denom,
+			AssetID:      claim.AssetID,
+			Recipient:    claim.Recipient,
+			Amount:       amount,
+			Status:       claim.Status,
 		}
 		return nil
 	}); err != nil {

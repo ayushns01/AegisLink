@@ -6,6 +6,7 @@ import { submitEthDeposit } from "../../lib/evm/gateway";
 import { useBridgeWallet } from "../wallet/useBridgeWallet";
 import { createSubmittedBridgeSession, type BridgeSession } from "./bridge-session";
 import { ProgressPanel } from "./ProgressPanel";
+import { useBridgeSessionStatus } from "./useBridgeSessionStatus";
 
 type Destination = {
   id: string;
@@ -113,6 +114,11 @@ export function TransferPage() {
   const [session, setSession] = useState<BridgeSession | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const {
+    isPolling: isPollingStatus,
+    pollError,
+    session: resolvedSession,
+  } = useBridgeSessionStatus(session);
   const destination =
     destinations.find((entry) => entry.id === selectedDestinationId) ?? destinations[0];
   const recipientIsValid = useMemo(
@@ -167,8 +173,15 @@ export function TransferPage() {
     }
   }
 
-  if (session) {
-    return <ProgressPanel onReset={() => setSession(null)} session={session} />;
+  if (resolvedSession) {
+    return (
+      <ProgressPanel
+        isPolling={isPollingStatus}
+        onReset={() => setSession(null)}
+        pollError={pollError}
+        session={resolvedSession}
+      />
+    );
   }
 
   return (
