@@ -26,6 +26,7 @@ type BridgeSessionView struct {
 }
 
 type DestinationTxLookup struct {
+	SourceTxHash    string
 	SourceChannelID string
 	PacketSequence  uint64
 }
@@ -89,6 +90,7 @@ func ResolveBridgeSessionView(
 	)
 	if resolver != nil && transport != nil {
 		result, found, err := resolver.Resolve(ctx, DestinationTxLookup{
+			SourceTxHash:    sourceTxHash,
 			SourceChannelID: transport.ChannelID,
 			PacketSequence:  transport.PacketSequence,
 		})
@@ -130,7 +132,7 @@ func ResolveBridgeSessionView(
 
 func (r LCDDestinationTxResolver) Resolve(ctx context.Context, lookup DestinationTxLookup) (DestinationTxResult, bool, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(r.BaseURL), "/")
-	if baseURL == "" || strings.TrimSpace(lookup.SourceChannelID) == "" || lookup.PacketSequence == 0 {
+	if baseURL == "" {
 		return DestinationTxResult{}, false, nil
 	}
 
@@ -139,14 +141,11 @@ func (r LCDDestinationTxResolver) Resolve(ctx context.Context, lookup Destinatio
 		return DestinationTxResult{}, false, err
 	}
 	values := queryURL.Query()
-	values.Set(
-		"query",
-		fmt.Sprintf(
-			"recv_packet.packet_src_channel='%s' AND recv_packet.packet_sequence='%d'",
-			lookup.SourceChannelID,
-			lookup.PacketSequence,
-		),
-	)
+	query, ok := destinationTxSearchQuery(lookup)
+	if !ok {
+		return DestinationTxResult{}, false, nil
+	}
+	values.Set("query", query)
 	values.Set("pagination.limit", "1")
 	queryURL.RawQuery = values.Encode()
 
@@ -182,6 +181,20 @@ func (r LCDDestinationTxResolver) Resolve(ctx context.Context, lookup Destinatio
 	return DestinationTxResult{
 		TxHash: payload.TxResponses[0].TxHash,
 	}, true, nil
+}
+
+func destinationTxSearchQuery(lookup DestinationTxLookup) (string, bool) {
+	if sourceTxHash := strings.TrimSpace(lookup.SourceTxHash); sourceTxHash != "" {
+		return fmt.Sprintf("fungible_token_packet.memo='bridge:%s'", sourceTxHash), true
+	}
+	if channelID := strings.TrimSpace(lookup.SourceChannelID); channelID != "" && lookup.PacketSequence > 0 {
+		return fmt.Sprintf(
+			"recv_packet.packet_src_channel='%s' AND recv_packet.packet_sequence='%d'",
+			channelID,
+			lookup.PacketSequence,
+		), true
+	}
+	return "", false
 }
 
 func findClaimBySourceTxHash(app *aegisapp.App, sourceTxHash string) (bridgekeeper.ClaimRecordSnapshot, bool) {

@@ -246,7 +246,7 @@ func TestLCDDestinationTxResolverUsesQuerySearchParameter(t *testing.T) {
 
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if got := r.URL.Query().Get("query"); got != "recv_packet.packet_src_channel='channel-0' AND recv_packet.packet_sequence='1'" {
+			if got := r.URL.Query().Get("query"); got != "fungible_token_packet.memo='bridge:0xsource-tx'" {
 				t.Fatalf("expected query search parameter, got %q", got)
 			}
 			if got := r.URL.Query().Get("pagination.limit"); got != "1" {
@@ -275,6 +275,7 @@ func TestLCDDestinationTxResolverUsesQuerySearchParameter(t *testing.T) {
 		BaseURL: "https://lcd.osmotest5.osmosis.zone",
 		Client:  client,
 	}.Resolve(context.Background(), DestinationTxLookup{
+		SourceTxHash:    "0xsource-tx",
 		SourceChannelID: "channel-0",
 		PacketSequence:  1,
 	})
@@ -285,6 +286,48 @@ func TestLCDDestinationTxResolverUsesQuerySearchParameter(t *testing.T) {
 		t.Fatal("expected destination tx to be found")
 	}
 	if result.TxHash != "D15359D08DAFC92DE5E45D81F1F0FAC54B6433949E8CBF17265195574E98B84F" {
+		t.Fatalf("unexpected tx hash: %+v", result)
+	}
+}
+
+func TestLCDDestinationTxResolverFallsBackToPacketQueryWithoutSourceTxHash(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.URL.Query().Get("query"); got != "recv_packet.packet_src_channel='channel-0' AND recv_packet.packet_sequence='1'" {
+				t.Fatalf("expected fallback packet query, got %q", got)
+			}
+			body, err := json.Marshal(map[string]any{
+				"tx_responses": []map[string]any{
+					{"txhash": "A5D359D08DAFC92DE5E45D81F1F0FAC54B6433949E8CBF17265195574E98B84F"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("marshal response: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(string(body))),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	result, found, err := LCDDestinationTxResolver{
+		BaseURL: "https://lcd.osmotest5.osmosis.zone",
+		Client:  client,
+	}.Resolve(context.Background(), DestinationTxLookup{
+		SourceChannelID: "channel-0",
+		PacketSequence:  1,
+	})
+	if err != nil {
+		t.Fatalf("resolve destination tx: %v", err)
+	}
+	if !found {
+		t.Fatal("expected destination tx to be found")
+	}
+	if result.TxHash != "A5D359D08DAFC92DE5E45D81F1F0FAC54B6433949E8CBF17265195574E98B84F" {
 		t.Fatalf("unexpected tx hash: %+v", result)
 	}
 }

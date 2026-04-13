@@ -5,6 +5,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=/dev/null
+source "$REPO_ROOT/scripts/testnet/lib_public_bridge_env.sh"
+
 RUN_ID="${AEGISLINK_PUBLIC_BACKEND_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 HOME_DIR="${AEGISLINK_PUBLIC_BACKEND_HOME_DIR:-/tmp/aegislink-public-home-ui-auto-$RUN_ID}"
 RUNTIME_DIR="${AEGISLINK_PUBLIC_BACKEND_RUNTIME_DIR:-/tmp/aegislink-public-backend-$RUN_ID}"
@@ -214,6 +217,18 @@ source_required_env "$REPO_ROOT/.env.sepolia.deploy.local"
 source_required_env "$REPO_ROOT/.env.public-bridge.local"
 source_required_env "$REPO_ROOT/.env.public-ibc.local"
 
+AEGISLINK_RELAYER_EVM_RPC_URL="$(
+  resolve_public_bridge_evm_rpc_url \
+    "${AEGISLINK_RELAYER_EVM_RPC_URL:-}" \
+    "${AEGISLINK_SEPOLIA_RPC_URL:-}"
+)"
+export AEGISLINK_RELAYER_EVM_RPC_URL
+AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT="$(
+  resolve_public_bridge_ibc_timeout_height \
+    "${AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT:-}"
+)"
+export AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT
+
 export GOCACHE
 export AEGISLINK_ENABLE_REAL_IBC=1
 export AEGISLINK_PUBLIC_IBC_AEGISLINK_HOME="$HOME_DIR"
@@ -295,7 +310,7 @@ echo "+ starting public bridge relayer"
   export AEGISLINK_RELAYER_RLY_HOME="$RLY_HOME"
   export AEGISLINK_RELAYER_RLY_PATH_NAME="$PATH_NAME"
   export AEGISLINK_RELAYER_AUTODELIVERY_ENABLED=true
-  export AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT="${AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT:-55000000}"
+  export AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT
   export AEGISLINK_RELAYER_POLL_INTERVAL_MS="${AEGISLINK_RELAYER_POLL_INTERVAL_MS:-4000}"
   export AEGISLINK_RELAYER_FAILURE_BACKOFF_MS="${AEGISLINK_RELAYER_FAILURE_BACKOFF_MS:-9000}"
   nohup go run ./relayer/cmd/public-bridge-relayer --loop >"$RELAYER_LOG" 2>&1 &
