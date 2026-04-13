@@ -224,8 +224,42 @@ describe("TransferPage", () => {
       }),
     ).toHaveAttribute(
       "href",
-      "https://www.mintscan.io/osmosis-testnet/txs/5E40ED4BF5B065DA159D66785534EAAEEE376876749DADAF639F6A51524B2F7D",
+      "https://www.mintscan.io/osmosis-testnet/tx/5E40ED4BF5B065DA159D66785534EAAEEE376876749DADAF639F6A51524B2F7D",
     );
+  });
+
+  it("builds a Mintscan link from the Osmosis tx hash when the backend does not provide one", async () => {
+    seedConnectedWallet();
+    frontendEnv.statusApiBaseUrl = "https://status.aegislink.test";
+    submitEthDepositMock.mockResolvedValue(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        sourceTxHash:
+          "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        status: "completed",
+        destinationTxHash: "4EC091441766C154ABE9C9D4DE0D8F2CA89AB9D7B8C72F3CBFF9C2FCCFC6C1A9",
+      }),
+    });
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("link", {
+          name: /4ec0914417/i,
+        }),
+      ).toHaveAttribute(
+        "href",
+        "https://www.mintscan.io/osmosis-testnet/tx/4EC091441766C154ABE9C9D4DE0D8F2CA89AB9D7B8C72F3CBFF9C2FCCFC6C1A9",
+      );
+    });
   });
 
   it("shows the AegisLink processing stage once Sepolia confirmation is complete", async () => {

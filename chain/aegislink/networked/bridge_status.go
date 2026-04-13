@@ -139,8 +139,14 @@ func (r LCDDestinationTxResolver) Resolve(ctx context.Context, lookup Destinatio
 		return DestinationTxResult{}, false, err
 	}
 	values := queryURL.Query()
-	values.Add("events", fmt.Sprintf("recv_packet.packet_src_channel='%s'", lookup.SourceChannelID))
-	values.Add("events", fmt.Sprintf("recv_packet.packet_sequence='%d'", lookup.PacketSequence))
+	values.Set(
+		"query",
+		fmt.Sprintf(
+			"recv_packet.packet_src_channel='%s' AND recv_packet.packet_sequence='%d'",
+			lookup.SourceChannelID,
+			lookup.PacketSequence,
+		),
+	)
 	values.Set("pagination.limit", "1")
 	queryURL.RawQuery = values.Encode()
 
@@ -193,6 +199,24 @@ func findTransferForClaim(
 	intent *DeliveryIntent,
 ) (ibcrouterkeeper.TransferRecordSnapshot, *ibcrouterkeeper.TransportRecordSnapshot, bool) {
 	routerState := app.IBCRouterKeeper.ExportState()
+	if intent != nil && strings.TrimSpace(intent.TransferID) != "" {
+		for _, transfer := range routerState.Transfers {
+			if transfer.TransferID != strings.TrimSpace(intent.TransferID) {
+				continue
+			}
+			if channelID := strings.TrimSpace(intent.ChannelID); channelID != "" && strings.TrimSpace(transfer.ChannelID) != channelID {
+				continue
+			}
+			for _, transport := range routerState.Transport {
+				if transport.TransferID == transfer.TransferID {
+					copy := transport
+					return transfer, &copy, true
+				}
+			}
+			return transfer, nil, true
+		}
+	}
+
 	expectedReceiver := strings.TrimSpace(claim.Recipient)
 	if intent != nil && strings.TrimSpace(intent.Receiver) != "" {
 		expectedReceiver = strings.TrimSpace(intent.Receiver)

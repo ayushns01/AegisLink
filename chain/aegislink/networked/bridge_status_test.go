@@ -2,10 +2,13 @@ package networked
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
@@ -135,6 +138,71 @@ func TestResolveBridgeSessionViewUsesDeliveryIntentReceiverAndMarksDestinationRe
 	}
 }
 
+func TestResolveBridgeSessionViewUsesIntentTransferIDForDuplicateAmountAndReceiver(t *testing.T) {
+	t.Parallel()
+
+	app := newBridgeStatusTestApp(t)
+	claimRecipient := "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4"
+	finalReceiver := "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8"
+
+	firstClaim := bridgeStatusClaim(t, "0xduplicate-source-tx-1", claimRecipient, "1000000000000000")
+	if _, err := app.SubmitDepositClaim(firstClaim, bridgeStatusAttestation(t, firstClaim)); err != nil {
+		t.Fatalf("submit first deposit claim: %v", err)
+	}
+	if _, err := RegisterDeliveryIntent(app.Config, DeliveryIntent{
+		SourceTxHash: firstClaim.Identity.SourceTxHash,
+		Sender:       claimRecipient,
+		RouteID:      "osmosis-public-wallet",
+		AssetID:      "eth",
+		Amount:       "1000000000000000",
+		Receiver:     finalReceiver,
+	}); err != nil {
+		t.Fatalf("register first delivery intent: %v", err)
+	}
+	firstTransfer, err := app.InitiateIBCTransfer("eth", big.NewInt(1_000_000_000_000_000), finalReceiver, 120, "first-transfer")
+	if err != nil {
+		t.Fatalf("initiate first ibc transfer: %v", err)
+	}
+	if _, err := app.CompleteIBCTransfer(firstTransfer.TransferID); err != nil {
+		t.Fatalf("complete first ibc transfer: %v", err)
+	}
+
+	secondClaim := bridgeStatusClaim(t, "0xduplicate-source-tx-2", claimRecipient, "1000000000000000")
+	if _, err := app.SubmitDepositClaim(secondClaim, bridgeStatusAttestation(t, secondClaim)); err != nil {
+		t.Fatalf("submit second deposit claim: %v", err)
+	}
+	secondTransfer, err := app.InitiateIBCTransfer("eth", big.NewInt(1_000_000_000_000_000), finalReceiver, 120, "second-transfer")
+	if err != nil {
+		t.Fatalf("initiate second ibc transfer: %v", err)
+	}
+	if _, err := RegisterDeliveryIntent(app.Config, DeliveryIntent{
+		SourceTxHash: secondClaim.Identity.SourceTxHash,
+		Sender:       claimRecipient,
+		RouteID:      "osmosis-public-wallet",
+		AssetID:      "eth",
+		Amount:       "1000000000000000",
+		Receiver:     finalReceiver,
+		TransferID:   secondTransfer.TransferID,
+		ChannelID:    secondTransfer.ChannelID,
+	}); err != nil {
+		t.Fatalf("register second delivery intent: %v", err)
+	}
+
+	view, err := ResolveBridgeSessionView(context.Background(), app, secondClaim.Identity.SourceTxHash, nil)
+	if err != nil {
+		t.Fatalf("resolve bridge session view: %v", err)
+	}
+	if view.Status != "osmosis_pending" {
+		t.Fatalf("expected osmosis_pending status for second transfer, got %+v", view)
+	}
+	if view.TransferID != secondTransfer.TransferID {
+		t.Fatalf("expected second transfer id %q, got %+v", secondTransfer.TransferID, view)
+	}
+	if view.TransferID == firstTransfer.TransferID {
+		t.Fatalf("expected not to reuse first transfer id %q, got %+v", firstTransfer.TransferID, view)
+	}
+}
+
 func TestDemoNodeServeHTTPBridgeStatusSetsCORSHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -171,6 +239,60 @@ func TestDemoNodeServeHTTPOptionsReturnsNoContent(t *testing.T) {
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", recorder.Code)
 	}
+}
+
+func TestLCDDestinationTxResolverUsesQuerySearchParameter(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.URL.Query().Get("query"); got != "recv_packet.packet_src_channel='channel-0' AND recv_packet.packet_sequence='1'" {
+				t.Fatalf("expected query search parameter, got %q", got)
+			}
+			if got := r.URL.Query().Get("pagination.limit"); got != "1" {
+				t.Fatalf("expected pagination limit of 1, got %q", got)
+			}
+			if got := r.URL.Query()["events"]; len(got) != 0 {
+				t.Fatalf("expected no legacy events parameters, got %v", got)
+			}
+			body, err := json.Marshal(map[string]any{
+				"tx_responses": []map[string]any{
+					{"txhash": "D15359D08DAFC92DE5E45D81F1F0FAC54B6433949E8CBF17265195574E98B84F"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("marshal response: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(string(body))),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	result, found, err := LCDDestinationTxResolver{
+		BaseURL: "https://lcd.osmotest5.osmosis.zone",
+		Client:  client,
+	}.Resolve(context.Background(), DestinationTxLookup{
+		SourceChannelID: "channel-0",
+		PacketSequence:  1,
+	})
+	if err != nil {
+		t.Fatalf("resolve destination tx: %v", err)
+	}
+	if !found {
+		t.Fatal("expected destination tx to be found")
+	}
+	if result.TxHash != "D15359D08DAFC92DE5E45D81F1F0FAC54B6433949E8CBF17265195574E98B84F" {
+		t.Fatalf("unexpected tx hash: %+v", result)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
 func newBridgeStatusTestApp(t *testing.T) *aegisapp.App {

@@ -17,6 +17,44 @@ It is not yet:
 - a multi-validator public network
 - a fully strict Sepolia-backed one-shot path into Osmosis without the current source-side funding workaround
 
+## Fast Start
+
+For the repeatable local operator flow, you can now start a fresh backend stack with one command:
+
+```bash
+bash scripts/testnet/start_public_bridge_backend.sh
+```
+
+That launcher will:
+
+- stop the older local demo-node and public bridge relayer processes
+- create a fresh AegisLink home under `/tmp`
+- reuse a persistent relayer home under `$HOME/.aegislink-live-rly` by default
+- seed bridge assets and the public Osmosis route profile
+- start the demo node
+- create the required `rly` keys if they do not exist yet
+- create and link a fresh AegisLink <-> Osmosis testnet path
+- update the route profile to the live channel
+- start the public bridge relayer with auto-delivery enabled
+
+On the very first run, if the Osmosis relayer key is not funded yet, the launcher now prints the generated `osmo1...` address and exits cleanly. Fund that address with testnet OSMO once, then rerun the same command. After that, the backend path is a single command.
+
+When it completes, it prints the active:
+
+- AegisLink home
+- ready file
+- node log
+- relayer log
+- relayer home
+- relayer path name
+
+The frontend stays the second command:
+
+```bash
+cd web
+npm run dev
+```
+
 ## Bootstrap
 
 ```bash

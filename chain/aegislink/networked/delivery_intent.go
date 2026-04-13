@@ -20,6 +20,8 @@ type DeliveryIntent struct {
 	AssetID      string `json:"assetId"`
 	Amount       string `json:"amount"`
 	Receiver     string `json:"receiver"`
+	TransferID   string `json:"transferId,omitempty"`
+	ChannelID    string `json:"channelId,omitempty"`
 }
 
 func RegisterDeliveryIntent(cfg aegisapp.Config, intent DeliveryIntent) (DeliveryIntent, error) {
@@ -111,6 +113,8 @@ func normalizeDeliveryIntent(intent DeliveryIntent) (DeliveryIntent, error) {
 	intent.AssetID = strings.TrimSpace(intent.AssetID)
 	intent.Amount = strings.TrimSpace(intent.Amount)
 	intent.Receiver = strings.TrimSpace(intent.Receiver)
+	intent.TransferID = strings.TrimSpace(intent.TransferID)
+	intent.ChannelID = strings.TrimSpace(intent.ChannelID)
 
 	switch {
 	case intent.SourceTxHash == "":

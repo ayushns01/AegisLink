@@ -14,6 +14,7 @@ export function ProgressPanel({
   pollError = null,
   session,
 }: ProgressPanelProps) {
+  const destinationTxUrl = resolveDestinationTxUrl(session);
   const milestones = [
     { label: "Deposit submitted on Sepolia", done: true },
     {
@@ -80,10 +81,10 @@ export function ProgressPanel({
         <div className="progress-card">
           <small>Osmosis receipt</small>
           {session.destinationTxHash ? (
-            session.destinationTxUrl ? (
+            destinationTxUrl ? (
               <a
                 className="tx-link"
-                href={session.destinationTxUrl}
+                href={destinationTxUrl}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -145,6 +146,32 @@ export function ProgressPanel({
 
 function shortHash(hash: string) {
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
+}
+
+function resolveDestinationTxUrl(session: BridgeSession) {
+  if (!session.destinationTxHash) {
+    return undefined;
+  }
+
+  if (session.destinationTxUrl) {
+    return normalizeDestinationTxUrl(session.destinationTxUrl);
+  }
+
+  if (session.destinationChain === "Osmosis Testnet (OSMO)") {
+    return `https://www.mintscan.io/osmosis-testnet/tx/${session.destinationTxHash}`;
+  }
+
+  if (session.destinationChain === "Osmosis Mainnet (OSMO)") {
+    return `https://www.mintscan.io/osmosis/tx/${session.destinationTxHash}`;
+  }
+
+  return undefined;
+}
+
+function normalizeDestinationTxUrl(url: string) {
+  return url
+    .replace("https://www.mintscan.io/osmosis-testnet/txs/", "https://www.mintscan.io/osmosis-testnet/tx/")
+    .replace("https://www.mintscan.io/osmosis/txs/", "https://www.mintscan.io/osmosis/tx/");
 }
 
 function progressChipLabel(status: BridgeSession["status"], isPolling: boolean) {

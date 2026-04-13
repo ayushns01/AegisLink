@@ -9,11 +9,13 @@
   "route_id": "osmosis-public-wallet",
   "allowed_memo_prefixes": [
     "swap:",
-    "stake:"
+    "stake:",
+    "bridge:"
   ],
   "allowed_action_types": [
     "swap",
-    "stake"
+    "stake",
+    "bridge"
   ],
   "assets": [
     {
