@@ -101,4 +101,14 @@ The reverse path works the same way in the other direction:
 - v1 should optimize for explicit trust assumptions and reliable accounting.
 - v2 can improve the verifier without changing the whole project shape.
 
+## What the current repo now adds on top
+
+The repository is no longer only a CLI-only bridge skeleton.
+
+- `web/` now provides a real wallet-connect frontend for the public demo path.
+- `scripts/testnet/start_public_bridge_backend.sh` can bring up a fresh backend stack in one command.
+- The live proof now includes a fresh frontend-driven `Sepolia -> AegisLink -> Osmosis testnet` session, not only an operator-triggered IBC send.
+
+That does not change the architectural lesson. It just makes the bridge-zone story easier to demonstrate end to end.
+
 If you keep those rules in mind, your project will stay coherent and will look much stronger in front of senior blockchain engineers.

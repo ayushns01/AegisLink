@@ -40,6 +40,10 @@ The public-wallet bridge path adds a fifth proof path:
 
 5. A Sepolia-shaped deposit and redeem loop where `public-bridge-relayer` can mint bridged wallet balances on AegisLink and later release the corresponding asset back to Ethereum.
 
+The frontend branch adds a sixth proof path:
+
+6. A browser-driven `Sepolia -> AegisLink -> Osmosis` run where the user connects a wallet in `web/`, submits the deposit from the UI, and follows bridge progress through to an Osmosis receipt.
+
 For the visual version of this flow, use [Current flow diagrams](architecture/03-current-flow-diagrams.md).
 
 ## What the demo proves
@@ -53,6 +57,7 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
 - The repo now also proves a Hermes-shaped local packet flow, where the route path explicitly relays `recv-packet` and later `acknowledge-packet` across separate runtime homes.
 - The repo now also proves a daemon-style node lifecycle through `make test-real-abci`, so the height advance is not only a manual setter path anymore.
 - The repo now also proves a public-wallet bridge loop locally against Anvil-backed Sepolia-shaped contracts, including both deposit-to-wallet and redeem-back-to-Ethereum paths for native ETH and ERC-20.
+- The repo now also proves a browser-first public wallet path, where `web/` drives the Sepolia deposit and the backend stack can complete a fresh run into a real Osmosis testnet wallet.
 
 ## Short demo transcript
 
@@ -68,6 +73,8 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
    Say: `Now I am proving the route against a separate destination runtime home, not just the earlier HTTP harness path.`
 6. Run `make test-real-abci`.
    Say: `Now I am proving that AegisLink can queue a deposit claim, advance blocks automatically, and apply the queued claim through the runtime loop.`
+7. Run `./scripts/testnet/start_public_bridge_backend.sh` and `cd web && npm run dev`.
+   Say: `Now I am showing the same system through the user-facing bridge surface instead of only through operator CLI commands.`
 
 ## Route lifecycle to point at
 
@@ -102,6 +109,7 @@ Those states are what make the local harness feel closer to real interchain deli
 - `The route timeout path is recoverable on AegisLink, so the demo covers both success and refund-safe failure.`
 - `The AegisLink daemon loop can queue and later apply deposits, so the runtime now looks more like a single-node chain loop than a pure request-response shell.`
 - `The public bridge path preserves asset identity, so the wallet receives bridged ETH or bridged ERC-20 first and only later redeems back to Ethereum instead of silently swapping assets.`
+- `The frontend is not a mock shell. It sends a real Sepolia deposit transaction, registers a delivery intent, and tracks the bridge session through the local status surface.`
 
 ## Important honesty line
 
@@ -110,7 +118,7 @@ This is still a strong local prototype, not a production bridge:
 - Ethereum observation and release are live locally.
 - AegisLink is a persistent single-node runtime with a daemon block loop, not yet a full networked Cosmos node.
 - The original destination-side walkthrough still uses its own bootstrapped runtime home and Hermes-shaped local packet flow for the local demo path.
-- Real Osmosis wallet delivery is now live for the `AegisLink -> Osmosis` leg through the optional Phase K IBC seam, but the strict Sepolia-backed one-shot delivery path is still not the default demo claim.
+- Real Osmosis wallet delivery is now live through the public frontend-driven path too, but the operator should still treat it as demo-grade and prefer a fresh backend launch for clean repeated verification runs.
 
 That honesty makes the project stronger, not weaker.
 

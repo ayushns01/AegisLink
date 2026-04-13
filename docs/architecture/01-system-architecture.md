@@ -2,7 +2,7 @@
 
 ## Overview
 
-AegisLink is an Ethereum-to-Cosmos interoperability layer designed as a protocol, not as a single-purpose app. In v1, it uses a verifiable-relayer model: Ethereum events are observed by an off-chain relayer set, converted into threshold attestations, and then verified by a Cosmos-SDK chain that acts as the bridge zone. In phase 2, the bridge zone routes assets onward to Osmosis over IBC for swaps and liquidity.
+AegisLink is an Ethereum-to-Cosmos interoperability layer designed as a protocol, not as a single-purpose app. In v1, it uses a verifiable-relayer model: Ethereum events are observed by an off-chain relayer set, converted into threshold attestations, and then verified by a Cosmos-SDK chain that acts as the bridge zone. In phase 2, the bridge zone routes assets onward to Osmosis over IBC for swaps and liquidity. The current repository now exposes that flow through both operator CLI surfaces and a browser-based frontend in `web/`.
 
 For the current implementation boundary, read [Project positioning](../project-positioning.md). For the quick visual version, use [Current flow diagrams](03-current-flow-diagrams.md).
 
@@ -31,6 +31,7 @@ The bridge zone is the accounting and policy boundary. It is not just a message 
 - Collects or aggregates threshold attestations from authorized signers.
 - Submits verified claims to the bridge zone.
 - Handles routed-transfer handoff from AegisLink into downstream targets.
+- Consumes frontend delivery intents so a browser-submitted Sepolia deposit can continue automatically into the IBC delivery path.
 - Can be fully replaced in v2 by a light-client verification path, but remains the v1 execution path.
 
 Current implementation note:
@@ -138,6 +139,13 @@ In the current routing milestone, the onward route is also proven in a controlle
 3. A separate `route-relayer` can read pending transfers from AegisLink and submit packet-shaped deliveries to a local target.
 4. The target stores the receive-side state first, then exposes a later acknowledgement that drives completed, acknowledgement-failed, or timed-out state on the AegisLink side.
 5. Refund and transfer state remain queryable from the persisted runtime.
+
+In the current public frontend milestone, the same architecture is exposed through a user-facing flow:
+
+1. The browser connects a Sepolia wallet and submits `depositETH(...)` to the Ethereum gateway.
+2. The frontend records a delivery intent against the local AegisLink backend.
+3. The public bridge relayer observes the Ethereum deposit, submits the claim, and then uses the delivery intent to drive the AegisLink-to-Osmosis handoff.
+4. The bridge-status surface resolves the resulting session back into user-facing progress and the destination receipt.
 
 ## Asset Lifecycle
 

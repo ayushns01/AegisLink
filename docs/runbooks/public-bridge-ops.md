@@ -15,7 +15,7 @@ This is a reproducible single-validator public devnet scaffold. It is useful for
 It is not yet:
 
 - a multi-validator public network
-- a fully strict Sepolia-backed one-shot path into Osmosis without the current source-side funding workaround
+- a production-grade repeated-run service; the live frontend-to-Osmosis path is strongest on a fresh backend launch, and repeat-run hardening is still ongoing
 
 ## Fast Start
 
@@ -54,6 +54,22 @@ The frontend stays the second command:
 cd web
 npm run dev
 ```
+
+From there, the user flow is:
+
+- connect a Sepolia wallet
+- open `AegisLink -> Transfer`
+- choose the live Osmosis destination
+- enter the `osmo1...` recipient
+- submit the ETH bridge deposit
+
+The backend then owns:
+
+- deposit observation on Sepolia
+- claim submission into AegisLink
+- delivery-intent tracking
+- automatic IBC handoff and packet flush toward Osmosis
+- bridge-status reporting back to the frontend
 
 ## Bootstrap
 
@@ -193,6 +209,7 @@ That file and bootstrap flow now support a real live IBC leg for the current rep
 - the single-validator AegisLink demo node can be linked to Osmosis testnet through `rly`
 - the live path can open a real connection and channel and deliver `ueth` into a real `osmo1...` wallet
 - the generated `rly` config/path artifacts are still bootstrap inputs, because client, connection, and channel ids remain run-specific
+- the public bridge relayer can now also consume a frontend-registered delivery intent and drive the same handoff automatically on a fresh backend launch
 
 One verified live shape is:
 
@@ -212,8 +229,8 @@ curl -sS https://lcd.osmotest5.osmosis.zone/ibc/apps/transfer/v1/denom_traces/F6
 
 That live proof is intentionally narrow and honest:
 
-- it proves `AegisLink -> Osmosis` delivery over real IBC
-- it does not yet claim that the exact Sepolia-backed deposited balance is what traveled on that same final live run
+- it proves a fresh frontend-driven `Sepolia -> AegisLink -> Osmosis` delivery over real IBC
+- it does not yet claim that repeated long-lived backend sessions are fully hardened for endless sequential demo runs without operator restarts
 
 ## Intended endpoints
 

@@ -21,6 +21,8 @@ This repository is meant to show:
 - The first public AegisLink testnet scaffold now exists too: `scripts/testnet/bootstrap_aegislink_testnet.sh` boots a reproducible single-validator SDK-store home, and the repo ships operator and network config artifacts under `deploy/testnet/aegislink/`.
 - The first public Sepolia wallet bridge scaffold now exists too: `scripts/testnet/deploy_sepolia_bridge.sh`, `scripts/testnet/register_bridge_assets.sh`, and `scripts/testnet/seed_public_bridge_assets.sh` take a Sepolia deployment from contract addresses to a deposit-ready AegisLink home, and `public-bridge-relayer` can now deliver both native ETH and ERC-20 deposits into real AegisLink wallet balances and redeem them back to Sepolia through the live RPC log path.
 - The live AegisLink-to-Osmosis IBC leg is now proven too: the single-validator demo node can connect to Osmosis testnet through `rly`, open a real connection and channel, send `ueth` over ICS20, and credit a real `osmo1...` wallet with the resulting `ibc/...` denom.
+- The repository now also has a real frontend surface in `web/`: users can connect a Sepolia wallet, choose a Cosmos destination, submit an ETH bridge deposit, and watch bridge progress through to the Osmosis receipt state.
+- The public-wallet operator flow is now sharper too: `scripts/testnet/start_public_bridge_backend.sh` can stand up a fresh single-command backend stack, including a seeded demo node, a live Osmosis path, and the public bridge relayer.
 - Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
 - Ethereum verifiers now build EIP-712-style attestation digests, reject non-low-`s` signatures, and the gateway release path is guarded against reentrant token callbacks.
 - AegisLink owns bridge, bank, registry, limits, pauser, and route state in a persistent runtime with `init`, `start`, `query status`, and wallet balance queries.
@@ -42,7 +44,7 @@ This repository is meant to show:
 - AegisLink is a persistent Cosmos-inspired runtime, not yet a full networked CometBFT or ABCI chain.
 - The node lifecycle shim is real enough for the targeted scope, but it is still not a full CometBFT / ABCI / BaseApp runtime.
 - The original Osmosis-lite harness is still present as a dedicated local destination runtime with its own home, config, state, and local IBC link metadata.
-- The new public IBC path is real enough to prove `AegisLink -> Osmosis testnet` delivery from the single-validator demo node, but the repo still does not claim a fully clean one-shot `Sepolia deposit -> same spendable bridged balance -> Osmosis wallet` path without the current source-side sync workaround.
+- The new public IBC path is now real enough to prove a fresh frontend-driven `Sepolia deposit -> AegisLink -> Osmosis testnet wallet` run, but the repo still treats that path as demo-grade. Repeat-run hardening on the long-lived backend, especially around automatic delivery bookkeeping and status resolution, is still ongoing.
 - The verifier model is still a v1 verifiable-relayer plus threshold-attestation path, not a light client.
 
 ## Why this project is not a toy
@@ -102,6 +104,7 @@ Use these for operational and launch thinking:
 - [Security model summary](docs/security-model.md)
 - [Observability plan](docs/observability.md)
 - [Demo walkthrough](docs/demo-walkthrough.md)
+- [Public bridge ops runbook](docs/runbooks/public-bridge-ops.md)
 - [Pause and recovery runbook](docs/runbooks/pause-and-recovery.md)
 - [Incident drills](docs/runbooks/incident-drills.md)
 - [Upgrade and rollback runbook](docs/runbooks/upgrade-and-rollback.md)
@@ -181,7 +184,7 @@ That flow creates and uses:
 
 ## Current checkpoint
 
-As of April 12, 2026:
+As of April 14, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
 - Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
@@ -205,7 +208,9 @@ As of April 12, 2026:
 - the next roadmap focus is deeper realism beyond the completed phase set: pushing AegisLink from the current daemon shim toward a fuller networked CometBFT or BaseApp runtime, replacing the current Hermes-shaped local bridge with fuller real IBC-Go or Hermes-backed networking, and validating the monitoring stack on a machine that has Docker installed
 - the public-wallet bridge plan is now implemented through Phase J for the current repo scope: native ETH and ERC-20 custody are modeled explicitly, AegisLink can mint bridged balances into a real Bech32 wallet, the public-testnet scaffold and Sepolia deployment scripts are in place, and the public relayer now covers both deposit delivery and redeem-back-to-Sepolia flows
 - Phase K now has a live public IBC proof for the current repo scope: `.env.public-ibc.local.example`, `scripts/testnet/bootstrap_public_ibc.sh`, and `scripts/testnet/bootstrap_rly_path.sh` can bootstrap the route metadata, and the single-validator AegisLink demo node has now opened a real Osmosis testnet channel and delivered `ueth` to a real `osmo1...` wallet over `rly`
-- the remaining public-wallet gap is now narrower and more specific: the strict Sepolia-backed balance still needs to flow into the same spendable SDK bank path that the live Osmosis transfer uses, without the current source-side funding workaround
+- the repository now also has a premium black-and-white frontend in `web/` plus a one-command public backend launcher, so the public demo path is no longer only a CLI exercise
+- a fresh frontend-driven `Sepolia -> AegisLink -> Osmosis` run is now proven in the current repo scope
+- the remaining public-wallet gap is now narrower and more operational: repeated frontend-driven runs on one long-lived backend still need more hardening around auto-delivery idempotency and receipt/status bookkeeping
 
 The current repo shape is:
 

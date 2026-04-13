@@ -43,6 +43,8 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now also includes a first public-testnet scaffold for AegisLink, with a reproducible bootstrap script, operator bridge settings, and documented local RPC/gRPC endpoints for wallet-balance inspection.
 - The repo now also proves a public-wallet bridge loop against a Sepolia-shaped deployment path: native ETH and ERC-20 deposits can mint balances to a real Bech32 wallet on AegisLink and redeem those balances back to Ethereum through the public relayer path.
 - The repo now also proves a live AegisLink-to-Osmosis IBC leg: a single-validator AegisLink demo node can connect to Osmosis testnet through `rly`, open a real channel, and deliver `ueth` to a real `osmo1...` wallet as an `ibc/...` denom.
+- The repo now also includes a user-facing frontend in `web/`, so a connected Sepolia wallet can submit an ETH bridge deposit and track the bridge session through to the Osmosis receipt surface.
+- The public demo path now has a one-command backend launcher in `scripts/testnet/start_public_bridge_backend.sh`, which brings up the seeded demo node, the public bridge relayer, and a live Osmosis path together.
 
 ## What is still a local harness
 
@@ -51,7 +53,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The destination side is now a bootstrapped local runtime with its own config, state, and local IBC link metadata, but it is still not a live IBC-Go or Hermes-connected Osmosis node.
 - The public AegisLink testnet scaffold is still a single-validator local devnet bootstrap, not a hosted or externally peered public network yet.
 - The route path is realistic enough to exercise packet lifecycle and destination execution through Hermes-shaped local commands, but it is still a controlled local environment rather than real proof-backed IBC transport.
-- Public Osmosis wallet delivery is now real for the `AegisLink -> Osmosis` leg, but the repo still does not claim a fully strict `Sepolia deposit -> same spendable bridged balance -> Osmosis wallet` flow yet. That last source-side coupling still needs to be hardened.
+- Public Osmosis wallet delivery is now real for fresh frontend-driven runs too, but the repo still does not claim that the long-lived public demo backend is fully hardened for repeated sequential deliveries without restart. That last repeat-run/idempotency hardening is still in progress.
 
 ## Why this still matters
 
@@ -65,20 +67,20 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
-- `The public-wallet path now proves Sepolia-shaped deposit and redeem loops into a real Bech32 wallet on AegisLink, and the repo also proves a live AegisLink-to-Osmosis IBC delivery into a real osmo wallet.`
-- `The roadmap from here is hardening the source-side Sepolia-to-SDK balance coupling so the same deposited bridged balance can be forwarded to Osmosis without the current workaround, then tightening the demo-node ops story further.`
+- `The public-wallet path now also has a browser-first surface, so a connected Sepolia wallet can drive a real bridge session into a real osmo wallet through the local backend stack.`
+- `The roadmap from here is hardening repeat-run delivery bookkeeping and long-lived backend behavior, then tightening the demo-node ops story further.`
 
 Avoid phrasing like:
 
 - `fully trustless bridge`
 - `real Cosmos chain today`
-- `fully finished Sepolia-backed Osmosis delivery today`
+- `production-ready public bridge service today`
 
 ## Future roadmap
 
 The next realism steps are:
 
-1. Remove the remaining source-side workaround so a Sepolia-backed bridged balance becomes the exact spendable SDK balance that can be forwarded to Osmosis.
+1. Harden repeat-run public delivery so a long-lived backend can process sequential frontend-driven Sepolia-to-Osmosis transfers without needing a fresh restart to stay crisp.
 2. Harden the single-validator demo-node startup, replay, and operator lifecycle so the live IBC path is easier to reproduce.
 3. Validate the monitoring stack on a Docker-enabled machine and then deepen it with more production-style metrics or alerts.
 4. Expand destination integrations or route-action breadth only after the stricter Sepolia-backed Osmosis path is credible.

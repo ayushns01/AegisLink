@@ -42,9 +42,33 @@ stateDiagram-v2
     timed_out_on_aegislink --> refunded_on_aegislink: refund recovery
 ```
 
+## Public frontend flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as web Frontend
+    participant W as Sepolia Wallet
+    participant E as Ethereum Gateway
+    participant BR as Public Bridge Relayer
+    participant A as AegisLink Demo Node
+    participant O as Osmosis Testnet
+
+    U->>F: Enter amount and osmo1 recipient
+    F->>W: Request depositETH signature
+    W->>E: Submit Sepolia deposit
+    F->>A: Register delivery intent
+    E-->>BR: Deposit event over Sepolia RPC
+    BR->>A: Submit claim
+    A->>A: Credit bridged balance and open transfer state
+    BR->>A: Initiate and track IBC handoff
+    BR->>O: Flush packet over linked rly path
+    O-->>F: Destination receipt becomes queryable through bridge-status
+```
+
 ## Read these with the right lens
 
 - `pending_on_aegislink` lives on the AegisLink side.
 - `received`, `executed`, `ack_ready`, and `ack_relayed` live on the destination-side harness.
 - `completed_on_aegislink`, `ack_failed_on_aegislink`, and `timed_out_on_aegislink` are the source-side route outcomes after acknowledgement processing.
-- This is intentionally a strong local harness, not a claim that the repository already has live IBC, CometBFT, or a full Osmosis deployment.
+- The public frontend flow is real enough to prove fresh `Sepolia -> AegisLink -> Osmosis testnet` delivery, but it is still demo-grade and not a production service claim.
