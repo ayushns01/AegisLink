@@ -21,11 +21,15 @@ type DaemonEvent struct {
 }
 
 type Daemon struct {
-	coordinator *Coordinator
+	coordinator interface {
+		RunOnceWithSummary(context.Context) (RunSummary, error)
+	}
 	cfg         DaemonConfig
 }
 
-func NewDaemon(coordinator *Coordinator, cfg DaemonConfig) *Daemon {
+func NewDaemon(coordinator interface {
+	RunOnceWithSummary(context.Context) (RunSummary, error)
+}, cfg DaemonConfig) *Daemon {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = time.Second
 	}

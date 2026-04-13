@@ -1,0 +1,31 @@
+{
+  "path_name": "osmosis-public-wallet",
+  "src": {
+    "chain_id": "aegislink-public-testnet-1",
+    "client_id": "07-tendermint-aegislink-demo",
+    "connection_id": "connection-aegislink-demo",
+    "port_id": "transfer",
+    "channel_id": "channel-public-osmosis"
+  },
+  "dst": {
+    "chain_id": "osmosis-testnet",
+    "client_id": "07-tendermint-osmosis-demo",
+    "connection_id": "connection-osmosis-demo",
+    "port_id": "transfer",
+    "channel_id": "channel-public-osmosis"
+  },
+  "manifest": {
+    "source_chain_id": "aegislink-public-testnet-1",
+    "destination_chain_id": "osmosis-testnet",
+    "channel_id": "channel-public-osmosis",
+    "port_id": "transfer",
+    "route_id": "osmosis-public-wallet",
+    "assets": [
+      {
+        "asset_id": "eth",
+        "source_denom": "ueth",
+        "destination_denom": "ibc/ueth"
+      }
+    ]
+  }
+}

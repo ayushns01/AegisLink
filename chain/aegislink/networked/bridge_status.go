@@ -19,6 +19,7 @@ type BridgeSessionView struct {
 	Status            string `json:"status"`
 	MessageID         string `json:"messageId,omitempty"`
 	TransferID        string `json:"transferId,omitempty"`
+	ChannelID         string `json:"channelId,omitempty"`
 	DestinationTxHash string `json:"destinationTxHash,omitempty"`
 	DestinationTxURL  string `json:"destinationTxUrl,omitempty"`
 	ErrorMessage      string `json:"errorMessage,omitempty"`
@@ -70,28 +71,49 @@ func ResolveBridgeSessionView(
 	view.MessageID = claim.MessageID
 	view.Status = "aegislink_processing"
 
-	transfer, transport, ok := findTransferForClaim(app, claim)
+	intent, hasIntent, err := findDeliveryIntentBySourceTxHash(app.Config, sourceTxHash)
+	if err != nil {
+		return BridgeSessionView{}, err
+	}
+
+	transfer, transport, ok := findTransferForClaim(app, claim, intentOrNil(intent, hasIntent))
 	if !ok {
 		return view, nil
 	}
 	view.TransferID = transfer.TransferID
+	view.ChannelID = transfer.ChannelID
+
+	var (
+		destinationResult DestinationTxResult
+		destinationFound  bool
+	)
+	if resolver != nil && transport != nil {
+		result, found, err := resolver.Resolve(ctx, DestinationTxLookup{
+			SourceChannelID: transport.ChannelID,
+			PacketSequence:  transport.PacketSequence,
+		})
+		if err != nil {
+			view.ErrorMessage = err.Error()
+		} else if found {
+			destinationResult = result
+			destinationFound = true
+			view.DestinationTxHash = result.TxHash
+			view.DestinationTxURL = result.TxURL
+		}
+	}
 
 	switch transfer.Status {
 	case ibcrouterkeeper.TransferStatusPending:
-		view.Status = "osmosis_pending"
+		if destinationFound {
+			view.Status = "completed"
+		} else {
+			view.Status = "osmosis_pending"
+		}
 	case ibcrouterkeeper.TransferStatusCompleted:
 		view.Status = "completed"
-		if resolver != nil && transport != nil {
-			result, found, err := resolver.Resolve(ctx, DestinationTxLookup{
-				SourceChannelID: transport.ChannelID,
-				PacketSequence:  transport.PacketSequence,
-			})
-			if err != nil {
-				view.ErrorMessage = err.Error()
-			} else if found {
-				view.DestinationTxHash = result.TxHash
-				view.DestinationTxURL = result.TxURL
-			}
+		if !destinationFound && strings.TrimSpace(destinationResult.TxHash) != "" {
+			view.DestinationTxHash = destinationResult.TxHash
+			view.DestinationTxURL = destinationResult.TxURL
 		}
 	case ibcrouterkeeper.TransferStatusAckFailed, ibcrouterkeeper.TransferStatusTimedOut, ibcrouterkeeper.TransferStatusRefunded:
 		view.Status = "failed"
@@ -168,17 +190,26 @@ func findClaimBySourceTxHash(app *aegisapp.App, sourceTxHash string) (bridgekeep
 func findTransferForClaim(
 	app *aegisapp.App,
 	claim bridgekeeper.ClaimRecordSnapshot,
+	intent *DeliveryIntent,
 ) (ibcrouterkeeper.TransferRecordSnapshot, *ibcrouterkeeper.TransportRecordSnapshot, bool) {
 	routerState := app.IBCRouterKeeper.ExportState()
+	expectedReceiver := strings.TrimSpace(claim.Recipient)
+	if intent != nil && strings.TrimSpace(intent.Receiver) != "" {
+		expectedReceiver = strings.TrimSpace(intent.Receiver)
+	}
+	expectedAmount := strings.TrimSpace(claim.Amount)
+	if intent != nil && strings.TrimSpace(intent.Amount) != "" {
+		expectedAmount = strings.TrimSpace(intent.Amount)
+	}
 	matches := make([]ibcrouterkeeper.TransferRecordSnapshot, 0, len(routerState.Transfers))
 	for _, transfer := range routerState.Transfers {
 		if strings.TrimSpace(transfer.AssetID) != strings.TrimSpace(claim.AssetID) {
 			continue
 		}
-		if strings.TrimSpace(transfer.Receiver) != strings.TrimSpace(claim.Recipient) {
+		if strings.TrimSpace(transfer.Receiver) != expectedReceiver {
 			continue
 		}
-		if strings.TrimSpace(transfer.Amount) != strings.TrimSpace(claim.Amount) {
+		if strings.TrimSpace(transfer.Amount) != expectedAmount {
 			continue
 		}
 		matches = append(matches, transfer)
@@ -202,6 +233,27 @@ func findTransferForClaim(
 		}
 	}
 	return selected, nil, true
+}
+
+func findDeliveryIntentBySourceTxHash(cfg aegisapp.Config, sourceTxHash string) (DeliveryIntent, bool, error) {
+	intents, err := ListDeliveryIntents(cfg)
+	if err != nil {
+		return DeliveryIntent{}, false, err
+	}
+	for _, intent := range intents {
+		if strings.EqualFold(strings.TrimSpace(intent.SourceTxHash), strings.TrimSpace(sourceTxHash)) {
+			return intent, true, nil
+		}
+	}
+	return DeliveryIntent{}, false, nil
+}
+
+func intentOrNil(intent DeliveryIntent, ok bool) *DeliveryIntent {
+	if !ok {
+		return nil
+	}
+	copy := intent
+	return &copy
 }
 
 func transferStatusWeight(status ibcrouterkeeper.TransferStatus) int {

@@ -523,11 +523,20 @@ func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResu
 		if err != nil {
 			return nil, err
 		}
-		transfer, err := a.applyIBCTransferPayload(payload, amount)
+		transfer, events, err := a.applyIBCTransferPayload(payload, amount)
 		if err != nil {
 			return nil, err
 		}
 		result = transferJSONResponse(transfer)
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		return &abcitypes.ExecTxResult{
+			Code:   0,
+			Data:   encoded,
+			Events: append([]abcitypes.Event(nil), events...),
+		}, nil
 	case "execute_withdrawal":
 		payload, amount, signature, err := decodeExecuteWithdrawalPayload(*tx.ExecuteWithdrawal)
 		if err != nil {
@@ -571,7 +580,7 @@ func (a *ABCIApplication) applyDemoNodeTx(txBytes []byte) (*abcitypes.ExecTxResu
 	}, nil
 }
 
-func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPayload, amount *big.Int) (ibcrouterkeeper.TransferRecord, error) {
+func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPayload, amount *big.Int) (ibcrouterkeeper.TransferRecord, []abcitypes.Event, error) {
 	var (
 		transfer ibcrouterkeeper.TransferRecord
 		err      error
@@ -579,20 +588,20 @@ func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPay
 	sender := strings.TrimSpace(payload.Sender)
 	asset, ok := a.app.RegistryKeeper.GetAsset(payload.AssetID)
 	if !ok {
-		return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("networked ibc asset %q is not registered", payload.AssetID)
+		return ibcrouterkeeper.TransferRecord{}, nil, fmt.Errorf("networked ibc asset %q is not registered", payload.AssetID)
 	}
 	preTransferBalance := a.app.WalletBalance(sender, asset.Denom)
 	if sender != "" {
 		if preTransferBalance.Cmp(amount) < 0 {
-			return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("wallet %s has insufficient %s balance", sender, asset.Denom)
+			return ibcrouterkeeper.TransferRecord{}, nil, fmt.Errorf("wallet %s has insufficient %s balance", sender, asset.Denom)
 		}
 		if a.chainApp != nil {
 			if err := a.chainApp.SyncAccountBalance(sender, sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(preTransferBalance))); err != nil {
-				return ibcrouterkeeper.TransferRecord{}, err
+				return ibcrouterkeeper.TransferRecord{}, nil, err
 			}
 		}
 		if err := a.app.DebitWallet(sender, asset.Denom, amount); err != nil {
-			return ibcrouterkeeper.TransferRecord{}, err
+			return ibcrouterkeeper.TransferRecord{}, nil, err
 		}
 	}
 	if strings.TrimSpace(payload.RouteID) != "" {
@@ -607,16 +616,16 @@ func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPay
 				_ = a.chainApp.SyncAccountBalance(sender, sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(preTransferBalance)))
 			}
 		}
-		return ibcrouterkeeper.TransferRecord{}, err
+		return ibcrouterkeeper.TransferRecord{}, nil, err
 	}
 	if a.chainApp == nil {
-		return transfer, nil
+		return transfer, nil, nil
 	}
-	_, err = a.chainApp.ExecuteLocalhostTransfer(LocalhostTransferRequest{
+	localhostResult, err := a.chainApp.ExecuteLocalhostTransfer(LocalhostTransferRequest{
 		Sender:        sender,
 		Coin:          sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(amount)),
 		Receiver:      payload.Receiver,
-		TimeoutHeight: clienttypes.NewHeight(1, payload.TimeoutHeight),
+		TimeoutHeight: localhostTransferTimeoutHeight(transfer.DestinationChainID, payload.TimeoutHeight),
 		Memo:          payload.Memo,
 	})
 	if err != nil {
@@ -625,11 +634,16 @@ func (a *ABCIApplication) applyIBCTransferPayload(payload InitiateIBCTransferPay
 			_ = a.chainApp.SyncAccountBalance(sender, sdk.NewCoin(asset.Denom, sdkmath.NewIntFromBigInt(preTransferBalance)))
 		}
 		if _, failErr := a.app.FailIBCTransfer(transfer.TransferID, "localhost sdk transfer failed: "+err.Error()); failErr != nil {
-			return ibcrouterkeeper.TransferRecord{}, fmt.Errorf("execute localhost transfer: %w (also failed to mark transfer failed: %v)", err, failErr)
+			return ibcrouterkeeper.TransferRecord{}, nil, fmt.Errorf("execute localhost transfer: %w (also failed to mark transfer failed: %v)", err, failErr)
 		}
-		return ibcrouterkeeper.TransferRecord{}, err
+		return ibcrouterkeeper.TransferRecord{}, nil, err
 	}
-	return transfer, nil
+	return transfer, append([]abcitypes.Event(nil), localhostResult.Events...), nil
+}
+
+func localhostTransferTimeoutHeight(destinationChainID string, timeoutHeight uint64) clienttypes.Height {
+	revisionNumber := clienttypes.ParseChainID(strings.TrimSpace(destinationChainID))
+	return clienttypes.NewHeight(revisionNumber, timeoutHeight)
 }
 
 func transferViewsFromRecords(transfers []ibcrouterkeeper.TransferRecord) []TransferView {

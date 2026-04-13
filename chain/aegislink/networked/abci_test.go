@@ -11,6 +11,7 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
@@ -394,6 +395,106 @@ func TestABCIApplicationKeepsBaseAppHeightInSyncAfterCustomDepositBlock(t *testi
 	}
 }
 
+func TestABCIApplicationInitiateIBCTransferEmitsPacketEvents(t *testing.T) {
+	t.Parallel()
+
+	homeDir := filepath.Join(t.TempDir(), "networked-home")
+	if _, err := aegisapp.InitHome(aegisapp.Config{
+		HomeDir:     homeDir,
+		ChainID:     "aegislink-networked-1",
+		RuntimeMode: aegisapp.RuntimeModeSDKStore,
+	}, false); err != nil {
+		t.Fatalf("init home: %v", err)
+	}
+
+	chainApp, err := NewChainApp(Config{HomeDir: homeDir})
+	if err != nil {
+		t.Fatalf("new chain app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := chainApp.Close(); err != nil {
+			t.Fatalf("close chain app: %v", err)
+		}
+	})
+
+	bridgeApp, err := aegisapp.LoadWithConfig(chainApp.AppConfig)
+	if err != nil {
+		t.Fatalf("load bridge app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := bridgeApp.Close(); err != nil {
+			t.Fatalf("close bridge app: %v", err)
+		}
+	})
+	if err := bridgeApp.RegisterAsset(registrytypes.Asset{
+		AssetID:         "eth",
+		SourceChainID:   "11155111",
+		SourceAssetKind: bridgetypes.SourceAssetKindNativeETH,
+		Denom:           "ueth",
+		Decimals:        18,
+		DisplayName:     "Ether",
+		DisplaySymbol:   "ETH",
+		Enabled:         true,
+	}); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	if err := bridgeApp.SetLimit(limittypes.RateLimit{
+		AssetID:       "eth",
+		WindowSeconds: 600,
+		MaxAmount:     big.NewInt(2_000_000_000_000_000),
+	}); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+	if err := bridgeApp.SetRouteProfile(ibcroutertypes.RouteProfile{
+		RouteID:            "osmosis-public-wallet",
+		DestinationChainID: "osmo-test-5",
+		ChannelID:          "channel-0",
+		Enabled:            true,
+		Assets: []ibcroutertypes.AssetRoute{{
+			AssetID:          "eth",
+			DestinationDenom: "ibc/ueth",
+		}},
+	}); err != nil {
+		t.Fatalf("set route profile: %v", err)
+	}
+
+	sender := "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4"
+	if err := bridgeApp.CreditWallet(sender, "ueth", big.NewInt(1_000_000_000_000_000)); err != nil {
+		t.Fatalf("credit wallet: %v", err)
+	}
+
+	abciApp := NewABCIApplication(chainApp.AppConfig, bridgeApp, chainApp)
+	txBytes, err := encodeInitiateIBCTransferTx(InitiateIBCTransferPayload{
+		Sender:        sender,
+		RouteID:       "osmosis-public-wallet",
+		AssetID:       "eth",
+		Amount:        "1000000000000000",
+		Receiver:      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+		TimeoutHeight: 55_000_000,
+	})
+	if err != nil {
+		t.Fatalf("encode initiate transfer tx: %v", err)
+	}
+
+	result, err := abciApp.applyDemoNodeTx(txBytes)
+	if err != nil {
+		t.Fatalf("apply initiate transfer tx: %v", err)
+	}
+	if len(result.Events) == 0 {
+		t.Fatalf("expected sdk packet events in tx result, got none")
+	}
+	foundSendPacket := false
+	for _, event := range result.Events {
+		if event.Type == "send_packet" {
+			foundSendPacket = true
+			break
+		}
+	}
+	if !foundSendPacket {
+		t.Fatalf("expected send_packet event in tx result, got %+v", result.Events)
+	}
+}
+
 func TestABCIApplicationRoutesSDKTransferTxsToBaseApp(t *testing.T) {
 	t.Parallel()
 
@@ -611,5 +712,29 @@ func TestABCIApplicationRoutesSDKSimulateQueriesForIBCClientTxs(t *testing.T) {
 		if len(resp.Value) == 0 {
 			t.Fatalf("expected tx simulate response payload or success code, got %+v", resp)
 		}
+	}
+}
+
+func TestLocalhostTransferTimeoutHeightUsesDestinationChainRevision(t *testing.T) {
+	t.Parallel()
+
+	got := localhostTransferTimeoutHeight("osmo-test-5", 55_000_000)
+	if got.RevisionNumber != 5 {
+		t.Fatalf("expected revision number 5, got %+v", got)
+	}
+	if got.RevisionHeight != 55_000_000 {
+		t.Fatalf("expected revision height 55000000, got %+v", got)
+	}
+}
+
+func TestLocalhostTransferTimeoutHeightDefaultsToRevisionZeroForNonRevisionChainID(t *testing.T) {
+	t.Parallel()
+
+	got := localhostTransferTimeoutHeight("osmosis-testnet", 120)
+	if got.RevisionNumber != 0 {
+		t.Fatalf("expected revision number 0 for non-revision chain id, got %+v", got)
+	}
+	if got.RevisionHeight != 120 {
+		t.Fatalf("expected revision height 120, got %+v", got)
 	}
 }

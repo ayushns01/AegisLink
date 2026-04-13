@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
+import { parseEther } from "viem";
 import type { Address } from "viem";
 import { useWalletClient } from "wagmi";
+import { registerBridgeDeliveryIntent } from "../../lib/bridge/delivery-intent";
 import { frontendEnv } from "../../lib/config/env";
 import { submitEthDeposit } from "../../lib/evm/gateway";
 import { useBridgeWallet } from "../wallet/useBridgeWallet";
@@ -154,13 +156,21 @@ export function TransferPage() {
         gatewayAddress: frontendEnv.gatewayAddress,
         account: wallet.address as Address,
         amountEth: amount,
-        recipient,
+        recipient: frontendEnv.aegislinkDepositRecipient,
+      });
+      await registerBridgeDeliveryIntent({
+        sourceTxHash: txHash,
+        sender: frontendEnv.aegislinkDepositRecipient,
+        routeId: "osmosis-public-wallet",
+        assetId: "eth",
+        amount: parseEther(amount).toString(),
+        receiver: recipient,
       });
 
       setSession(
         createSubmittedBridgeSession({
           amountEth: amount,
-          destinationChain: destination.name,
+          destinationChain: destination.label,
           recipient,
           sourceAddress: wallet.address,
           sourceTxHash: txHash,

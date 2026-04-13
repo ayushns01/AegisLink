@@ -296,6 +296,9 @@ func (s *RPCLogSource) rpcCall(ctx context.Context, method string, params []any)
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, TemporaryError{Err: fmt.Errorf("rpc rate limited with %s", resp.Status)}
+	}
 
 	var envelope struct {
 		Result json.RawMessage `json:"result"`
@@ -307,7 +310,31 @@ func (s *RPCLogSource) rpcCall(ctx context.Context, method string, params []any)
 		return nil, err
 	}
 	if envelope.Error != nil {
-		return nil, fmt.Errorf(envelope.Error.Message)
+		rpcErr := fmt.Errorf(envelope.Error.Message)
+		if isTemporaryRPCMessage(envelope.Error.Message) {
+			return nil, TemporaryError{Err: rpcErr}
+		}
+		return nil, rpcErr
 	}
 	return envelope.Result, nil
+}
+
+func isTemporaryRPCMessage(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return false
+	}
+
+	temporarySubstrings := []string{
+		"exceeded its compute units per second capacity",
+		"rate limit",
+		"too many requests",
+		"throughput",
+	}
+	for _, fragment := range temporarySubstrings {
+		if strings.Contains(normalized, fragment) {
+			return true
+		}
+	}
+	return false
 }

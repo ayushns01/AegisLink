@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "source_chain_id": "aegislink-public-testnet-1",
+  "destination_chain_id": "osmosis-testnet",
+  "provider": "hermes",
+  "wallet_prefix": "osmo",
+  "channel_id": "channel-public-osmosis",
+  "port_id": "transfer",
+  "route_id": "osmosis-public-wallet",
+  "allowed_memo_prefixes": [
+    "swap:",
+    "stake:"
+  ],
+  "allowed_action_types": [
+    "swap",
+    "stake"
+  ],
+  "assets": [
+    {
+      "asset_id": "eth",
+      "source_denom": "ueth",
+      "destination_denom": "ibc/ueth"
+    }
+  ],
+  "notes": "Phase K public IBC bootstrap scaffold. Verify live Hermes connectivity and real Osmosis channel metadata before claiming public wallet delivery."
+}

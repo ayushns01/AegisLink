@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -106,6 +108,14 @@ func QueryWithdrawals(ctx context.Context, cfg Config, fromHeight, toHeight uint
 	return withdrawals, nil
 }
 
+func QueryBridgeSession(ctx context.Context, cfg Config, sourceTxHash string) (BridgeSessionView, error) {
+	var view BridgeSessionView
+	if err := getReadyJSON(ctx, cfg, "/bridge-status?sourceTxHash="+strings.TrimSpace(sourceTxHash), &view); err != nil {
+		return BridgeSessionView{}, err
+	}
+	return view, nil
+}
+
 func readReadyState(cfg Config) (ReadyState, error) {
 	resolved, _, err := ResolveConfig(cfg)
 	if err != nil {
@@ -120,6 +130,44 @@ func readReadyState(cfg Config) (ReadyState, error) {
 		return ReadyState{}, err
 	}
 	return ready, nil
+}
+
+func getReadyJSON(ctx context.Context, cfg Config, path string, target any) error {
+	ready, err := readReadyState(cfg)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+strings.TrimSpace(ready.RPCAddress)+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return decodeHTTPFailure(resp, "query "+path)
+	}
+	if target == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func decodeHTTPFailure(resp *http.Response, action string) error {
+	data, _ := io.ReadAll(resp.Body)
+	if len(data) == 0 {
+		return fmt.Errorf("%s failed with status %s", action, resp.Status)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err == nil {
+		if message, ok := payload["error"].(string); ok && strings.TrimSpace(message) != "" {
+			return fmt.Errorf("%s failed: %s", action, message)
+		}
+	}
+	return fmt.Errorf("%s failed with status %s: %s", action, resp.Status, strings.TrimSpace(string(data)))
 }
 
 func abciQueryJSON(ctx context.Context, cfg Config, path string, data []byte, target any) error {

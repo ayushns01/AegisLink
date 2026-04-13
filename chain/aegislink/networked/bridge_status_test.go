@@ -3,6 +3,8 @@ package networked
 import (
 	"context"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -84,6 +86,90 @@ func TestResolveBridgeSessionViewReturnsCompletedDestinationTxHash(t *testing.T)
 	}
 	if view.DestinationTxHash == "" || view.DestinationTxURL == "" {
 		t.Fatalf("expected destination tx data, got %+v", view)
+	}
+}
+
+func TestResolveBridgeSessionViewUsesDeliveryIntentReceiverAndMarksDestinationReceiptComplete(t *testing.T) {
+	t.Parallel()
+
+	app := newBridgeStatusTestApp(t)
+	claimRecipient := "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4"
+	finalReceiver := "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8"
+	claim := bridgeStatusClaim(t, "0xintent-backed-source-tx", claimRecipient, "1000000000000000")
+	if _, err := app.SubmitDepositClaim(claim, bridgeStatusAttestation(t, claim)); err != nil {
+		t.Fatalf("submit deposit claim: %v", err)
+	}
+	if _, err := RegisterDeliveryIntent(app.Config, DeliveryIntent{
+		SourceTxHash: claim.Identity.SourceTxHash,
+		Sender:       claimRecipient,
+		RouteID:      "osmosis-public-wallet",
+		AssetID:      "eth",
+		Amount:       "1000000000000000",
+		Receiver:     finalReceiver,
+	}); err != nil {
+		t.Fatalf("register delivery intent: %v", err)
+	}
+	transfer, err := app.InitiateIBCTransfer("eth", big.NewInt(1_000_000_000_000_000), finalReceiver, 120, "bridge-status-intent-test")
+	if err != nil {
+		t.Fatalf("initiate ibc transfer: %v", err)
+	}
+
+	view, err := ResolveBridgeSessionView(context.Background(), app, claim.Identity.SourceTxHash, stubDestinationTxResolver{
+		result: DestinationTxResult{
+			TxHash: "705C76DFC240723143C2D48BC36D9A835D8377F9E9664039FEFEF7D24FD01FA8",
+			TxURL:  "https://www.mintscan.io/osmosis-testnet/txs/705C76DFC240723143C2D48BC36D9A835D8377F9E9664039FEFEF7D24FD01FA8",
+		},
+		found: true,
+	})
+	if err != nil {
+		t.Fatalf("resolve bridge session view: %v", err)
+	}
+	if view.Status != "completed" {
+		t.Fatalf("expected completed status from destination receipt, got %+v", view)
+	}
+	if view.TransferID != transfer.TransferID {
+		t.Fatalf("expected transfer id %q, got %+v", transfer.TransferID, view)
+	}
+	if view.DestinationTxHash == "" || view.DestinationTxURL == "" {
+		t.Fatalf("expected destination tx data, got %+v", view)
+	}
+}
+
+func TestDemoNodeServeHTTPBridgeStatusSetsCORSHeaders(t *testing.T) {
+	t.Parallel()
+
+	node := DemoNode{}
+	ready := ReadyState{Status: "ready", ChainID: "aegislink-public-testnet-1"}
+
+	req := httptest.NewRequest(http.MethodGet, "/bridge-status?sourceTxHash=0xtest", nil)
+	recorder := httptest.NewRecorder()
+
+	node.serveHTTP(recorder, req, ready)
+
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected wildcard cors origin, got %q", got)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Methods"); got == "" {
+		t.Fatalf("expected allow methods header to be set")
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+}
+
+func TestDemoNodeServeHTTPOptionsReturnsNoContent(t *testing.T) {
+	t.Parallel()
+
+	node := DemoNode{}
+	ready := ReadyState{Status: "ready", ChainID: "aegislink-public-testnet-1"}
+
+	req := httptest.NewRequest(http.MethodOptions, "/bridge-status?sourceTxHash=0xtest", nil)
+	recorder := httptest.NewRecorder()
+
+	node.serveHTTP(recorder, req, ready)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", recorder.Code)
 	}
 }
 

@@ -223,6 +223,11 @@ func (n DemoNode) Close() error {
 }
 
 func (n DemoNode) serveHTTP(w http.ResponseWriter, r *http.Request, ready ReadyState) {
+	setCORSHeaders(w.Header())
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	switch r.URL.Path {
 	case "/healthz":
@@ -263,6 +268,30 @@ func (n DemoNode) serveHTTP(w http.ResponseWriter, r *http.Request, ready ReadyS
 			return
 		}
 		_ = json.NewEncoder(w).Encode(status)
+	case "/delivery-intents":
+		switch r.Method {
+		case http.MethodGet:
+			intents, err := ListDeliveryIntents(n.appConfig)
+			if err != nil {
+				http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(intents)
+		case http.MethodPost:
+			var payload DeliveryIntent
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
+				return
+			}
+			intent, err := RegisterDeliveryIntent(n.appConfig, payload)
+			if err != nil {
+				http.Error(w, `{"error":"`+err.Error()+`"}`+"\n", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(intent)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`+"\n", http.StatusMethodNotAllowed)
+		}
 	case "/tx/queue-deposit-claim":
 		if r.Method != http.MethodPost {
 			http.Error(w, `{"error":"method not allowed"}`+"\n", http.StatusMethodNotAllowed)
@@ -306,6 +335,12 @@ func (n DemoNode) serveHTTP(w http.ResponseWriter, r *http.Request, ready ReadyS
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func setCORSHeaders(header http.Header) {
+	header.Set("Access-Control-Allow-Origin", "*")
+	header.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	header.Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 }
 
 func (n DemoNode) handleQueueDepositClaim(w http.ResponseWriter, r *http.Request) error {

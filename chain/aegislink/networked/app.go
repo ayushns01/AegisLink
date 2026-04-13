@@ -107,6 +107,7 @@ type LocalhostTransferResult struct {
 	CounterpartyChannelID string
 	Sequence              uint64
 	PacketCommitment      []byte
+	Events                []abcitypes.Event
 }
 
 type FundAccountResult struct {
@@ -469,6 +470,7 @@ func (a *ChainApp) ExecuteLocalhostTransfer(req LocalhostTransferRequest) (Local
 		CounterpartyChannelID: request.CounterpartyChannel,
 		Sequence:              sequence,
 		PacketCommitment:      append([]byte(nil), commitment...),
+		Events:                append([]abcitypes.Event(nil), finalizeResponse.TxResults[0].Events...),
 	}, nil
 }
 

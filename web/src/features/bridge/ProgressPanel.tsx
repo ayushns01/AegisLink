@@ -17,20 +17,24 @@ export function ProgressPanel({
   const milestones = [
     { label: "Deposit submitted on Sepolia", done: true },
     {
-      label: "Sepolia confirmation pending",
+      label: "Sepolia confirmed",
       done: session.status !== "deposit_submitted",
     },
     {
-      label: "AegisLink processing pending",
+      label: "AegisLink processing",
       done:
-        session.status === "osmosis_pending" || session.status === "completed",
+        session.status === "osmosis_pending" ||
+        session.status === "completed" ||
+        session.status === "failed",
     },
     {
-      label: "Osmosis delivery pending",
+      label: "Osmosis delivery",
       done: session.status === "completed",
     },
   ];
   const progressLabel = progressChipLabel(session.status, isPolling);
+  const progressHeadline = progressHeadlineForStatus(session.status);
+  const progressSummary = progressSummaryForStatus(session.status);
 
   return (
     <div className="transfer-card transfer-card--progress">
@@ -39,11 +43,16 @@ export function ProgressPanel({
           <p className="eyebrow eyebrow--dark">Bridge Session</p>
           <h2>Transfer in progress</h2>
           <p className="transfer-card__copy">
-            Your deposit has been submitted. AegisLink will keep processing the
-            transfer until the Osmosis receipt is available.
+            {progressSummary}
           </p>
         </div>
         <div className="wallet-chip">{progressLabel}</div>
+      </div>
+
+      <div className="progress-card progress-card--hero">
+        <small>Current stage</small>
+        <strong>{progressHeadline}</strong>
+        <span>{progressSummary}</span>
       </div>
 
       <div className="progress-layout">
@@ -112,7 +121,9 @@ export function ProgressPanel({
                       ? "Completed or advanced"
                       : index === 1
                         ? "Waiting for block confirmations"
-                        : "Waiting for downstream processing"}
+                        : index === 2
+                          ? "Waiting for AegisLink to finish bridge processing"
+                          : "Waiting for downstream delivery"}
                   </span>
                 </div>
               </div>
@@ -143,8 +154,51 @@ function progressChipLabel(status: BridgeSession["status"], isPolling: boolean) 
   if (status === "failed") {
     return "Needs attention";
   }
+  if (status === "aegislink_processing") {
+    return "AegisLink processing";
+  }
+  if (status === "osmosis_pending") {
+    return "Awaiting Osmosis delivery";
+  }
+  if (status === "sepolia_confirming" || status === "deposit_submitted") {
+    return isPolling ? "Confirming on Sepolia" : "Awaiting confirmation";
+  }
   if (isPolling) {
     return "Tracking live progress";
   }
   return "Awaiting bridge progress";
+}
+
+function progressHeadlineForStatus(status: BridgeSession["status"]) {
+  switch (status) {
+    case "completed":
+      return "Delivered to Osmosis";
+    case "failed":
+      return "Bridge flow needs attention";
+    case "osmosis_pending":
+      return "AegisLink has sent your transfer toward Osmosis";
+    case "aegislink_processing":
+      return "AegisLink is validating and crediting your bridged ETH";
+    case "sepolia_confirming":
+    case "deposit_submitted":
+    default:
+      return "Waiting for Sepolia confirmation";
+  }
+}
+
+function progressSummaryForStatus(status: BridgeSession["status"]) {
+  switch (status) {
+    case "completed":
+      return "The transfer completed and the final Osmosis receipt is available below.";
+    case "failed":
+      return "The bridge observed a problem while processing the transfer. Review the error details below.";
+    case "osmosis_pending":
+      return "Sepolia is confirmed and AegisLink has handed the transfer off toward Osmosis.";
+    case "aegislink_processing":
+      return "Sepolia is confirmed. AegisLink is now processing the bridged balance before Osmosis delivery.";
+    case "sepolia_confirming":
+    case "deposit_submitted":
+    default:
+      return "Your deposit has been submitted. The bridge is waiting for Sepolia confirmation before continuing.";
+  }
 }

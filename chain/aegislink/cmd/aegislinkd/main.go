@@ -280,6 +280,7 @@ func runDemoNodeStart(ctx context.Context, args []string, stdout, stderr io.Writ
 	grpcAddress := flags.String("grpc-address", "", "demo node gRPC address")
 	abciAddress := flags.String("abci-address", "", "demo node ABCI socket address")
 	readyFile := flags.String("ready-file", "", "path to a ready-state file written after startup")
+	destinationLCDBaseURL := flags.String("destination-lcd-base-url", "", "optional destination LCD base URL for bridge-status delivery resolution")
 	tickIntervalMS := flags.Uint("tick-interval-ms", 0, "optional demo-node block tick interval in milliseconds")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -291,8 +292,9 @@ func runDemoNodeStart(ctx context.Context, args []string, stdout, stderr io.Writ
 		CometRPCAddress: *cometRPCAddress,
 		GRPCAddress:     *grpcAddress,
 		ABCIAddress:     *abciAddress,
-		ReadyFile:       *readyFile,
-		TickInterval:    time.Duration(*tickIntervalMS) * time.Millisecond,
+		ReadyFile:             *readyFile,
+		DestinationLCDBaseURL: *destinationLCDBaseURL,
+		TickInterval:          time.Duration(*tickIntervalMS) * time.Millisecond,
 	})
 	if err != nil {
 		return err

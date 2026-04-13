@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -90,6 +91,38 @@ func TestRPCLogSourceChunksLargeLogRanges(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("expected range %v at call %d, got %v", want[i], i, got[i])
 		}
+	}
+}
+
+func TestRPCLogSourceMarksAlchemyThroughputErrorsTemporary(t *testing.T) {
+	t.Parallel()
+
+	source := NewRPCLogSource("http://rpc.test", "0x37ecd127529B14253C8a858976e22c4671c6Bd1E")
+	source.client = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			defer r.Body.Close()
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(
+					`{"jsonrpc":"2.0","id":1,"error":{"message":"Your app has exceeded its compute units per second capacity. If you have retries enabled, you can safely ignore this message."}}`,
+				)),
+			}, nil
+		}),
+	}
+
+	_, err := source.LatestBlock(context.Background())
+	if err == nil {
+		t.Fatal("expected rate limit error")
+	}
+
+	var temporary interface{ Temporary() bool }
+	if !errors.As(err, &temporary) {
+		t.Fatalf("expected rate limit error to be temporary, got %T", err)
+	}
+	if !temporary.Temporary() {
+		t.Fatal("expected temporary marker to be true")
 	}
 }
 

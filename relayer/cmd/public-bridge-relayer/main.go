@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ayushns01/aegislink/chain/aegislink/networked"
+	"github.com/ayushns01/aegislink/relayer/internal/autodelivery"
 	"github.com/ayushns01/aegislink/relayer/internal/attestations"
 	"github.com/ayushns01/aegislink/relayer/internal/config"
 	"github.com/ayushns01/aegislink/relayer/internal/cosmos"
@@ -42,6 +45,11 @@ type publicBridgeConfig struct {
 	AegisLinkCommand            string
 	AegisLinkCommandArgs        []string
 	AegisLinkStatePath          string
+	AutoDeliveryEnabled         bool
+	AutoDeliveryRelayerCommand  string
+	AutoDeliveryRelayerHome     string
+	AutoDeliveryPathName        string
+	AutoDeliveryTimeoutHeight   uint64
 	AttestationThreshold        uint32
 	AttestationSignerSetVersion uint64
 	AttestationSignerKeys       []string
@@ -111,6 +119,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		cosmos.NewWatcher(cosmos.NewClient(withdrawalSource), cfg.CosmosConfirmations),
 		evm.NewReleaser(releaseTarget),
 	)
+	combined, err := buildCombinedCoordinator(cfg, coord)
+	if err != nil {
+		return err
+	}
 
 	_ = opslog.Write(stderr, "info", "public-bridge-relayer", "run_start", "public bridge relayer run started", map[string]any{
 		"cosmos_chain_id":        cfg.CosmosChainID,
@@ -125,7 +137,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	})
 
 	if loop {
-		daemon := pipeline.NewDaemon(coord, pipeline.DaemonConfig{
+		daemon := pipeline.NewDaemon(combined, pipeline.DaemonConfig{
 			PollInterval:       cfg.PollInterval,
 			FailureBackoff:     cfg.FailureBackoff,
 			MaxConsecutiveRuns: cfg.MaxRuns,
@@ -136,7 +148,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return daemon.Run(ctx)
 	}
 
-	summary, err := coord.RunOnceWithSummary(ctx)
+	summary, err := combined.RunOnceWithSummary(ctx)
 	logPublicBridgeOutcome(stdout, stderr, summary, err, 0)
 	return err
 }
@@ -165,9 +177,20 @@ func buildPublicBridgeConfig(cfg config.Config) (publicBridgeConfig, error) {
 		AegisLinkCommand:            strings.TrimSpace(cfg.AegisLinkCommand),
 		AegisLinkCommandArgs:        append([]string(nil), cfg.AegisLinkCommandArgs...),
 		AegisLinkStatePath:          strings.TrimSpace(cfg.AegisLinkStatePath),
+		AutoDeliveryEnabled:         autoDeliveryEnabled(),
+		AutoDeliveryRelayerCommand:  strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_CMD")),
+		AutoDeliveryRelayerHome:     strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_HOME")),
+		AutoDeliveryPathName:        strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_PATH_NAME")),
+		AutoDeliveryTimeoutHeight:   loadAutoDeliveryTimeoutHeight(),
 		AttestationThreshold:        cfg.AttestationThreshold,
 		AttestationSignerSetVersion: cfg.AttestationSignerSetVersion,
 		AttestationSignerKeys:       append([]string(nil), cfg.AttestationSignerKeys...),
+	}
+	if public.AutoDeliveryRelayerCommand == "" {
+		public.AutoDeliveryRelayerCommand = "./bin/relayer"
+	}
+	if public.AutoDeliveryPathName == "" {
+		public.AutoDeliveryPathName = "osmosis-public-wallet"
 	}
 	if commandArgsContainFlag(public.AegisLinkCommandArgs, "--home") {
 		public.AegisLinkStatePath = ""
@@ -215,6 +238,26 @@ func metricsOutputEnabled() bool {
 	return value == "1" || strings.EqualFold(value, "true")
 }
 
+func autoDeliveryEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_AUTODELIVERY_ENABLED"))
+	if value != "" {
+		return value == "1" || strings.EqualFold(value, "true")
+	}
+	return strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_HOME")) != ""
+}
+
+func loadAutoDeliveryTimeoutHeight() uint64 {
+	value := strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT"))
+	if value == "" {
+		return 120
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || parsed == 0 {
+		return 120
+	}
+	return parsed
+}
+
 func parseLoopFlag(args []string, fallback bool) (bool, error) {
 	flags := flag.NewFlagSet("public-bridge-relayer", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -237,6 +280,12 @@ func logPublicBridgeOutcome(stdout, stderr io.Writer, summary pipeline.RunSummar
 		"withdrawal_release_attempts": summary.WithdrawalReleaseAttempts,
 		"deposit_next_cursor":         summary.DepositNextCursor,
 		"withdrawal_next_cursor":      summary.WithdrawalNextCursor,
+		"auto_delivery_intents":       summary.AutoDeliveryIntents,
+		"auto_delivery_waiting":       summary.AutoDeliveryWaiting,
+		"auto_transfers_initiated":    summary.AutoTransfersInitiated,
+		"auto_flushes_triggered":      summary.AutoFlushesTriggered,
+		"auto_completed_deliveries":   summary.AutoCompletedDeliveries,
+		"auto_failed_deliveries":      summary.AutoFailedDeliveries,
 	}
 	if consecutiveFailures > 0 {
 		fields["consecutive_failures"] = consecutiveFailures
@@ -256,4 +305,81 @@ func logPublicBridgeOutcome(stdout, stderr io.Writer, summary pipeline.RunSummar
 			WithdrawalsReleased:   summary.WithdrawalsReleased,
 		}))
 	}
+}
+
+type combinedCoordinator struct {
+	bridge *pipeline.Coordinator
+	auto   *autodelivery.Coordinator
+}
+
+func buildCombinedCoordinator(cfg publicBridgeConfig, bridge *pipeline.Coordinator) (*combinedCoordinator, error) {
+	auto, err := buildAutoDeliveryCoordinator(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &combinedCoordinator{
+		bridge: bridge,
+		auto:   auto,
+	}, nil
+}
+
+func (c *combinedCoordinator) RunOnceWithSummary(ctx context.Context) (pipeline.RunSummary, error) {
+	summary, err := c.bridge.RunOnceWithSummary(ctx)
+	if err != nil || c.auto == nil {
+		return summary, err
+	}
+
+	autoSummary, err := c.auto.RunOnce(ctx)
+	summary.AutoDeliveryIntents = autoSummary.IntentsObserved
+	summary.AutoDeliveryWaiting = autoSummary.IntentsWaiting
+	summary.AutoTransfersInitiated = autoSummary.TransfersInitiated
+	summary.AutoFlushesTriggered = autoSummary.FlushesTriggered
+	summary.AutoCompletedDeliveries = autoSummary.CompletedDeliveries
+	summary.AutoFailedDeliveries = autoSummary.FailedDeliveries
+	return summary, err
+}
+
+func buildAutoDeliveryCoordinator(cfg publicBridgeConfig) (*autodelivery.Coordinator, error) {
+	if !cfg.AutoDeliveryEnabled {
+		return nil, nil
+	}
+	nodeConfig, err := resolveAutoDeliveryNodeConfig(cfg.AegisLinkCommandArgs)
+	if err != nil {
+		return nil, err
+	}
+	return autodelivery.NewCoordinator(
+		autodelivery.NetworkedIntentSource{Config: nodeConfig},
+		autodelivery.NetworkedStatusSource{Config: nodeConfig},
+		autodelivery.NetworkedTransferSubmitter{
+			Config:        nodeConfig,
+			TimeoutHeight: cfg.AutoDeliveryTimeoutHeight,
+		},
+		autodelivery.RlyFlusher{
+			Command:  cfg.AutoDeliveryRelayerCommand,
+			PathName: cfg.AutoDeliveryPathName,
+			Home:     cfg.AutoDeliveryRelayerHome,
+		},
+	), nil
+}
+
+func resolveAutoDeliveryNodeConfig(args []string) (networked.Config, error) {
+	var cfg networked.Config
+	for index := 0; index < len(args); index++ {
+		switch strings.TrimSpace(args[index]) {
+		case "--home":
+			if index+1 < len(args) {
+				cfg.HomeDir = strings.TrimSpace(args[index+1])
+				index++
+			}
+		case "--demo-node-ready-file":
+			if index+1 < len(args) {
+				cfg.ReadyFile = strings.TrimSpace(args[index+1])
+				index++
+			}
+		}
+	}
+	if strings.TrimSpace(cfg.HomeDir) == "" && strings.TrimSpace(cfg.ReadyFile) == "" {
+		return networked.Config{}, fmt.Errorf("autodelivery requires --home or --demo-node-ready-file in AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS")
+	}
+	return cfg, nil
 }

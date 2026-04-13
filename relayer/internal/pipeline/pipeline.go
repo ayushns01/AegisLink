@@ -48,18 +48,24 @@ type Coordinator struct {
 }
 
 type RunSummary struct {
-	DepositFromBlock         uint64 `json:"deposit_from_block"`
-	DepositNextCursor        uint64 `json:"deposit_next_cursor"`
-	DepositsObserved         int    `json:"deposits_observed"`
-	DuplicateDeposits        int    `json:"duplicate_deposits"`
-	DepositsSubmitted        int    `json:"deposits_submitted"`
-	DepositSubmitAttempts    int    `json:"deposit_submit_attempts"`
-	WithdrawalFromHeight     uint64 `json:"withdrawal_from_height"`
-	WithdrawalNextCursor     uint64 `json:"withdrawal_next_cursor"`
-	WithdrawalsObserved      int    `json:"withdrawals_observed"`
-	DuplicateWithdrawals     int    `json:"duplicate_withdrawals"`
-	WithdrawalsReleased      int    `json:"withdrawals_released"`
-	WithdrawalReleaseAttempts int   `json:"withdrawal_release_attempts"`
+	DepositFromBlock          uint64 `json:"deposit_from_block"`
+	DepositNextCursor         uint64 `json:"deposit_next_cursor"`
+	DepositsObserved          int    `json:"deposits_observed"`
+	DuplicateDeposits         int    `json:"duplicate_deposits"`
+	DepositsSubmitted         int    `json:"deposits_submitted"`
+	DepositSubmitAttempts     int    `json:"deposit_submit_attempts"`
+	WithdrawalFromHeight      uint64 `json:"withdrawal_from_height"`
+	WithdrawalNextCursor      uint64 `json:"withdrawal_next_cursor"`
+	WithdrawalsObserved       int    `json:"withdrawals_observed"`
+	DuplicateWithdrawals      int    `json:"duplicate_withdrawals"`
+	WithdrawalsReleased       int    `json:"withdrawals_released"`
+	WithdrawalReleaseAttempts int    `json:"withdrawal_release_attempts"`
+	AutoDeliveryIntents       int    `json:"auto_delivery_intents"`
+	AutoDeliveryWaiting       int    `json:"auto_delivery_waiting"`
+	AutoTransfersInitiated    int    `json:"auto_transfers_initiated"`
+	AutoFlushesTriggered      int    `json:"auto_flushes_triggered"`
+	AutoCompletedDeliveries   int    `json:"auto_completed_deliveries"`
+	AutoFailedDeliveries      int    `json:"auto_failed_deliveries"`
 }
 
 func New(cfg config.Config, store *replay.Store, depositWatcher DepositWatcher, collector AttestationCollector, submitter CosmosSubmitter, withdrawalWatcher WithdrawalWatcher, evmRelease EVMReleaser) *Coordinator {

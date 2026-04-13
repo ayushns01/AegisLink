@@ -7,9 +7,11 @@ import { TransferPage } from "./TransferPage";
 const useBridgeWalletMock = vi.fn();
 const useWalletClientMock = vi.fn();
 const submitEthDepositMock = vi.fn();
+const registerBridgeDeliveryIntentMock = vi.fn();
 const fetchMock = vi.fn();
 
 const originalStatusApiBaseUrl = frontendEnv.statusApiBaseUrl;
+const originalAegislinkDepositRecipient = frontendEnv.aegislinkDepositRecipient;
 
 Object.defineProperty(globalThis, "fetch", {
   configurable: true,
@@ -33,9 +35,16 @@ vi.mock("../../lib/evm/gateway", () => ({
   submitEthDeposit: (...args: unknown[]) => submitEthDepositMock(...args),
 }));
 
+vi.mock("../../lib/bridge/delivery-intent", () => ({
+  registerBridgeDeliveryIntent: (...args: unknown[]) =>
+    registerBridgeDeliveryIntentMock(...args),
+}));
+
 afterEach(() => {
   frontendEnv.statusApiBaseUrl = originalStatusApiBaseUrl;
+  frontendEnv.aegislinkDepositRecipient = originalAegislinkDepositRecipient;
   fetchMock.mockReset();
+  registerBridgeDeliveryIntentMock.mockReset();
 });
 
 describe("TransferPage", () => {
@@ -125,9 +134,12 @@ describe("TransferPage", () => {
 
   it("submits a Sepolia deposit and shows the bridge session progress", async () => {
     seedConnectedWallet();
+    frontendEnv.aegislinkDepositRecipient =
+      "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4";
     submitEthDepositMock.mockResolvedValue(
       "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
 
     const user = userEvent.setup();
     render(<TransferPage />);
@@ -146,12 +158,41 @@ describe("TransferPage", () => {
     expect(screen.getByText(/0x12345678/i)).toBeInTheDocument();
   });
 
+  it("submits the configured AegisLink bridge wallet as the deposit recipient", async () => {
+    seedConnectedWallet();
+    frontendEnv.aegislinkDepositRecipient =
+      "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4";
+    submitEthDepositMock.mockResolvedValue(
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.clear(screen.getByLabelText(/recipient/i));
+    await user.type(
+      screen.getByLabelText(/recipient/i),
+      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+
+    await waitFor(() => {
+      expect(submitEthDepositMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipient: "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4",
+        }),
+      );
+    });
+  });
+
   it("polls a configured bridge status api and shows the final Osmosis tx hash", async () => {
     seedConnectedWallet();
     frontendEnv.statusApiBaseUrl = "https://status.aegislink.test";
     submitEthDepositMock.mockResolvedValue(
       "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -185,5 +226,66 @@ describe("TransferPage", () => {
       "href",
       "https://www.mintscan.io/osmosis-testnet/txs/5E40ED4BF5B065DA159D66785534EAAEEE376876749DADAF639F6A51524B2F7D",
     );
+  });
+
+  it("shows the AegisLink processing stage once Sepolia confirmation is complete", async () => {
+    seedConnectedWallet();
+    frontendEnv.statusApiBaseUrl = "https://status.aegislink.test";
+    submitEthDepositMock.mockResolvedValue(
+      "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        sourceTxHash:
+          "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+        status: "aegislink_processing",
+        messageId: "5355ecdd643688f596694128c127ed62cdfba1bba5d605ef4e9704b5e035382f",
+      }),
+    });
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/aegislink is validating and crediting your bridged eth/i),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/sepolia confirmed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/sepolia confirmation pending/i)).not.toBeInTheDocument();
+  });
+
+  it("registers a delivery intent with the local bridge operator after deposit submission", async () => {
+    seedConnectedWallet();
+    submitEthDepositMock.mockResolvedValue(
+      "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.clear(screen.getByLabelText(/recipient/i));
+    await user.type(
+      screen.getByLabelText(/recipient/i),
+      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+
+    await waitFor(() => {
+      expect(registerBridgeDeliveryIntentMock).toHaveBeenCalledWith({
+        amount: "250000000000000000",
+        assetId: "eth",
+        receiver: "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+        routeId: "osmosis-public-wallet",
+        sender: "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4",
+        sourceTxHash: "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+      });
+    });
   });
 });
