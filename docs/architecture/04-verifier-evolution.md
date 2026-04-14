@@ -4,7 +4,7 @@ This document explains what verifier model AegisLink has today, what is already 
 
 ## Current boundary
 
-The Ethereum gateway depends on the narrow verifier interface in [IBridgeVerifier.sol](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/IBridgeVerifier.sol).
+The Ethereum gateway depends on the narrow verifier interface in [IBridgeVerifier.sol](../../contracts/ethereum/IBridgeVerifier.sol).
 
 That matters because the gateway does not need to know whether a proof came from:
 
@@ -14,9 +14,9 @@ That matters because the gateway does not need to know whether a proof came from
 
 The repo now includes two concrete verifier paths:
 
-- [BridgeVerifier.sol](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/BridgeVerifier.sol)
+- [BridgeVerifier.sol](../../contracts/ethereum/BridgeVerifier.sol)
   This is the simpler v1-compatible verifier.
-- [ThresholdBridgeVerifier.sol](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/ThresholdBridgeVerifier.sol)
+- [ThresholdBridgeVerifier.sol](../../contracts/ethereum/ThresholdBridgeVerifier.sol)
   This adds threshold enforcement, duplicate-signer rejection, signer-set versioning, and signer rotation.
 
 On the AegisLink side, attestations now carry `signer_set_version`, and bridge verification checks:
@@ -26,7 +26,7 @@ On the AegisLink side, attestations now carry `signer_set_version`, and bridge v
 - optional expiry height
 - signer-set version mismatch
 
-That logic lives in [signer_set.go](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/signer_set.go) and [verify_attestation.go](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/verify_attestation.go).
+That logic lives in [signer_set.go](../../chain/aegislink/x/bridge/keeper/signer_set.go) and [verify_attestation.go](../../chain/aegislink/x/bridge/keeper/verify_attestation.go).
 
 ## What is replaceable today
 

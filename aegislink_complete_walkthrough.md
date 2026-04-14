@@ -51,7 +51,7 @@ Here is exactly what happens when a user deposits USDC on Ethereum:
 
 ### Step 1: User calls `deposit()` on Ethereum
 
-**File**: [BridgeGateway.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/BridgeGateway.sol)
+**File**: [BridgeGateway.sol](contracts/ethereum/BridgeGateway.sol)
 
 ```
 User → BridgeGateway.deposit(token, amount, cosmosRecipient, expiry)
@@ -68,7 +68,7 @@ The gateway:
 
 ### Step 2: Relayer observes the deposit event
 
-**File**: [relayer/internal/evm/](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer/internal/evm/)
+**File**: [relayer/internal/evm/](relayer/internal/evm)
 
 The bridge relayer polls Ethereum for new `Deposited` events:
 - `evm.Watcher` calls `evm.Client` which uses either:
@@ -79,7 +79,7 @@ The bridge relayer polls Ethereum for new `Deposited` events:
 
 ### Step 3: Relayer collects attestation signatures
 
-**File**: [relayer/internal/attestations/collector.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer/internal/attestations/collector.go)
+**File**: [relayer/internal/attestations/collector.go](relayer/internal/attestations/collector.go)
 
 The collector:
 1. Reads votes from a vote state file (or would query other relayers in production)
@@ -90,7 +90,7 @@ The collector:
 
 ### Step 4: Relayer submits the claim to AegisLink
 
-**File**: [relayer/internal/pipeline/pipeline.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer/internal/pipeline/pipeline.go)
+**File**: [relayer/internal/pipeline/pipeline.go](relayer/internal/pipeline/pipeline.go)
 
 The `Coordinator.runDeposits()` method:
 1. Calls `depositWatcher.Observe()` to get new events
@@ -103,7 +103,7 @@ The `Coordinator.runDeposits()` method:
 
 ### Step 5: AegisLink verifies and accepts the claim
 
-**File**: [chain/aegislink/x/bridge/keeper/keeper.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/keeper.go) → `ExecuteDepositClaim()`
+**File**: [chain/aegislink/x/bridge/keeper/keeper.go](chain/aegislink/x/bridge/keeper/keeper.go) → `ExecuteDepositClaim()`
 
 This is the most important function in the entire project. Here's what it does, in order:
 
@@ -134,7 +134,7 @@ This is the most important function in the entire project. Here's what it does, 
 
 ### Step 1: Withdrawal is executed on AegisLink
 
-**File**: [keeper.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/keeper.go) → `ExecuteWithdrawal()`
+**File**: [keeper.go](chain/aegislink/x/bridge/keeper/keeper.go) → `ExecuteWithdrawal()`
 
 1. Circuit breaker check
 2. Input validation (positive amount, valid recipient, non-zero deadline, signature present)
@@ -146,13 +146,13 @@ This is the most important function in the entire project. Here's what it does, 
 
 ### Step 2: Relayer observes the withdrawal
 
-**File**: [relayer/internal/pipeline/pipeline.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer/internal/pipeline/pipeline.go) → `runWithdrawals()`
+**File**: [relayer/internal/pipeline/pipeline.go](relayer/internal/pipeline/pipeline.go) → `runWithdrawals()`
 
 The relayer polls the bridge zone for new withdrawals using `withdrawalWatcher.Observe()`, then calls `evmRelease.ReleaseWithdrawal()`.
 
 ### Step 3: Release on Ethereum
 
-**File**: [BridgeGateway.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/BridgeGateway.sol) → `release()`
+**File**: [BridgeGateway.sol](contracts/ethereum/BridgeGateway.sol) → `release()`
 
 1. Checks reentrancy lock (`_releaseStatus`)
 2. Calls `verifier.verifyAndConsume(messageId, payloadHash, expiry, proof)`:
@@ -168,7 +168,7 @@ The relayer polls the bridge zone for new withdrawals using `withdrawalWatcher.O
 
 ### Step 1: Initiate IBC transfer on AegisLink
 
-**File**: [ibcrouter/keeper/keeper.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/ibcrouter/keeper/keeper.go) → `InitiateTransfer()`
+**File**: [ibcrouter/keeper/keeper.go](chain/aegislink/x/ibcrouter/keeper/keeper.go) → `InitiateTransfer()`
 
 1. Finds the route for the asset (which destination chain, which channel, which destination denom)
 2. If a route profile exists, enforces policy (allowed memo prefixes, allowed action types, allowed assets)
@@ -177,7 +177,7 @@ The relayer polls the bridge zone for new withdrawals using `withdrawalWatcher.O
 
 ### Step 2: Route relayer delivers the packet
 
-**File**: [relayer/internal/route/relay.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer/internal/route/relay.go)
+**File**: [relayer/internal/route/relay.go](relayer/internal/route/relay.go)
 
 The route relayer:
 1. Queries AegisLink for pending transfers
@@ -188,7 +188,7 @@ The route relayer:
 
 ### Step 3: Destination execution
 
-**File**: [relayer/internal/route/mock_target.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer/internal/route/mock_target.go)
+**File**: [relayer/internal/route/mock_target.go](relayer/internal/route/mock_target.go)
 
 The mock Osmosis target:
 1. Receives the IBC packet
@@ -214,13 +214,13 @@ timed_out → refunded    (manual recovery)
 
 | File | Purpose |
 |------|---------|
-| [IBridgeVerifier.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/IBridgeVerifier.sol) | Interface that defines `verifyAndConsume()` — the gateway calls this to verify attestations |
-| [BridgeGateway.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/BridgeGateway.sol) | **Core gateway contract**. Handles `deposit()` and `release()`. Owns the token custody. Uses verifier for attestation. Has reentrancy guard, fee-on-transfer protection, pause control. |
-| [BridgeVerifier.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/BridgeVerifier.sol) | **Single-attester verifier**. Uses EIP-712 typed signing. Recovers signer via `ecrecover`. Has `s`-value malleability protection (`SECP256K1_HALF_N`). Tracks used proofs. |
-| [ThresholdBridgeVerifier.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/ThresholdBridgeVerifier.sol) | **Multi-signer verifier**. Requires `threshold` valid signatures from the active signer set. Supports signer set rotation with version binding. Detects duplicate signers. |
-| [test/BridgeGateway.t.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/test/BridgeGateway.t.sol) | Unit tests for deposits, releases, pauses, fee-on-transfer rejection, canonical transfer checks |
-| [test/ThresholdBridgeVerifier.t.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/test/ThresholdBridgeVerifier.t.sol) | Tests for threshold release, insufficient signatures, duplicate signers, signer rotation |
-| [test/BridgeGateway.invariant.t.sol](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum/test/BridgeGateway.invariant.t.sol) | **Foundry invariant test** — randomized deposit/release sequences asserting `gateway_balance == initial + deposited - released` |
+| [IBridgeVerifier.sol](contracts/ethereum/IBridgeVerifier.sol) | Interface that defines `verifyAndConsume()` — the gateway calls this to verify attestations |
+| [BridgeGateway.sol](contracts/ethereum/BridgeGateway.sol) | **Core gateway contract**. Handles `deposit()` and `release()`. Owns the token custody. Uses verifier for attestation. Has reentrancy guard, fee-on-transfer protection, pause control. |
+| [BridgeVerifier.sol](contracts/ethereum/BridgeVerifier.sol) | **Single-attester verifier**. Uses EIP-712 typed signing. Recovers signer via `ecrecover`. Has `s`-value malleability protection (`SECP256K1_HALF_N`). Tracks used proofs. |
+| [ThresholdBridgeVerifier.sol](contracts/ethereum/ThresholdBridgeVerifier.sol) | **Multi-signer verifier**. Requires `threshold` valid signatures from the active signer set. Supports signer set rotation with version binding. Detects duplicate signers. |
+| [test/BridgeGateway.t.sol](contracts/ethereum/test/BridgeGateway.t.sol) | Unit tests for deposits, releases, pauses, fee-on-transfer rejection, canonical transfer checks |
+| [test/ThresholdBridgeVerifier.t.sol](contracts/ethereum/test/ThresholdBridgeVerifier.t.sol) | Tests for threshold release, insufficient signatures, duplicate signers, signer rotation |
+| [test/BridgeGateway.invariant.t.sol](contracts/ethereum/test/BridgeGateway.invariant.t.sol) | **Foundry invariant test** — randomized deposit/release sequences asserting `gateway_balance == initial + deposited - released` |
 
 ---
 
@@ -230,29 +230,29 @@ timed_out → refunded    (manual recovery)
 
 | File | Purpose |
 |------|---------|
-| [app.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/app/app.go) | **Main application struct**. Owns all keepers. Has `sync.RWMutex` for thread safety. Methods: `SubmitDepositClaim`, `ExecuteWithdrawal`, `InitiateIBCTransfer`, `Pause`/`Unpause`, `Status`, `Save`, `Load`, `AdvanceBlock`. |
-| [config.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/app/config.go) | Configuration management. `InitHome()` creates home directory with config.json, genesis.json, and state. `ResolveConfig()` merges stored + explicit config. |
-| [service.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/app/service.go) | Service layer with thread-safe wrappers: `BridgeQueryService` (read claims, withdrawals, signer sets), `BridgeTxService` (submit claims, execute withdrawals), `GovernanceTxService` (apply proposals), `IBCRouterQueryService` (list routes, transfers). |
-| [store_runtime.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/app/store_runtime.go) | Creates the LevelDB-backed store with IAVL trees for each module. Uses `cosmossdk.io/store/rootmulti` for the multi-store. |
-| [runtime_state.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/app/runtime_state.go) | JSON-file based state persistence (for the non-SDK-store runtime mode). Exports/imports all module state. |
-| [node.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/app/node.go) | ABCI-like block production. `QueuedDepositClaim` for pending claims. `BlockProgress` for height advancement. `AdvanceBlock()` drains queued claims and increments height. |
+| [app.go](chain/aegislink/app/app.go) | **Main application struct**. Owns all keepers. Has `sync.RWMutex` for thread safety. Methods: `SubmitDepositClaim`, `ExecuteWithdrawal`, `InitiateIBCTransfer`, `Pause`/`Unpause`, `Status`, `Save`, `Load`, `AdvanceBlock`. |
+| [config.go](chain/aegislink/app/config.go) | Configuration management. `InitHome()` creates home directory with config.json, genesis.json, and state. `ResolveConfig()` merges stored + explicit config. |
+| [service.go](chain/aegislink/app/service.go) | Service layer with thread-safe wrappers: `BridgeQueryService` (read claims, withdrawals, signer sets), `BridgeTxService` (submit claims, execute withdrawals), `GovernanceTxService` (apply proposals), `IBCRouterQueryService` (list routes, transfers). |
+| [store_runtime.go](chain/aegislink/app/store_runtime.go) | Creates the LevelDB-backed store with IAVL trees for each module. Uses `cosmossdk.io/store/rootmulti` for the multi-store. |
+| [runtime_state.go](chain/aegislink/app/runtime_state.go) | JSON-file based state persistence (for the non-SDK-store runtime mode). Exports/imports all module state. |
+| [node.go](chain/aegislink/app/node.go) | ABCI-like block production. `QueuedDepositClaim` for pending claims. `BlockProgress` for height advancement. `AdvanceBlock()` drains queued claims and increments height. |
 
 #### Bridge Module (`chain/aegislink/x/bridge/`)
 
 | File | Purpose |
 |------|---------|
-| [keeper/keeper.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/keeper.go) | **Core bridge logic**. `ExecuteDepositClaim()` — the 12-step verification pipeline. `ExecuteWithdrawal()` — burn + record. State export/import. Prefix-store persistence. |
-| [keeper/verify_attestation.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/verify_attestation.go) | **Cryptographic verification**. Computes signing digest, iterates proofs, calls `verifyProof()`, counts valid signers against threshold. |
-| [keeper/verify_signature.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/verify_signature.go) | **ECDSA recovery**. `ecdsa.RecoverCompact(signature, digest)` → recover public key → derive Ethereum address → compare with claimed signer. |
-| [keeper/accounting.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/accounting.go) | Supply management. `mintRepresentation()` adds to supply. `burnRepresentation()` subtracts with underflow check. `ClaimRecord` and `WithdrawalRecord` types. `cloneAmount()` prevents aliasing. |
-| [keeper/invariants.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/invariants.go) | **Circuit breaker**. `CheckAccountingInvariant()` rebuilds expected supply from claims - withdrawals, compares to actual. `tripCircuit()` halts all bridge operations if mismatched. |
-| [keeper/signer_set.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/signer_set.go) | Signer set lifecycle. `UpsertSignerSet()`, `ActiveSignerSet()`, `ExpireSignerSet()`. Supports multiple versions with activation timestamps. |
-| [keeper/state.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/state.go) | State serialization. `ExportState()` / `ImportState()` for JSON persistence. Prefix-store save/load for SDK-store mode. |
-| [types/claim.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/types/claim.go) | Claim types. `ClaimIdentity` (kind, source chain, tx hash, log index, nonce, message ID). `DepositClaim` and `WithdrawalClaim`. `ValidateBasic()` ensures derived message ID matches. `Digest()` for attestation binding. |
-| [types/attestation.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/types/attestation.go) | Attestation envelope. `ValidateBasic()` checks proofs present, no duplicates, signatures non-empty. |
-| [types/proof.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/types/proof.go) | **Cryptographic signing primitives**. `SigningDigest()` — canonical pipe-delimited Keccak hash. `SignAttestationWithPrivateKeyHex()` — sign with secp256k1. `SignerAddressFromPublicKey()` — Ethereum-style Keccak address derivation. Harness test signers with known private keys. |
-| [types/keys.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/types/keys.go) | Deterministic key derivation. `ReplayKey()` and `ClaimDigest()` functions that produce collision-resistant identifiers from claim fields. |
-| [keeper/fuzz_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/x/bridge/keeper/fuzz_test.go) | **Go fuzz test**. `FuzzBridgeSupplyNeverGoesNegative` — random deposit/withdrawal amounts, asserts supply never goes negative and insufficient-supply errors fire correctly. |
+| [keeper/keeper.go](chain/aegislink/x/bridge/keeper/keeper.go) | **Core bridge logic**. `ExecuteDepositClaim()` — the 12-step verification pipeline. `ExecuteWithdrawal()` — burn + record. State export/import. Prefix-store persistence. |
+| [keeper/verify_attestation.go](chain/aegislink/x/bridge/keeper/verify_attestation.go) | **Cryptographic verification**. Computes signing digest, iterates proofs, calls `verifyProof()`, counts valid signers against threshold. |
+| [keeper/verify_signature.go](chain/aegislink/x/bridge/keeper/verify_signature.go) | **ECDSA recovery**. `ecdsa.RecoverCompact(signature, digest)` → recover public key → derive Ethereum address → compare with claimed signer. |
+| [keeper/accounting.go](chain/aegislink/x/bridge/keeper/accounting.go) | Supply management. `mintRepresentation()` adds to supply. `burnRepresentation()` subtracts with underflow check. `ClaimRecord` and `WithdrawalRecord` types. `cloneAmount()` prevents aliasing. |
+| [keeper/invariants.go](chain/aegislink/x/bridge/keeper/invariants.go) | **Circuit breaker**. `CheckAccountingInvariant()` rebuilds expected supply from claims - withdrawals, compares to actual. `tripCircuit()` halts all bridge operations if mismatched. |
+| [keeper/signer_set.go](chain/aegislink/x/bridge/keeper/signer_set.go) | Signer set lifecycle. `UpsertSignerSet()`, `ActiveSignerSet()`, `ExpireSignerSet()`. Supports multiple versions with activation timestamps. |
+| [keeper/state.go](chain/aegislink/x/bridge/keeper/state.go) | State serialization. `ExportState()` / `ImportState()` for JSON persistence. Prefix-store save/load for SDK-store mode. |
+| [types/claim.go](chain/aegislink/x/bridge/types/claim.go) | Claim types. `ClaimIdentity` (kind, source chain, tx hash, log index, nonce, message ID). `DepositClaim` and `WithdrawalClaim`. `ValidateBasic()` ensures derived message ID matches. `Digest()` for attestation binding. |
+| [types/attestation.go](chain/aegislink/x/bridge/types/attestation.go) | Attestation envelope. `ValidateBasic()` checks proofs present, no duplicates, signatures non-empty. |
+| [types/proof.go](chain/aegislink/x/bridge/types/proof.go) | **Cryptographic signing primitives**. `SigningDigest()` — canonical pipe-delimited Keccak hash. `SignAttestationWithPrivateKeyHex()` — sign with secp256k1. `SignerAddressFromPublicKey()` — Ethereum-style Keccak address derivation. Harness test signers with known private keys. |
+| [types/keys.go](chain/aegislink/x/bridge/types/keys.go) | Deterministic key derivation. `ReplayKey()` and `ClaimDigest()` functions that produce collision-resistant identifiers from claim fields. |
+| [keeper/fuzz_test.go](chain/aegislink/x/bridge/keeper/fuzz_test.go) | **Go fuzz test**. `FuzzBridgeSupplyNeverGoesNegative` — random deposit/withdrawal amounts, asserts supply never goes negative and insufficient-supply errors fire correctly. |
 
 #### Other Modules
 
@@ -268,8 +268,8 @@ timed_out → refunded    (manual recovery)
 
 | File | Purpose |
 |------|---------|
-| [internal/sdkstore/jsonstore.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/internal/sdkstore/jsonstore.go) | Legacy single-key JSON state store. Uses Cosmos SDK's `CommitMultiStore`. |
-| [internal/sdkstore/prefixstore.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink/internal/sdkstore/prefixstore.go) | **Scalable prefix-based KV store**. `Load(prefix, id)`, `Save(prefix, id)`, `LoadAll(prefix)` with iterator, `Delete`, `ClearPrefix`. Each record is its own key, not a monolithic blob. |
+| [internal/sdkstore/jsonstore.go](chain/aegislink/internal/sdkstore/jsonstore.go) | Legacy single-key JSON state store. Uses Cosmos SDK's `CommitMultiStore`. |
+| [internal/sdkstore/prefixstore.go](chain/aegislink/internal/sdkstore/prefixstore.go) | **Scalable prefix-based KV store**. `Load(prefix, id)`, `Save(prefix, id)`, `LoadAll(prefix)` with iterator, `Delete`, `ClearPrefix`. Each record is its own key, not a monolithic blob. |
 
 #### CLI (`chain/aegislink/cmd/aegislinkd/`)
 
@@ -320,13 +320,13 @@ timed_out → refunded    (manual recovery)
 
 | File | What it proves |
 |------|---------------|
-| [bridge_roundtrip_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/bridge_roundtrip_test.go) | Full deposit → mint → withdrawal → burn → release loop. Tests against live Anvil (real EVM). Verifies supply reaches zero after roundtrip. |
-| [attestation_crypto_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/attestation_crypto_test.go) | Proves ECDSA attestation verification works E2E. Tests valid signatures accepted, wrong-digest signatures rejected. |
-| [governance_auth_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/governance_auth_test.go) | Proves unauthorized callers are rejected, authorized guardians can apply proposals, proposals persist across restart. |
-| [race_smoke_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/race_smoke_test.go) | Proves concurrent access safety. 6 parallel deposit claims + queries + governance proposals, all against shared runtime. |
-| [real_abci_chain_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/real_abci_chain_test.go) | Proves ABCI-like block production. Queue claim → start daemon → verify blocks produced, claims drained, height advanced. |
-| [osmosis_route_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/osmosis_route_test.go) | Complete route lifecycle: initiate transfer, deliver packet, execute swap, verify pool state, balance updates, failure paths (min_out not met, unsupported action), timeout + refund. |
-| [recovery_drill_test.go](file:///Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/tests/e2e/recovery_drill_test.go) | Incident recovery scenarios: relayer restart with replay persistence, timeout + refund, pause/unpause, signer set mismatch. |
+| [bridge_roundtrip_test.go](tests/e2e/bridge_roundtrip_test.go) | Full deposit → mint → withdrawal → burn → release loop. Tests against live Anvil (real EVM). Verifies supply reaches zero after roundtrip. |
+| [attestation_crypto_test.go](tests/e2e/attestation_crypto_test.go) | Proves ECDSA attestation verification works E2E. Tests valid signatures accepted, wrong-digest signatures rejected. |
+| [governance_auth_test.go](tests/e2e/governance_auth_test.go) | Proves unauthorized callers are rejected, authorized guardians can apply proposals, proposals persist across restart. |
+| [race_smoke_test.go](tests/e2e/race_smoke_test.go) | Proves concurrent access safety. 6 parallel deposit claims + queries + governance proposals, all against shared runtime. |
+| [real_abci_chain_test.go](tests/e2e/real_abci_chain_test.go) | Proves ABCI-like block production. Queue claim → start daemon → verify blocks produced, claims drained, height advanced. |
+| [osmosis_route_test.go](tests/e2e/osmosis_route_test.go) | Complete route lifecycle: initiate transfer, deliver packet, execute swap, verify pool state, balance updates, failure paths (min_out not met, unsupported action), timeout + refund. |
+| [recovery_drill_test.go](tests/e2e/recovery_drill_test.go) | Incident recovery scenarios: relayer restart with replay persistence, timeout + refund, pause/unpause, signer set mismatch. |
 
 ---
 

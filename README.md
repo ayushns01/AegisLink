@@ -214,9 +214,9 @@ As of April 14, 2026:
 
 The current repo shape is:
 
-- [chain/aegislink](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/chain/aegislink): persistent runtime, bridge state machine, safety modules, and route lifecycle handling
-- [contracts/ethereum](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/contracts/ethereum): Ethereum event source and release verification contracts
-- [relayer](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/relayer): observation, attestation, replay, live forward or reverse bridge pipeline, and route-target handoff services
+- [chain/aegislink](chain/aegislink): persistent runtime, bridge state machine, safety modules, and route lifecycle handling
+- [contracts/ethereum](contracts/ethereum): Ethereum event source and release verification contracts
+- [relayer](relayer): observation, attestation, replay, live forward or reverse bridge pipeline, and route-target handoff services
 
 Fresh verification checkpoints that already pass in this repo:
 

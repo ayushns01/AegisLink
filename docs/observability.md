@@ -152,13 +152,13 @@ The current demo-facing status surfaces also expose richer hardening counters:
 
 The repo now includes the first local monitoring scaffold:
 
-- [deploy/monitoring/prometheus.yml](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/deploy/monitoring/prometheus.yml)
+- [deploy/monitoring/prometheus.yml](../deploy/monitoring/prometheus.yml)
   Prometheus scrape config for the destination `/metrics` endpoint.
-- [deploy/monitoring/grafana/provisioning/datasources/prometheus.yml](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/deploy/monitoring/grafana/provisioning/datasources/prometheus.yml)
+- [deploy/monitoring/grafana/provisioning/datasources/prometheus.yml](../deploy/monitoring/grafana/provisioning/datasources/prometheus.yml)
   Provisioned Prometheus datasource.
-- [deploy/monitoring/grafana/provisioning/dashboards/dashboards.yml](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/deploy/monitoring/grafana/provisioning/dashboards/dashboards.yml)
+- [deploy/monitoring/grafana/provisioning/dashboards/dashboards.yml](../deploy/monitoring/grafana/provisioning/dashboards/dashboards.yml)
   Dashboard loader configuration.
-- [deploy/monitoring/grafana/dashboards/aegislink-overview.json](/Users/ayushns01/Desktop/Repositories/Cross-chain-bridge/deploy/monitoring/grafana/dashboards/aegislink-overview.json)
+- [deploy/monitoring/grafana/dashboards/aegislink-overview.json](../deploy/monitoring/grafana/dashboards/aegislink-overview.json)
   First operator dashboard for destination packets, executions, ready acknowledgements, and swap failures.
 
 Use `make monitor` to bring up Prometheus, Grafana, and the destination target together.
