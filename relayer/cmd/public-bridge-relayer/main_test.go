@@ -52,3 +52,48 @@ func TestBuildPublicBridgeConfigPrefersHomeOverDefaultStatePath(t *testing.T) {
 		t.Fatalf("expected state path to be cleared when --home is present, got %q", cfg.AegisLinkStatePath)
 	}
 }
+
+func TestLoadAutoDeliveryTimeoutHeightUsesDestinationHeightBufferWhenConfiguredTimeoutIsStale(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT", "55000000")
+	t.Setenv("AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL", "https://lcd.osmotest5.osmosis.zone")
+	restore := stubLatestLCDHeightFunc(func(string) (uint64, error) { return 55226038, nil })
+	defer restore()
+
+	got := loadAutoDeliveryTimeoutHeight()
+	want := uint64(55226038 + autoDeliveryTimeoutHeightBuffer)
+	if got != want {
+		t.Fatalf("expected stale timeout to be raised to %d, got %d", want, got)
+	}
+}
+
+func TestLoadAutoDeliveryTimeoutHeightPreservesFutureConfiguredTimeout(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT", "56000000")
+	t.Setenv("AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL", "https://lcd.osmotest5.osmosis.zone")
+	restore := stubLatestLCDHeightFunc(func(string) (uint64, error) { return 55226038, nil })
+	defer restore()
+
+	got := loadAutoDeliveryTimeoutHeight()
+	if got != 56000000 {
+		t.Fatalf("expected explicit future timeout to be preserved, got %d", got)
+	}
+}
+
+func TestLoadAutoDeliveryTimeoutHeightUsesDestinationHeightBufferWhenConfigMissing(t *testing.T) {
+	t.Setenv("AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL", "https://lcd.osmotest5.osmosis.zone")
+	restore := stubLatestLCDHeightFunc(func(string) (uint64, error) { return 55226038, nil })
+	defer restore()
+
+	got := loadAutoDeliveryTimeoutHeight()
+	want := uint64(55226038 + autoDeliveryTimeoutHeightBuffer)
+	if got != want {
+		t.Fatalf("expected missing timeout to resolve to %d, got %d", want, got)
+	}
+}
+
+func stubLatestLCDHeightFunc(stub func(string) (uint64, error)) func() {
+	previous := latestLCDHeightFunc
+	latestLCDHeightFunc = stub
+	return func() {
+		latestLCDHeightFunc = previous
+	}
+}

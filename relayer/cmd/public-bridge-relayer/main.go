@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -54,6 +56,10 @@ type publicBridgeConfig struct {
 	AttestationSignerSetVersion uint64
 	AttestationSignerKeys       []string
 }
+
+const autoDeliveryTimeoutHeightBuffer uint64 = 1000
+
+var latestLCDHeightFunc = fetchLatestLCDHeight
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -248,14 +254,69 @@ func autoDeliveryEnabled() bool {
 
 func loadAutoDeliveryTimeoutHeight() uint64 {
 	value := strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT"))
+	configured, hasConfigured := parseConfiguredAutoDeliveryTimeoutHeight(value)
+	destinationLCDBaseURL := strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL"))
+	if destinationLCDBaseURL != "" {
+		latestHeight, err := latestLCDHeightFunc(destinationLCDBaseURL)
+		if err == nil {
+			minimumSafeHeight := latestHeight + autoDeliveryTimeoutHeightBuffer
+			if !hasConfigured || configured < minimumSafeHeight {
+				return minimumSafeHeight
+			}
+		}
+	}
+	if hasConfigured {
+		return configured
+	}
+	return 120
+}
+
+func parseConfiguredAutoDeliveryTimeoutHeight(value string) (uint64, bool) {
 	if value == "" {
-		return 120
+		return 0, false
 	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
+	parsed, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
 	if err != nil || parsed == 0 {
-		return 120
+		return 0, false
 	}
-	return parsed
+	return parsed, true
+}
+
+func fetchLatestLCDHeight(baseURL string) (uint64, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return 0, fmt.Errorf("missing destination lcd base url")
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, baseURL+"/cosmos/base/tendermint/v1beta1/blocks/latest", nil)
+	if err != nil {
+		return 0, err
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("destination lcd latest block request failed with %s", resp.Status)
+	}
+
+	var payload struct {
+		Block struct {
+			Header struct {
+				Height string `json:"height"`
+			} `json:"header"`
+		} `json:"block"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return 0, err
+	}
+	height, err := strconv.ParseUint(strings.TrimSpace(payload.Block.Header.Height), 10, 64)
+	if err != nil || height == 0 {
+		return 0, fmt.Errorf("invalid destination lcd latest height %q", payload.Block.Header.Height)
+	}
+	return height, nil
 }
 
 func parseLoopFlag(args []string, fallback bool) (bool, error) {
