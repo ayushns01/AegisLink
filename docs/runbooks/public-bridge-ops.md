@@ -36,8 +36,11 @@ That launcher will:
 - create and link a fresh AegisLink <-> Osmosis testnet path
 - update the route profile to the live channel
 - start the public bridge relayer with auto-delivery enabled
+- lift stale auto-delivery timeout heights against the current Osmosis testnet LCD height before submitting packets
 
 On the very first run, if the Osmosis relayer key is not funded yet, the launcher now prints the generated `osmo1...` address and exits cleanly. Fund that address with testnet OSMO once, then rerun the same command. After that, the backend path is a single command.
+
+If your local `.env.public-bridge.local` still contains an old value like `AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT=120`, the live relayer now treats that as a floor, not a fixed timeout. On fresh runs it raises stale values to `current Osmosis height + buffer`, which avoids immediate timeout rejection on newer Osmosis testnet heights.
 
 When it completes, it prints the active:
 

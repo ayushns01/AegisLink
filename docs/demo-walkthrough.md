@@ -74,7 +74,7 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
 6. Run `make test-real-abci`.
    Say: `Now I am proving that AegisLink can queue a deposit claim, advance blocks automatically, and apply the queued claim through the runtime loop.`
 7. Run `./scripts/testnet/start_public_bridge_backend.sh` and `cd web && npm run dev`.
-   Say: `Now I am showing the same system through the user-facing bridge surface instead of only through operator CLI commands.`
+   Say: `Now I am showing the same system through the user-facing bridge surface instead of only through operator CLI commands, and the backend now lifts stale Osmosis timeout heights automatically on fresh runs.`
 
 ## Route lifecycle to point at
 
