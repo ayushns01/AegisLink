@@ -21,7 +21,7 @@ This repository is meant to show:
 - The first public AegisLink testnet scaffold now exists too: `scripts/testnet/bootstrap_aegislink_testnet.sh` boots a reproducible single-validator SDK-store home, and the repo ships operator and network config artifacts under `deploy/testnet/aegislink/`.
 - The first public Sepolia wallet bridge scaffold now exists too: `scripts/testnet/deploy_sepolia_bridge.sh`, `scripts/testnet/register_bridge_assets.sh`, and `scripts/testnet/seed_public_bridge_assets.sh` take a Sepolia deployment from contract addresses to a deposit-ready AegisLink home, and `public-bridge-relayer` can now deliver both native ETH and ERC-20 deposits into real AegisLink wallet balances and redeem them back to Sepolia through the live RPC log path.
 - The live AegisLink-to-Osmosis IBC leg is now proven too: the single-validator demo node can connect to Osmosis testnet through `rly`, open a real connection and channel, send `ueth` over ICS20, and credit a real `osmo1...` wallet with the resulting `ibc/...` denom.
-- The repository now also has a real frontend surface in `web/`: users can connect a Sepolia wallet, choose a Cosmos destination, submit an ETH bridge deposit, and watch bridge progress through to the Osmosis receipt state.
+- The repository now also has a real frontend surface in `web/`: users can connect a Sepolia wallet, choose a Cosmos destination, submit an ETH bridge deposit, watch a live bridge-status timeline, and finish on the Osmosis receipt state with a direct destination transaction link.
 - The public-wallet operator flow is now sharper too: `scripts/testnet/start_public_bridge_backend.sh` can stand up a fresh single-command backend stack, including a seeded demo node, a live Osmosis path, the public bridge relayer, and automatic lifting of stale IBC timeout heights against the live Osmosis LCD height.
 - Ethereum now has both the original narrow single-attester verifier and a threshold-verifier path with signer-set rotation support.
 - Ethereum verifiers now build EIP-712-style attestation digests, reject non-low-`s` signatures, and the gateway release path is guarded against reentrant token callbacks.
@@ -184,7 +184,7 @@ That flow creates and uses:
 
 ## Current checkpoint
 
-As of April 14, 2026:
+As of April 19, 2026:
 
 - the live local Ethereum bridge loop is proven end to end
 - Phase 5 is now complete as a single-node SDK-store runtime milestone: AegisLink has store-backed keeper persistence, generated bridge or route proto surfaces, service-backed CLI responses, and a real-chain bootstrap or e2e proof through `aegislinkd init`, `start`, `tx`, and `query`
@@ -210,6 +210,7 @@ As of April 14, 2026:
 - Phase K now has a live public IBC proof for the current repo scope: `.env.public-ibc.local.example`, `scripts/testnet/bootstrap_public_ibc.sh`, and `scripts/testnet/bootstrap_rly_path.sh` can bootstrap the route metadata, and the single-validator AegisLink demo node has now opened a real Osmosis testnet channel and delivered `ueth` to a real `osmo1...` wallet over `rly`
 - the repository now also has a premium black-and-white frontend in `web/` plus a one-command public backend launcher, so the public demo path is no longer only a CLI exercise
 - a fresh frontend-driven `Sepolia -> AegisLink -> Osmosis` run is now proven in the current repo scope
+- the public frontend flow now also resolves the completed Osmosis receipt back into a direct destination transaction link, so the UI no longer stops at a status label alone
 - the remaining public-wallet gap is now narrower and more operational: repeated frontend-driven runs on one long-lived backend still need more hardening around auto-delivery idempotency and receipt/status bookkeeping
 
 The current repo shape is:

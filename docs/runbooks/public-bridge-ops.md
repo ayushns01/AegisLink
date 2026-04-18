@@ -74,6 +74,12 @@ The backend then owns:
 - automatic IBC handoff and packet flush toward Osmosis
 - bridge-status reporting back to the frontend
 
+The current frontend status surface now shows:
+
+- the active bridge stage while the transfer is still in flight
+- a timeline view of the handoff from Sepolia to AegisLink to Osmosis
+- the final Osmosis receipt hash and destination transaction link when delivery completes
+
 ## Bootstrap
 
 ```bash

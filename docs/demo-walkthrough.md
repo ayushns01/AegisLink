@@ -42,7 +42,7 @@ The public-wallet bridge path adds a fifth proof path:
 
 The frontend branch adds a sixth proof path:
 
-6. A browser-driven `Sepolia -> AegisLink -> Osmosis` run where the user connects a wallet in `web/`, submits the deposit from the UI, and follows bridge progress through to an Osmosis receipt.
+6. A browser-driven `Sepolia -> AegisLink -> Osmosis` run where the user connects a wallet in `web/`, submits the deposit from the UI, follows live stage-by-stage bridge progress, and ends on an Osmosis receipt with a destination transaction link.
 
 For the visual version of this flow, use [Current flow diagrams](architecture/03-current-flow-diagrams.md).
 
@@ -74,7 +74,7 @@ For the visual version of this flow, use [Current flow diagrams](architecture/03
 6. Run `make test-real-abci`.
    Say: `Now I am proving that AegisLink can queue a deposit claim, advance blocks automatically, and apply the queued claim through the runtime loop.`
 7. Run `./scripts/testnet/start_public_bridge_backend.sh` and `cd web && npm run dev`.
-   Say: `Now I am showing the same system through the user-facing bridge surface instead of only through operator CLI commands, and the backend now lifts stale Osmosis timeout heights automatically on fresh runs.`
+   Say: `Now I am showing the same system through the user-facing bridge surface instead of only through operator CLI commands, the backend lifts stale Osmosis timeout heights automatically on fresh runs, and the UI ends on the destination receipt instead of stopping at a pending label.`
 
 ## Route lifecycle to point at
 
@@ -109,7 +109,7 @@ Those states are what make the local harness feel closer to real interchain deli
 - `The route timeout path is recoverable on AegisLink, so the demo covers both success and refund-safe failure.`
 - `The AegisLink daemon loop can queue and later apply deposits, so the runtime now looks more like a single-node chain loop than a pure request-response shell.`
 - `The public bridge path preserves asset identity, so the wallet receives bridged ETH or bridged ERC-20 first and only later redeems back to Ethereum instead of silently swapping assets.`
-- `The frontend is not a mock shell. It sends a real Sepolia deposit transaction, registers a delivery intent, and tracks the bridge session through the local status surface.`
+- `The frontend is not a mock shell. It sends a real Sepolia deposit transaction, registers a delivery intent, tracks the bridge session through the local status surface, and links the completed destination receipt directly.`
 
 ## Important honesty line
 

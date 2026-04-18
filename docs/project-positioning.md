@@ -43,7 +43,7 @@ AegisLink is a local Ethereum-to-Cosmos bridge systems project that proves end-t
 - The repo now also includes a first public-testnet scaffold for AegisLink, with a reproducible bootstrap script, operator bridge settings, and documented local RPC/gRPC endpoints for wallet-balance inspection.
 - The repo now also proves a public-wallet bridge loop against a Sepolia-shaped deployment path: native ETH and ERC-20 deposits can mint balances to a real Bech32 wallet on AegisLink and redeem those balances back to Ethereum through the public relayer path.
 - The repo now also proves a live AegisLink-to-Osmosis IBC leg: a single-validator AegisLink demo node can connect to Osmosis testnet through `rly`, open a real channel, and deliver `ueth` to a real `osmo1...` wallet as an `ibc/...` denom.
-- The repo now also includes a user-facing frontend in `web/`, so a connected Sepolia wallet can submit an ETH bridge deposit and track the bridge session through to the Osmosis receipt surface.
+- The repo now also includes a user-facing frontend in `web/`, so a connected Sepolia wallet can submit an ETH bridge deposit, follow live bridge-stage progress, and finish on the Osmosis receipt surface with a direct destination transaction link.
 - The public demo path now has a one-command backend launcher in `scripts/testnet/start_public_bridge_backend.sh`, which brings up the seeded demo node, the public bridge relayer, and a live Osmosis path together while lifting stale auto-delivery timeout heights against the current destination LCD height.
 
 ## What is still a local harness
@@ -67,7 +67,7 @@ Use phrasing like:
 
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
-- `The public-wallet path now also has a browser-first surface, so a connected Sepolia wallet can drive a real bridge session into a real osmo wallet through the local backend stack.`
+- `The public-wallet path now also has a browser-first surface, so a connected Sepolia wallet can drive a real bridge session into a real osmo wallet through the local backend stack and inspect the final destination receipt from the same UI.`
 - `The roadmap from here is hardening repeat-run delivery bookkeeping and long-lived backend behavior, then tightening the demo-node ops story further.`
 
 Avoid phrasing like:
