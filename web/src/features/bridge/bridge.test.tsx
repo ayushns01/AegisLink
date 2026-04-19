@@ -290,7 +290,17 @@ describe("TransferPage", () => {
       ).toBeInTheDocument();
     });
 
+    expect(screen.getByText(/^live$/i)).toBeInTheDocument();
     expect(screen.getByText(/sepolia confirmed/i)).toBeInTheDocument();
+
+    const timelineCard = screen.getByText(/status timeline/i).closest(".progress-card");
+    if (!timelineCard) {
+      throw new Error("Expected status timeline card to be rendered");
+    }
+
+    expect(
+      within(timelineCard).getByText(/aegislink processing/i).closest(".progress-step"),
+    ).toHaveClass("progress-step--current");
     expect(screen.queryByText(/sepolia confirmation pending/i)).not.toBeInTheDocument();
   });
 

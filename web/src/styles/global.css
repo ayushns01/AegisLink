@@ -608,6 +608,30 @@ button {
   background: rgba(255, 255, 255, 0.66);
 }
 
+.progress-card--hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.72));
+}
+
+.progress-card--hero-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.18) 40%,
+    rgba(255, 255, 255, 0.46) 50%,
+    rgba(255, 255, 255, 0.18) 60%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: progress-sheen 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
 .progress-card small {
   display: block;
   margin-bottom: 10px;
@@ -621,6 +645,40 @@ button {
   display: block;
   font-size: 16px;
   line-height: 1.5;
+}
+
+.progress-stage-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progress-stage-meta small {
+  margin-bottom: 0;
+}
+
+.progress-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(9, 9, 11, 0.12);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.78);
+  color: rgba(9, 9, 11, 0.64);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.progress-live-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(9, 9, 11, 0.82);
+  box-shadow: 0 0 0 0 rgba(9, 9, 11, 0.16);
+  animation: progress-pulse 1.8s ease-out infinite;
 }
 
 .tx-link {
@@ -644,7 +702,16 @@ button {
   align-items: start;
 }
 
+.progress-step--current strong {
+  color: rgba(9, 9, 11, 0.96);
+}
+
+.progress-step--current span {
+  color: rgba(9, 9, 11, 0.72);
+}
+
 .progress-step__dot {
+  position: relative;
   width: 10px;
   height: 10px;
   border-radius: 999px;
@@ -654,6 +721,20 @@ button {
 
 .progress-step__dot--done {
   background: var(--surface-light-text);
+}
+
+.progress-step__dot--current {
+  background: rgba(9, 9, 11, 0.9);
+  animation: progress-breathe 1.9s ease-in-out infinite;
+}
+
+.progress-step__dot--current::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(9, 9, 11, 0.18);
+  border-radius: 999px;
+  animation: progress-ring 1.9s ease-out infinite;
 }
 
 .progress-step span {
@@ -677,6 +758,67 @@ button {
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+@keyframes progress-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(9, 9, 11, 0.16);
+    opacity: 0.92;
+  }
+
+  70% {
+    box-shadow: 0 0 0 8px rgba(9, 9, 11, 0);
+    opacity: 1;
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(9, 9, 11, 0);
+    opacity: 0.92;
+  }
+}
+
+@keyframes progress-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes progress-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+
+  100% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+
+@keyframes progress-sheen {
+  0%,
+  18% {
+    transform: translateX(-115%);
+  }
+
+  52%,
+  100% {
+    transform: translateX(115%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-card--hero-active::after,
+  .progress-live-pill__dot,
+  .progress-step__dot--current,
+  .progress-step__dot--current::after {
+    animation: none;
+  }
 }
 
 @media (max-width: 980px) {

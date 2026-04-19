@@ -15,11 +15,15 @@ export function ProgressPanel({
   session,
 }: ProgressPanelProps) {
   const destinationTxUrl = resolveDestinationTxUrl(session);
+  const isInFlight = session.status !== "completed" && session.status !== "failed";
   const milestones = [
-    { label: "Deposit submitted on Sepolia", done: true },
+    { label: "Deposit submitted on Sepolia", done: true, current: false },
     {
       label: "Sepolia confirmed",
       done: session.status !== "deposit_submitted",
+      current:
+        session.status === "deposit_submitted" ||
+        session.status === "sepolia_confirming",
     },
     {
       label: "AegisLink processing",
@@ -27,10 +31,12 @@ export function ProgressPanel({
         session.status === "osmosis_pending" ||
         session.status === "completed" ||
         session.status === "failed",
+      current: session.status === "aegislink_processing",
     },
     {
       label: "Osmosis delivery",
       done: session.status === "completed",
+      current: session.status === "osmosis_pending",
     },
   ];
   const progressLabel = progressChipLabel(session.status, isPolling);
@@ -50,8 +56,22 @@ export function ProgressPanel({
         <div className="wallet-chip">{progressLabel}</div>
       </div>
 
-      <div className="progress-card progress-card--hero">
-        <small>Current stage</small>
+      <div
+        className={
+          isInFlight
+            ? "progress-card progress-card--hero progress-card--hero-active"
+            : "progress-card progress-card--hero"
+        }
+      >
+        <div className="progress-stage-meta">
+          <small>Current stage</small>
+          {isInFlight ? (
+            <span className="progress-live-pill">
+              <span aria-hidden="true" className="progress-live-pill__dot" />
+              Live
+            </span>
+          ) : null}
+        </div>
         <strong>{progressHeadline}</strong>
         <span>{progressSummary}</span>
       </div>
@@ -107,11 +127,20 @@ export function ProgressPanel({
           <small>Status timeline</small>
           <div className="progress-steps">
             {milestones.map((milestone, index) => (
-              <div className="progress-step" key={milestone.label}>
+              <div
+                className={
+                  milestone.current
+                    ? "progress-step progress-step--current"
+                    : "progress-step"
+                }
+                key={milestone.label}
+              >
                 <div
                   className={
                     milestone.done
                       ? "progress-step__dot progress-step__dot--done"
+                      : milestone.current
+                        ? "progress-step__dot progress-step__dot--current"
                       : "progress-step__dot"
                   }
                 />
