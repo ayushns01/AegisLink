@@ -73,6 +73,53 @@ test_preserves_large_timeout_values() {
   assert_eq "56000000" "$resolved" "should preserve valid large timeout heights"
 }
 
+test_retries_transient_link_errors() {
+  local exit_code="0"
+
+  public_bridge_link_error_is_retryable "post failed: Post \"https://rpc.osmotest5.osmosis.zone:443\": context deadline exceeded" || exit_code="$?"
+  assert_eq "0" "$exit_code" "should retry context deadline failures during path linking"
+
+  exit_code="0"
+  public_bridge_link_error_is_retryable "Failed to wait for block inclusion: context deadline exceeded" || exit_code="$?"
+  assert_eq "0" "$exit_code" "should retry block inclusion timeouts during path linking"
+}
+
+test_does_not_retry_non_transient_link_errors() {
+  local exit_code="0"
+
+  public_bridge_link_error_is_retryable "identifier cannot be blank: invalid identifier" || exit_code="$?"
+  assert_eq "1" "$exit_code" "should not retry irrecoverable identifier errors without a transport timeout"
+}
+
+test_cleanup_stops_processes_and_removes_status_files() {
+  local temp_dir=""
+  local status_file=""
+  local current_status_file=""
+  local sleeper=""
+
+  temp_dir="$(mktemp -d)"
+  status_file="$temp_dir/status.json"
+  current_status_file="$temp_dir/current.json"
+  printf '{}' >"$status_file"
+  printf '{}' >"$current_status_file"
+
+  sleep 30 &
+  sleeper="$!"
+
+  cleanup_public_bridge_startup_failure "$sleeper" "" "$status_file" "$current_status_file"
+  wait "$sleeper" 2>/dev/null || true
+
+  if kill -0 "$sleeper" >/dev/null 2>&1; then
+    echo "assertion failed: expected cleanup to stop background process" >&2
+    exit 1
+  fi
+
+  if [[ -e "$status_file" || -e "$current_status_file" ]]; then
+    echo "assertion failed: expected cleanup to remove status files" >&2
+    exit 1
+  fi
+}
+
 test_prefers_explicit_public_bridge_rpc
 test_falls_back_to_sepolia_deploy_rpc_when_relayer_rpc_is_placeholder
 test_falls_back_to_publicnode_when_both_values_are_placeholders
@@ -80,5 +127,8 @@ test_prefers_publicnode_when_values_are_empty
 test_uses_osmosis_timeout_fallback_when_value_is_missing
 test_uses_osmosis_timeout_fallback_when_value_is_too_small
 test_preserves_large_timeout_values
+test_retries_transient_link_errors
+test_does_not_retry_non_transient_link_errors
+test_cleanup_stops_processes_and_removes_status_files
 
 echo "ok"

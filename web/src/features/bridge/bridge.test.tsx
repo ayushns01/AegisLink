@@ -134,6 +134,7 @@ describe("TransferPage", () => {
 
   it("submits a Sepolia deposit and shows the bridge session progress", async () => {
     seedConnectedWallet();
+    frontendEnv.statusApiBaseUrl = "";
     frontendEnv.aegislinkDepositRecipient =
       "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4";
     submitEthDepositMock.mockResolvedValue(
@@ -154,7 +155,60 @@ describe("TransferPage", () => {
     expect(
       screen.getByRole("heading", { name: /transfer in progress/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/deposit submitted on sepolia/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /transfer in progress/i }).closest(".transfer-card")).toHaveClass(
+      "transfer-card--progress-expanded",
+    );
+    expect(screen.getByRole("heading", { name: /transfer in progress/i }).closest(".transfer-card")).toHaveClass(
+      "transfer-card--progress-obsidian",
+    );
+    expect(screen.getByRole("heading", { name: /transfer in progress/i }).closest(".transfer-card")).toHaveClass(
+      "transfer-card--progress-contained",
+    );
+    expect(screen.getByText(/transfer manifest/i)).toBeInTheDocument();
+    expect(screen.getByText(/bridge tunnel/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/bridge tunnel/i)).toHaveClass("progress-scene--ignited");
+    expect(screen.getByLabelText(/bridge tunnel/i)).toHaveClass("progress-scene--abyss");
+    const viewport = screen.getByTestId("progress-scene-viewport");
+    expect(viewport).toBeInTheDocument();
+    expect(
+      viewport.style.getPropertyValue("--progress-contained-core-top"),
+    ).toBe("127px");
+    expect(
+      viewport.style.getPropertyValue("--progress-contained-bridge-top"),
+    ).toBe("116px");
+    expect(
+      viewport.style.getPropertyValue("--progress-contained-bridge-height"),
+    ).toBe("118px");
+    expect(
+      viewport.style.getPropertyValue("--progress-contained-core-wordmark-scale"),
+    ).toBe("0.8");
+    expect(screen.getByTestId("progress-bridge-glow")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-core-aura")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-core-shell")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__tunnel svg"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__stream"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__bridge-glow--core"),
+    ).not.toBeNull();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__bridge-glow--portal-left"),
+    ).not.toBeNull();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__bridge-glow--portal-right"),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole("heading", { name: /sepolia confirmed/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelectorAll(".progress-stage"),
+    ).toHaveLength(0);
+    expect(screen.queryByText(/verifier checks/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bridge accounting/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ibc handoff/i)).not.toBeInTheDocument();
     expect(screen.getByText(/0x12345678/i)).toBeInTheDocument();
   });
 
@@ -286,11 +340,17 @@ describe("TransferPage", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/aegislink is validating and crediting your bridged eth/i),
+        screen.getByText(/aegislink is verifying bridge policy/i),
       ).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/sepolia confirmed/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /verifier checks/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelectorAll(".progress-stage"),
+    ).toHaveLength(0);
+    expect(screen.queryByText(/bridge accounting/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sepolia confirmation pending/i)).not.toBeInTheDocument();
   });
 

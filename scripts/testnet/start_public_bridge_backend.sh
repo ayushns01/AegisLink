@@ -25,10 +25,19 @@ DESTINATION_CHAIN_ID="${AEGISLINK_PUBLIC_BACKEND_DESTINATION_CHAIN_ID:-osmo-test
 DESTINATION_ACCOUNT_PREFIX="${AEGISLINK_RLY_DESTINATION_ACCOUNT_PREFIX:-osmo}"
 DESTINATION_GAS_PRICE_DENOM="${AEGISLINK_RLY_DESTINATION_GAS_PRICE_DENOM:-uosmo}"
 DESTINATION_GAS_PRICE_AMOUNT="${AEGISLINK_RLY_DESTINATION_GAS_PRICE_AMOUNT:-1.3}"
+RLY_TIMEOUT_SECONDS="${AEGISLINK_PUBLIC_BACKEND_RLY_TIMEOUT_SECONDS:-45}"
+LINK_RETRIES="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_RETRIES:-3}"
+LINK_RETRY_DELAY_SECONDS="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_RETRY_DELAY_SECONDS:-5}"
+LINK_TIMEOUT_DURATION="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_TIMEOUT_DURATION:-5m}"
+LINK_MAX_RETRIES="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_MAX_RETRIES:-6}"
+LINK_BLOCK_HISTORY="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_BLOCK_HISTORY:-5}"
 PERSISTENT_RLY_HOME="${AEGISLINK_RELAYER_RLY_HOME:-$HOME/.aegislink-live-rly}"
 GOCACHE="${GOCACHE:-/tmp/aegislink-gocache}"
 STATUS_FILE="$RUNTIME_DIR/status.json"
 CURRENT_STATUS_FILE="${AEGISLINK_PUBLIC_BACKEND_CURRENT_STATUS_FILE:-/tmp/aegislink-public-backend-current.json}"
+NODE_PID=""
+RELAYER_PID=""
+STARTUP_COMPLETE="0"
 
 source_required_env() {
   local env_file="$1"
@@ -83,7 +92,7 @@ write_rly_config() {
   cat >"$rly_home/config/config.yaml" <<EOF
 global:
   api-listen-addr: :5183
-  timeout: 20s
+  timeout: ${RLY_TIMEOUT_SECONDS}s
   memo: ""
 chains:
   aegislink-public-testnet-1:
@@ -99,7 +108,7 @@ chains:
       gas-adjustment: 1.3
       gas-prices: ${AEGISLINK_RLY_SOURCE_GAS_PRICE_AMOUNT:-0.0}${AEGISLINK_RLY_SOURCE_GAS_PRICE_DENOM:-ueth}
       debug: false
-      timeout: 20s
+      timeout: ${RLY_TIMEOUT_SECONDS}s
       output-format: json
       sign-mode: direct
   $DESTINATION_CHAIN_NAME:
@@ -115,11 +124,61 @@ chains:
       gas-adjustment: 1.3
       gas-prices: ${DESTINATION_GAS_PRICE_AMOUNT}${DESTINATION_GAS_PRICE_DENOM}
       debug: false
-      timeout: 20s
+      timeout: ${RLY_TIMEOUT_SECONDS}s
       output-format: json
       sign-mode: direct
 paths: {}
 EOF
+}
+
+cleanup_failed_startup() {
+  local exit_code="$?"
+  trap - EXIT
+
+  if [[ "$STARTUP_COMPLETE" != "1" ]]; then
+    cleanup_public_bridge_startup_failure "$NODE_PID" "$RELAYER_PID" "$STATUS_FILE" "$CURRENT_STATUS_FILE"
+  fi
+
+  exit "$exit_code"
+}
+
+run_relayer_link_with_retry() {
+  local attempt=""
+  local link_log=""
+  local exit_code="0"
+  local output=""
+
+  for ((attempt = 1; attempt <= LINK_RETRIES; attempt += 1)); do
+    link_log="$RUNTIME_DIR/rly-link-attempt-$attempt.log"
+    echo "+ ./bin/relayer transact link $PATH_NAME --home $RLY_HOME --override --timeout $LINK_TIMEOUT_DURATION --max-retries $LINK_MAX_RETRIES --block-history $LINK_BLOCK_HISTORY --debug --log-level debug"
+
+    set +e
+    ./bin/relayer transact link "$PATH_NAME" \
+      --home "$RLY_HOME" \
+      --override \
+      --timeout "$LINK_TIMEOUT_DURATION" \
+      --max-retries "$LINK_MAX_RETRIES" \
+      --block-history "$LINK_BLOCK_HISTORY" \
+      --debug \
+      --log-level debug >"$link_log" 2>&1
+    exit_code="$?"
+    set -e
+
+    cat "$link_log"
+
+    if [[ "$exit_code" == "0" ]]; then
+      return 0
+    fi
+
+    output="$(cat "$link_log")"
+    if (( attempt < LINK_RETRIES )) && public_bridge_link_error_is_retryable "$output"; then
+      echo "transient relayer path-link failure on attempt $attempt/$LINK_RETRIES; retrying in ${LINK_RETRY_DELAY_SECONDS}s" >&2
+      sleep "$LINK_RETRY_DELAY_SECONDS"
+      continue
+    fi
+
+    return "$exit_code"
+  done
 }
 
 ensure_relayer_key() {
@@ -245,6 +304,9 @@ DESTINATION_MNEMONIC="${AEGISLINK_RLY_DESTINATION_MNEMONIC:-}"
 RLY_HOME="$PERSISTENT_RLY_HOME"
 
 mkdir -p "$RUNTIME_DIR"
+rm -f "$STATUS_FILE" "$CURRENT_STATUS_FILE"
+
+trap cleanup_failed_startup EXIT
 
 pkill -f start_aegislink_ibc_demo.sh >/dev/null 2>&1 || true
 pkill -f public-bridge-relayer >/dev/null 2>&1 || true
@@ -286,7 +348,7 @@ run curl -sS -X POST http://127.0.0.1:26657/tx/fund-account \
   -d "{\"address\":\"$SOURCE_RELAYER_ADDRESS\",\"denom\":\"stake\",\"amount\":\"1000000000\"}"
 
 run ./bin/relayer paths new aegislink-public-testnet-1 "$DESTINATION_CHAIN_NAME" "$PATH_NAME" --home "$RLY_HOME"
-run ./bin/relayer transact link "$PATH_NAME" --home "$RLY_HOME" --override --debug --log-level debug
+run_relayer_link_with_retry
 
 run go run ./chain/aegislink/cmd/aegislinkd tx set-route-profile \
   --home "$HOME_DIR" \
@@ -328,6 +390,9 @@ if ! kill -0 "$RELAYER_PID" >/dev/null 2>&1; then
   echo "public bridge relayer exited early; see $RELAYER_LOG" >&2
   exit 1
 fi
+
+STARTUP_COMPLETE="1"
+trap - EXIT
 
 cat >"$STATUS_FILE" <<EOF
 {

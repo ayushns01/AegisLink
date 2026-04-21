@@ -1,5 +1,7 @@
+import type { CSSProperties } from "react";
 import { frontendEnv } from "../../lib/config/env";
 import type { BridgeSession } from "./bridge-session";
+import { deriveTransferProgressModel } from "./transfer-progress";
 
 type ProgressPanelProps = {
   isPolling?: boolean;
@@ -15,130 +17,125 @@ export function ProgressPanel({
   session,
 }: ProgressPanelProps) {
   const destinationTxUrl = resolveDestinationTxUrl(session);
-  const milestones = [
-    { label: "Deposit submitted on Sepolia", done: true },
-    {
-      label: "Sepolia confirmed",
-      done: session.status !== "deposit_submitted",
-    },
-    {
-      label: "AegisLink processing",
-      done:
-        session.status === "osmosis_pending" ||
-        session.status === "completed" ||
-        session.status === "failed",
-    },
-    {
-      label: "Osmosis delivery",
-      done: session.status === "completed",
-    },
-  ];
-  const progressLabel = progressChipLabel(session.status, isPolling);
-  const progressHeadline = progressHeadlineForStatus(session.status);
-  const progressSummary = progressSummaryForStatus(session.status);
+  const progress = deriveTransferProgressModel(session, isPolling);
+  const currentStageId =
+    progress.stages.find((stage) => stage.state === "current")?.id ?? "sepolia";
+  const progressSceneClassName = [
+    "progress-scene",
+    "progress-scene--abyss",
+    "progress-scene--ignited",
+    `progress-scene--stage-${currentStageId}`,
+  ].join(" ");
+  const containedSceneStyle = {
+    "--progress-contained-scene-scale": "0.92",
+    "--progress-contained-core-top": "127px",
+    "--progress-contained-bridge-top": "116px",
+    "--progress-contained-bridge-height": "118px",
+    "--progress-contained-core-wordmark-scale": "0.8",
+  } as CSSProperties;
 
   return (
-    <div className="transfer-card transfer-card--progress">
-      <div className="transfer-card__header">
-        <div>
-          <p className="eyebrow eyebrow--dark">Bridge Session</p>
-          <h2>Transfer in progress</h2>
-          <p className="transfer-card__copy">
-            {progressSummary}
-          </p>
-        </div>
-        <div className="wallet-chip">{progressLabel}</div>
-      </div>
+    <div className="transfer-card transfer-card--progress transfer-card--progress-expanded transfer-card--progress-obsidian transfer-card--progress-contained">
+      <div className="progress-shell progress-shell--ignited">
+        <div className="progress-shell__top">
+          <div className="progress-manifest">
+            <p className="eyebrow">Bridge Session</p>
+            <h2>Transfer in progress</h2>
+            <small>Transfer manifest</small>
+            <strong>{session.amountEth} ETH</strong>
+            <span>{session.destinationChain}</span>
+            <p>{session.recipient}</p>
+          </div>
 
-      <div className="progress-card progress-card--hero">
-        <small>Current stage</small>
-        <strong>{progressHeadline}</strong>
-        <span>{progressSummary}</span>
-      </div>
-
-      <div className="progress-layout">
-        <div className="progress-card">
-          <small>Submitted amount</small>
-          <strong>{session.amountEth} ETH</strong>
-          <span>
-            {session.destinationChain} recipient: {session.recipient}
-          </span>
-        </div>
-
-        <div className="progress-card">
-          <small>Sepolia transaction</small>
-          <a
-            className="tx-link"
-            href={`${frontendEnv.sepoliaExplorerBaseUrl}/tx/${session.sourceTxHash}`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {shortHash(session.sourceTxHash)}
-          </a>
-          <span>{session.sourceAddress}</span>
-        </div>
-
-        <div className="progress-card">
-          <small>Osmosis receipt</small>
-          {session.destinationTxHash ? (
-            destinationTxUrl ? (
-              <a
-                className="tx-link"
-                href={destinationTxUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {shortHash(session.destinationTxHash)}
-              </a>
-            ) : (
-              <strong>{shortHash(session.destinationTxHash)}</strong>
-            )
-          ) : (
-            <strong>Waiting for final destination hash</strong>
-          )}
-          <span>
-            {session.destinationTxHash
-              ? "Confirmed by the configured bridge status source."
-              : "This appears as soon as the operator tracking endpoint observes the Osmosis receipt."}
-          </span>
-        </div>
-
-        <div className="progress-card">
-          <small>Status timeline</small>
-          <div className="progress-steps">
-            {milestones.map((milestone, index) => (
-              <div className="progress-step" key={milestone.label}>
-                <div
-                  className={
-                    milestone.done
-                      ? "progress-step__dot progress-step__dot--done"
-                      : "progress-step__dot"
-                  }
-                />
-                <div>
-                  <strong>{milestone.label}</strong>
-                  <span>
-                    {milestone.done
-                      ? "Completed or advanced"
-                      : index === 1
-                        ? "Waiting for block confirmations"
-                        : index === 2
-                          ? "Waiting for AegisLink to finish bridge processing"
-                          : "Waiting for downstream delivery"}
-                  </span>
-                </div>
-              </div>
-            ))}
+          <div className="progress-live">
+            <small>{progress.sceneLabel}</small>
+            <h3>{progress.headline}</h3>
+            <p>{progress.summary}</p>
+            <div className="wallet-chip wallet-chip--progress wallet-chip--progress-live">
+              {progress.chipLabel}
+            </div>
           </div>
         </div>
-      </div>
 
-      {pollError ? <p className="progress-alert">{pollError}</p> : null}
+        <div aria-label={progress.sceneLabel} className={progressSceneClassName}>
+          <div
+            className="progress-scene__viewport"
+            data-testid="progress-scene-viewport"
+            style={containedSceneStyle}
+          >
+            <div className="progress-scene__portal progress-scene__portal--left" />
+            <div className="progress-scene__portal progress-scene__portal--right" />
 
-      <div className="progress-actions">
-        <button className="secondary-cta" onClick={onReset} type="button">
-          Start New Transfer
-        </button>
+            <div aria-hidden="true" className="progress-scene__bridge-glow" data-testid="progress-bridge-glow">
+              <div className="progress-scene__bridge-glow-band progress-scene__bridge-glow--portal-left" />
+              <div className="progress-scene__bridge-glow-band progress-scene__bridge-glow--core" />
+              <div className="progress-scene__bridge-glow-band progress-scene__bridge-glow--portal-right" />
+            </div>
+
+            <div className="progress-scene__core">
+              <div aria-hidden="true" className="progress-scene__core-aura" data-testid="progress-core-aura" />
+              <div aria-hidden="true" className="progress-scene__core-shell" data-testid="progress-core-shell" />
+              <div className="progress-scene__core-wordmark">
+                <strong>AegisLink</strong>
+              </div>
+            </div>
+
+            <span className="progress-scene__chain-label progress-scene__chain-label--left">
+              Sepolia
+            </span>
+            <span className="progress-scene__chain-label progress-scene__chain-label--right">
+              Osmosis
+            </span>
+          </div>
+        </div>
+
+        <div className="progress-proof-grid">
+          <div className="progress-proof-card">
+            <small>Source transaction</small>
+            <a
+              className="tx-link"
+              href={`${frontendEnv.sepoliaExplorerBaseUrl}/tx/${session.sourceTxHash}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {shortHash(session.sourceTxHash)}
+            </a>
+            <span>{session.sourceAddress}</span>
+          </div>
+
+          <div className="progress-proof-card">
+            <small>Destination receipt</small>
+            {session.destinationTxHash ? (
+              destinationTxUrl ? (
+                <a
+                  className="tx-link"
+                  href={destinationTxUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {shortHash(session.destinationTxHash)}
+                </a>
+              ) : (
+                <strong>{shortHash(session.destinationTxHash)}</strong>
+              )
+            ) : (
+              <strong>Waiting for final destination hash</strong>
+            )}
+            <span>
+              {session.destinationTxHash
+                ? "Confirmed by the configured bridge status source."
+                : "This appears as soon as the operator tracking endpoint observes the Osmosis receipt."}
+            </span>
+          </div>
+        </div>
+
+        {pollError ? <p className="progress-alert">{pollError}</p> : null}
+
+        <div className="progress-actions">
+          <button className="secondary-cta" onClick={onReset} type="button">
+            Start New Transfer
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -172,60 +169,4 @@ function normalizeDestinationTxUrl(url: string) {
   return url
     .replace("https://www.mintscan.io/osmosis-testnet/txs/", "https://www.mintscan.io/osmosis-testnet/tx/")
     .replace("https://www.mintscan.io/osmosis/txs/", "https://www.mintscan.io/osmosis/tx/");
-}
-
-function progressChipLabel(status: BridgeSession["status"], isPolling: boolean) {
-  if (status === "completed") {
-    return "Delivered to Osmosis";
-  }
-  if (status === "failed") {
-    return "Needs attention";
-  }
-  if (status === "aegislink_processing") {
-    return "AegisLink processing";
-  }
-  if (status === "osmosis_pending") {
-    return "Awaiting Osmosis delivery";
-  }
-  if (status === "sepolia_confirming" || status === "deposit_submitted") {
-    return isPolling ? "Confirming on Sepolia" : "Awaiting confirmation";
-  }
-  if (isPolling) {
-    return "Tracking live progress";
-  }
-  return "Awaiting bridge progress";
-}
-
-function progressHeadlineForStatus(status: BridgeSession["status"]) {
-  switch (status) {
-    case "completed":
-      return "Delivered to Osmosis";
-    case "failed":
-      return "Bridge flow needs attention";
-    case "osmosis_pending":
-      return "AegisLink has sent your transfer toward Osmosis";
-    case "aegislink_processing":
-      return "AegisLink is validating and crediting your bridged ETH";
-    case "sepolia_confirming":
-    case "deposit_submitted":
-    default:
-      return "Waiting for Sepolia confirmation";
-  }
-}
-
-function progressSummaryForStatus(status: BridgeSession["status"]) {
-  switch (status) {
-    case "completed":
-      return "The transfer completed and the final Osmosis receipt is available below.";
-    case "failed":
-      return "The bridge observed a problem while processing the transfer. Review the error details below.";
-    case "osmosis_pending":
-      return "Sepolia is confirmed and AegisLink has handed the transfer off toward Osmosis.";
-    case "aegislink_processing":
-      return "Sepolia is confirmed. AegisLink is now processing the bridged balance before Osmosis delivery.";
-    case "sepolia_confirming":
-    case "deposit_submitted":
-    default:
-      return "Your deposit has been submitted. The bridge is waiting for Sepolia confirmation before continuing.";
-  }
 }
