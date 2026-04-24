@@ -176,4 +176,33 @@ describe("App", () => {
       screen.getByText(/this is the moment where the system turns verification into cross-chain delivery/i),
     ).toBeInTheDocument();
   });
+
+  it("renders only the transfer wormhole preview when requested", () => {
+    window.history.pushState({}, "", "/?preview=wormhole&stage=handoff");
+    useBridgeWalletMock.mockReturnValue({
+      hasInjectedWallet: true,
+      isConnected: false,
+      isConnecting: false,
+      isWrongChain: false,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      switchToSourceChain: vi.fn(),
+    });
+    useWalletClientMock.mockReturnValue({ data: undefined });
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: /transfer in progress/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /ibc handoff/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("progress-energy-packet")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("progress-flow-lane")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: /connect ethereum to the cosmos ecosystem/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /connect wallet/i }),
+    ).not.toBeInTheDocument();
+  });
 });

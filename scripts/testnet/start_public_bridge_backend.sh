@@ -335,6 +335,7 @@ echo "+ starting demo node"
 AEGISLINK_DEMO_NODE_DESTINATION_LCD_BASE_URL="$DESTINATION_LCD_BASE_URL" \
   nohup bash scripts/testnet/start_aegislink_ibc_demo.sh "$HOME_DIR" >"$NODE_LOG" 2>&1 &
 NODE_PID=$!
+disown "$NODE_PID"
 
 wait_for_http "http://127.0.0.1:26657/healthz" "demo node"
 
@@ -363,25 +364,22 @@ run go run ./chain/aegislink/cmd/aegislinkd tx set-route-profile \
   --action-types "$AEGISLINK_PUBLIC_IBC_ALLOWED_ACTION_TYPES"
 
 echo "+ starting public bridge relayer"
-(
-  export GOCACHE
-  export AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS="run ./chain/aegislink/cmd/aegislinkd --home $HOME_DIR --demo-node-ready-file $READY_FILE"
-  export AEGISLINK_RELAYER_REPLAY_STORE_PATH="$REPLAY_STORE"
-  export AEGISLINK_RELAYER_ATTESTATION_STATE_PATH="$ATTESTATION_STATE"
-  export AEGISLINK_RELAYER_RLY_CMD="${AEGISLINK_RELAYER_RLY_CMD:-./bin/relayer}"
-  export AEGISLINK_RELAYER_RLY_HOME="$RLY_HOME"
-  export AEGISLINK_RELAYER_RLY_PATH_NAME="$PATH_NAME"
-  export AEGISLINK_RELAYER_AUTODELIVERY_ENABLED=true
-  export AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT
-  export AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL="$DESTINATION_LCD_BASE_URL"
-  export AEGISLINK_RELAYER_POLL_INTERVAL_MS="${AEGISLINK_RELAYER_POLL_INTERVAL_MS:-4000}"
-  export AEGISLINK_RELAYER_FAILURE_BACKOFF_MS="${AEGISLINK_RELAYER_FAILURE_BACKOFF_MS:-9000}"
-  nohup go run ./relayer/cmd/public-bridge-relayer --loop >"$RELAYER_LOG" 2>&1 &
-  echo $! >"$RUNTIME_DIR/relayer.pid"
-)
-
-sleep 2
-RELAYER_PID="$(cat "$RUNTIME_DIR/relayer.pid")"
+export GOCACHE
+export AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS="run ./chain/aegislink/cmd/aegislinkd --home $HOME_DIR --demo-node-ready-file $READY_FILE"
+export AEGISLINK_RELAYER_REPLAY_STORE_PATH="$REPLAY_STORE"
+export AEGISLINK_RELAYER_ATTESTATION_STATE_PATH="$ATTESTATION_STATE"
+export AEGISLINK_RELAYER_RLY_CMD="${AEGISLINK_RELAYER_RLY_CMD:-./bin/relayer}"
+export AEGISLINK_RELAYER_RLY_HOME="$RLY_HOME"
+export AEGISLINK_RELAYER_RLY_PATH_NAME="$PATH_NAME"
+export AEGISLINK_RELAYER_AUTODELIVERY_ENABLED=true
+export AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT
+export AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL="$DESTINATION_LCD_BASE_URL"
+export AEGISLINK_RELAYER_POLL_INTERVAL_MS="${AEGISLINK_RELAYER_POLL_INTERVAL_MS:-4000}"
+export AEGISLINK_RELAYER_FAILURE_BACKOFF_MS="${AEGISLINK_RELAYER_FAILURE_BACKOFF_MS:-9000}"
+nohup go run ./relayer/cmd/public-bridge-relayer --loop >"$RELAYER_LOG" 2>&1 &
+RELAYER_PID=$!
+disown "$RELAYER_PID"
+echo "$RELAYER_PID" >"$RUNTIME_DIR/relayer.pid"
 if ! kill -0 "$NODE_PID" >/dev/null 2>&1; then
   echo "demo node exited early; see $NODE_LOG" >&2
   exit 1

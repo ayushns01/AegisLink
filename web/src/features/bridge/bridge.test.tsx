@@ -164,27 +164,20 @@ describe("TransferPage", () => {
     expect(screen.getByRole("heading", { name: /transfer in progress/i }).closest(".transfer-card")).toHaveClass(
       "transfer-card--progress-contained",
     );
-    expect(screen.getByText(/transfer manifest/i)).toBeInTheDocument();
+    expect(screen.getByText(/transfer route/i)).toBeInTheDocument();
     expect(screen.getByText(/bridge tunnel/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/bridge tunnel/i)).toHaveClass("progress-scene--ignited");
     expect(screen.getByLabelText(/bridge tunnel/i)).toHaveClass("progress-scene--abyss");
     const viewport = screen.getByTestId("progress-scene-viewport");
     expect(viewport).toBeInTheDocument();
-    expect(
-      viewport.style.getPropertyValue("--progress-contained-core-top"),
-    ).toBe("127px");
-    expect(
-      viewport.style.getPropertyValue("--progress-contained-bridge-top"),
-    ).toBe("116px");
-    expect(
-      viewport.style.getPropertyValue("--progress-contained-bridge-height"),
-    ).toBe("118px");
-    expect(
-      viewport.style.getPropertyValue("--progress-contained-core-wordmark-scale"),
-    ).toBe("0.8");
     expect(screen.getByTestId("progress-bridge-glow")).toBeInTheDocument();
+    expect(screen.queryByTestId("progress-flow-lane")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("progress-energy-packet")).not.toBeInTheDocument();
     expect(screen.getByTestId("progress-core-aura")).toBeInTheDocument();
     expect(screen.getByTestId("progress-core-shell")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__particles"),
+    ).toBeNull();
     expect(
       screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__tunnel svg"),
     ).toBeNull();
@@ -200,6 +193,9 @@ describe("TransferPage", () => {
     expect(
       screen.getByLabelText(/bridge tunnel/i).querySelector(".progress-scene__bridge-glow--portal-right"),
     ).not.toBeNull();
+    expect(
+      screen.getByLabelText(/bridge tunnel/i).querySelectorAll(".progress-route__checkpoint"),
+    ).toHaveLength(5);
     expect(
       screen.getByRole("heading", { name: /sepolia confirmed/i }),
     ).toBeInTheDocument();
@@ -347,6 +343,8 @@ describe("TransferPage", () => {
     expect(
       screen.getByRole("heading", { name: /verifier checks/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("progress-flow-lane")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("progress-energy-packet")).not.toBeInTheDocument();
     expect(
       screen.getByLabelText(/bridge tunnel/i).querySelectorAll(".progress-stage"),
     ).toHaveLength(0);
