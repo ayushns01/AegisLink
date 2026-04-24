@@ -323,7 +323,7 @@ export function TransferPage() {
         onClick={() => void handleSubmit()}
         type="button"
       >
-        {isSubmitting ? "Submitting Deposit..." : "Bridge to Osmosis"}
+        {isSubmitting ? "Opening Bridge Tunnel..." : "Bridge to Osmosis"}
       </button>
       {submissionError ? <p className="field-error field-error--spaced">{submissionError}</p> : null}
     </div>

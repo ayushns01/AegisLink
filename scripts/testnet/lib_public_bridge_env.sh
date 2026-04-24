@@ -49,3 +49,54 @@ resolve_public_bridge_ibc_timeout_height() {
 
   printf '%s\n' "$configured_timeout_height"
 }
+
+public_bridge_link_error_is_retryable() {
+  local error_output="${1:-}"
+
+  [[ -n "$error_output" ]] || return 1
+
+  case "$error_output" in
+    *"context deadline exceeded"*|*"i/o timeout"*|*"Client.Timeout exceeded"*|*"connection reset by peer"*|*"EOF"*|*"post failed: Post "*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+terminate_public_bridge_pid() {
+  local pid="${1:-}"
+  local attempt=""
+
+  if [[ -z "$pid" ]]; then
+    return 0
+  fi
+
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  kill "$pid" >/dev/null 2>&1 || true
+
+  for attempt in 1 2 3 4 5; do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  kill -9 "$pid" >/dev/null 2>&1 || true
+}
+
+cleanup_public_bridge_startup_failure() {
+  local node_pid="${1:-}"
+  local relayer_pid="${2:-}"
+  local status_file="${3:-}"
+  local current_status_file="${4:-}"
+
+  terminate_public_bridge_pid "$relayer_pid"
+  terminate_public_bridge_pid "$node_pid"
+
+  [[ -n "$status_file" ]] && rm -f "$status_file"
+  [[ -n "$current_status_file" ]] && rm -f "$current_status_file"
+}
