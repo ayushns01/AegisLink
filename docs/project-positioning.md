@@ -68,7 +68,7 @@ Use phrasing like:
 - `AegisLink is a runtime-backed local bridge prototype with live Ethereum integration and a realistic routed execution harness.`
 - `The current repository proves the bridge and route lifecycle end to end, and the Cosmos side now persists through a single-node SDK-store runtime, but it is still not a full networked chain.`
 - `The public-wallet path now also has a browser-first surface, so a connected Sepolia wallet can drive a real bridge session into a real osmo wallet through the local backend stack and inspect the final destination receipt from the same UI.`
-- `The roadmap from here is hardening repeat-run delivery bookkeeping and long-lived backend behavior, then tightening the demo-node ops story further.`
+- `The roadmap from here is public-flow hardening first, then deeper networked chain and IBC realism, and only then broader route expansion.`
 
 Avoid phrasing like:
 
@@ -76,14 +76,15 @@ Avoid phrasing like:
 - `real Cosmos chain today`
 - `production-ready public bridge service today`
 
-## Future roadmap
+## Future scope
 
 The next realism steps are:
 
-1. Harden repeat-run public delivery so a long-lived backend can process sequential frontend-driven Sepolia-to-Osmosis transfers without needing a fresh restart to stay crisp.
-2. Harden the single-validator demo-node startup, replay, and operator lifecycle so the live IBC path is easier to reproduce.
-3. Validate the monitoring stack on a Docker-enabled machine and then deepen it with more production-style metrics or alerts.
-4. Expand destination integrations or route-action breadth only after the stricter Sepolia-backed Osmosis path is credible.
+1. Harden repeat-run public delivery so a long-lived backend can process sequential frontend-driven Sepolia-to-Osmosis transfers without restart workarounds and without ambiguous receipt status.
+2. Push the AegisLink runtime from the current single-node SDK-store daemon toward a fuller networked CometBFT or BaseApp-style chain story.
+3. Replace or tighten the current Hermes-shaped local packet path with more honest real IBC transport and better public testnet reproducibility.
+4. Validate the monitoring stack on a Docker-enabled machine, then deepen alerts, dashboards, and operator recovery flows.
+5. Expand destination integrations or route-action breadth only after the current Sepolia-backed Osmosis path is stable enough to be routine rather than demo-fragile.
 
 ## Hardening now present
 

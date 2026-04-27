@@ -211,13 +211,25 @@ As of April 19, 2026:
 - the repository now also has a premium black-and-white frontend in `web/` plus a one-command public backend launcher, so the public demo path is no longer only a CLI exercise
 - a fresh frontend-driven `Sepolia -> AegisLink -> Osmosis` run is now proven in the current repo scope
 - the public frontend flow now also resolves the completed Osmosis receipt back into a direct destination transaction link, so the UI no longer stops at a status label alone
-- the remaining public-wallet gap is now narrower and more operational: repeated frontend-driven runs on one long-lived backend still need more hardening around auto-delivery idempotency and receipt/status bookkeeping
+- the remaining public-wallet gap is now narrower and more operational: repeated frontend-driven runs on one long-lived backend still need more hardening around auto-delivery idempotency, receipt/status bookkeeping, and restart-free operator behavior
 
 The current repo shape is:
 
 - [chain/aegislink](chain/aegislink): persistent runtime, bridge state machine, safety modules, and route lifecycle handling
 - [contracts/ethereum](contracts/ethereum): Ethereum event source and release verification contracts
 - [relayer](relayer): observation, attestation, replay, live forward or reverse bridge pipeline, and route-target handoff services
+
+## Future scope
+
+The remaining work is now concentrated in a smaller set of realism and hardening tracks rather than broad missing features:
+
+1. Public-flow hardening: make repeated frontend-driven `Sepolia -> AegisLink -> Osmosis` runs reliable on one long-lived backend without restart workarounds, especially around auto-delivery idempotency and final receipt bookkeeping.
+2. Networked chain realism: push AegisLink beyond the current single-node daemon shim toward a fuller networked CometBFT or BaseApp-style runtime with a cleaner validator and node lifecycle story.
+3. Fuller IBC transport: replace the current Hermes-shaped local packet bridge with stricter real IBC-Go or Hermes-backed networking and more reproducible public testnet path automation.
+4. Operator and deployment hardening: validate the monitoring stack on a Docker-capable machine, tighten alerts and runbooks, and make the public demo backend easier to stand up and keep healthy.
+5. Destination expansion only after the above: add more routes, assets, or destination-side actions only once the current Sepolia-backed Osmosis path is boringly reliable.
+
+Use [Project positioning](docs/project-positioning.md) for the short reviewer-facing version and [Future realism plan](docs/superpowers/plans/2026-04-06-aegislink-future-realism-plan.md) for the longer engineering roadmap.
 
 Fresh verification checkpoints that already pass in this repo:
 

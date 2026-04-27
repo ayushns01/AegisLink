@@ -1,12 +1,26 @@
 # AegisLink Future Realism Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Status note, April 27, 2026:** This document is now partly historical. Phases 5 through 9 and the later public-wallet milestones through Phase K are implemented for the current repo scope. The active remaining future work is narrower now: public-flow hardening, deeper networked-chain realism, stricter IBC transport, and stronger operator/deployment hardening.
 
 **Goal:** Move AegisLink from a polished local interoperability system into a more real Cosmos and IBC environment with a stronger trust model and production-style operator surfaces.
 
 **Architecture:** Treat the remaining work as a realism ladder, not a rewrite. First replace the current Cosmos-inspired runtime shell with a real single-node Cosmos SDK and CometBFT application, then replace the Osmosis-lite route harness with a real local IBC path, then harden verification and operations on top of that more honest substrate.
 
 **Tech Stack:** Go, Cosmos SDK, CometBFT, IBC-Go, Hermes or a local IBC relayer, Solidity, Foundry, Docker Compose, Prometheus, Grafana, Buf, existing AegisLink relayers and e2e harness.
+
+---
+
+## Remaining future scope from here
+
+The original phases below remain useful as implementation history, but they no longer describe the whole active roadmap. The remaining future scope is now:
+
+1. Public-flow hardening: make repeated frontend-driven `Sepolia -> AegisLink -> Osmosis` runs reliable on one long-lived backend, especially around auto-delivery idempotency and receipt/status bookkeeping.
+2. Networked-chain realism: move beyond the current single-node SDK-store daemon toward a cleaner networked CometBFT or BaseApp-style runtime and validator lifecycle.
+3. Fuller IBC transport: replace the current Hermes-shaped local packet bridge with stricter real IBC-Go or Hermes-backed networking and reproducible public testnet bootstrapping.
+4. Operator and deployment hardening: validate the monitoring stack on a Docker-capable machine, improve alerts and dashboards, and make the public backend easier to reproduce and keep healthy.
+5. Destination expansion only after the above: add new routes, assets, and destination actions only after the current Sepolia-backed Osmosis path is operationally boring.
 
 ---
 
