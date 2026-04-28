@@ -77,6 +77,7 @@ Before any external testnet or public review, the team should be able to answer:
 
 - [System architecture](architecture/01-system-architecture.md)
 - [Security and trust model](architecture/02-security-and-trust-model.md)
+- [Security practices](security-practices.md)
 - [Verifier evolution](architecture/04-verifier-evolution.md)
 - [Observability plan](observability.md)
 - [Pause and recovery runbook](runbooks/pause-and-recovery.md)
