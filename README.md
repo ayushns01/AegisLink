@@ -127,6 +127,8 @@ Use these for operational and launch thinking:
 - [Incident drills](docs/runbooks/incident-drills.md)
 - [Upgrade and rollback runbook](docs/runbooks/upgrade-and-rollback.md)
 
+For a fresh public-wallet demo bring-up, start with the public bridge ops runbook and the one-command backend launcher in `scripts/testnet/start_public_bridge_backend.sh`.
+
 ## What AegisLink v1 should say publicly
 
 Use phrasing like:
