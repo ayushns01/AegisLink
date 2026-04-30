@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/ayushns01/aegislink/chain/aegislink/networked"
-	"github.com/ayushns01/aegislink/relayer/internal/autodelivery"
 	"github.com/ayushns01/aegislink/relayer/internal/attestations"
+	"github.com/ayushns01/aegislink/relayer/internal/autodelivery"
 	"github.com/ayushns01/aegislink/relayer/internal/config"
 	"github.com/ayushns01/aegislink/relayer/internal/cosmos"
 	"github.com/ayushns01/aegislink/relayer/internal/evm"
@@ -222,6 +222,16 @@ func validatePublicBridgeConfig(cfg publicBridgeConfig) error {
 	}
 	if len(cfg.AegisLinkCommandArgs) == 0 {
 		return fmt.Errorf("missing required env: AEGISLINK_RELAYER_AEGISLINK_CMD_ARGS")
+	}
+	if cfg.AttestationThreshold == 0 {
+		return fmt.Errorf("attestation threshold must be greater than zero")
+	}
+	if len(cfg.AttestationSignerKeys) < int(cfg.AttestationThreshold) {
+		return fmt.Errorf(
+			"configured attestation signer keys (%d) do not satisfy threshold %d",
+			len(cfg.AttestationSignerKeys),
+			cfg.AttestationThreshold,
+		)
 	}
 	return nil
 }

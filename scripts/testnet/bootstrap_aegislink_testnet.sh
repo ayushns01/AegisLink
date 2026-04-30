@@ -15,6 +15,19 @@ OPERATOR_TEMPLATE="$REPO_ROOT/deploy/testnet/aegislink/operator.json"
 NETWORK_TEMPLATE="$REPO_ROOT/deploy/testnet/aegislink/network.json"
 
 mkdir -p "$(dirname "$HOME_DIR")"
+mkdir -p "$HOME_DIR/config"
+cp "$OPERATOR_TEMPLATE" "$HOME_DIR/config/operator.json"
+cp "$NETWORK_TEMPLATE" "$HOME_DIR/config/network.json"
+
+OPERATOR_ALLOWED_SIGNERS="$(
+  ruby -rjson -e 'config = JSON.parse(File.read(ARGV[0])); puts Array(config["allowed_signers"]).join(",")' "$OPERATOR_TEMPLATE"
+)"
+OPERATOR_GOVERNANCE_AUTHORITIES="$(
+  ruby -rjson -e 'config = JSON.parse(File.read(ARGV[0])); puts Array(config["governance_authorities"]).join(",")' "$OPERATOR_TEMPLATE"
+)"
+OPERATOR_REQUIRED_THRESHOLD="$(
+  ruby -rjson -e 'config = JSON.parse(File.read(ARGV[0])); puts Integer(config["required_threshold"] || 0)' "$OPERATOR_TEMPLATE"
+)"
 
 cd "$REPO_ROOT/chain/aegislink"
 
@@ -23,11 +36,10 @@ go run ./cmd/aegislinkd \
   --home "$HOME_DIR" \
   --chain-id "$CHAIN_ID" \
   --runtime-mode "$RUNTIME_MODE" \
+  --allowed-signers "$OPERATOR_ALLOWED_SIGNERS" \
+  --governance-authorities "$OPERATOR_GOVERNANCE_AUTHORITIES" \
+  --required-threshold "$OPERATOR_REQUIRED_THRESHOLD" \
   --force
-
-mkdir -p "$HOME_DIR/config"
-cp "$OPERATOR_TEMPLATE" "$HOME_DIR/config/operator.json"
-cp "$NETWORK_TEMPLATE" "$HOME_DIR/config/network.json"
 
 cat <<EOF
 {

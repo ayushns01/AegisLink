@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -35,6 +36,7 @@ func TestRunInitCreatesRuntimeHomeArtifacts(t *testing.T) {
 	t.Parallel()
 
 	homeDir := filepath.Join(t.TempDir(), "home")
+	allowedSigners := bridgetestutil.DefaultHarnessSignerAddresses()[:3]
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -42,6 +44,9 @@ func TestRunInitCreatesRuntimeHomeArtifacts(t *testing.T) {
 		"init",
 		"--home", homeDir,
 		"--chain-id", "aegislink-devnet-1",
+		"--allowed-signers", strings.Join(allowedSigners, ","),
+		"--governance-authorities", "guardian-1",
+		"--required-threshold", "2",
 	}, &stdout, &stderr); err != nil {
 		t.Fatalf("run init: %v\nstderr=%s", err, stderr.String())
 	}
@@ -70,6 +75,20 @@ func TestRunInitCreatesRuntimeHomeArtifacts(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected artifact %s: %v", path, err)
 		}
+	}
+
+	cfg, err := aegisapp.LoadConfig(result.ConfigPath)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if !slices.Equal(cfg.AllowedSigners, allowedSigners) {
+		t.Fatalf("expected allowed signers %+v, got %+v", allowedSigners, cfg.AllowedSigners)
+	}
+	if !slices.Equal(cfg.GovernanceAuthorities, []string{"guardian-1"}) {
+		t.Fatalf("expected governance authorities [guardian-1], got %+v", cfg.GovernanceAuthorities)
+	}
+	if cfg.RequiredThreshold != 2 {
+		t.Fatalf("expected required threshold 2, got %d", cfg.RequiredThreshold)
 	}
 }
 
@@ -1139,9 +1158,9 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 		t.Fatalf("register asset: %v", err)
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
-		AssetID:       "eth.usdc",
+		AssetID:      "eth.usdc",
 		WindowBlocks: 600,
-		MaxAmount:     mustAmount(t, "1000000000000000000"),
+		MaxAmount:    mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
 	}
@@ -2240,9 +2259,9 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 		t.Fatalf("register asset: %v", err)
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
-		AssetID:       "eth.usdc",
+		AssetID:      "eth.usdc",
 		WindowBlocks: 600,
-		MaxAmount:     mustAmount(t, "1000000000000000000"),
+		MaxAmount:    mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
 	}
@@ -2378,9 +2397,9 @@ func seededSDKRuntimeApp(t *testing.T, cfg aegisapp.Config) *aegisapp.App {
 		t.Fatalf("register asset: %v", err)
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
-		AssetID:       "eth.usdc",
+		AssetID:      "eth.usdc",
 		WindowBlocks: 600,
-		MaxAmount:     mustAmount(t, "1000000000000000000"),
+		MaxAmount:    mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
 	}

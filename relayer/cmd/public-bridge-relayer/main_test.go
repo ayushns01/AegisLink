@@ -23,9 +23,26 @@ func TestValidatePublicBridgeConfigAcceptsCompleteConfig(t *testing.T) {
 		AegisLinkCommandArgs:        []string{"run", "./chain/aegislink/cmd/aegislinkd"},
 		AttestationThreshold:        2,
 		AttestationSignerSetVersion: 1,
+		AttestationSignerKeys:       []string{"key-1", "key-2"},
 	}
 	if err := validatePublicBridgeConfig(cfg); err != nil {
 		t.Fatalf("expected complete config to pass, got %v", err)
+	}
+}
+
+func TestValidatePublicBridgeConfigRejectsInsufficientAttestationSignerKeys(t *testing.T) {
+	cfg := publicBridgeConfig{
+		EVMRPCURL:                   "http://127.0.0.1:8545",
+		EVMVerifierAddress:          "0x1111111111111111111111111111111111111111",
+		EVMGatewayAddress:           "0x2222222222222222222222222222222222222222",
+		AegisLinkCommand:            "go",
+		AegisLinkCommandArgs:        []string{"run", "./chain/aegislink/cmd/aegislinkd"},
+		AttestationThreshold:        2,
+		AttestationSignerSetVersion: 1,
+		AttestationSignerKeys:       []string{"key-1"},
+	}
+	if err := validatePublicBridgeConfig(cfg); err == nil {
+		t.Fatal("expected insufficient attestation signer keys to be rejected")
 	}
 }
 

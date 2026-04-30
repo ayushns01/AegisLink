@@ -128,15 +128,24 @@ func runInit(args []string, stdout, stderr io.Writer) error {
 	home := flags.String("home", "", "runtime home directory")
 	chainID := flags.String("chain-id", "", "runtime chain id")
 	runtimeMode := flags.String("runtime-mode", "", "runtime mode")
+	allowedSignersRaw := flags.String("allowed-signers", "", "comma-separated allowed signer addresses")
+	governanceAuthoritiesRaw := flags.String("governance-authorities", "", "comma-separated governance authorities")
+	requiredThreshold := flags.Uint("required-threshold", 0, "required signer threshold")
 	force := flags.Bool("force", false, "overwrite existing runtime artifacts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if *requiredThreshold > math.MaxUint32 {
+		return fmt.Errorf("required threshold exceeds uint32 range")
+	}
 
 	cfg, err := app.InitHome(app.Config{
-		HomeDir:     *home,
-		ChainID:     *chainID,
-		RuntimeMode: *runtimeMode,
+		HomeDir:               *home,
+		ChainID:               *chainID,
+		RuntimeMode:           *runtimeMode,
+		AllowedSigners:        splitCommaSeparated(*allowedSignersRaw),
+		GovernanceAuthorities: splitCommaSeparated(*governanceAuthoritiesRaw),
+		RequiredThreshold:     uint32(*requiredThreshold),
 	}, *force)
 	if err != nil {
 		return err
@@ -287,11 +296,11 @@ func runDemoNodeStart(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 
 	state, err := networked.Start(ctx, networked.Config{
-		HomeDir:         *home,
-		RPCAddress:      *rpcAddress,
-		CometRPCAddress: *cometRPCAddress,
-		GRPCAddress:     *grpcAddress,
-		ABCIAddress:     *abciAddress,
+		HomeDir:               *home,
+		RPCAddress:            *rpcAddress,
+		CometRPCAddress:       *cometRPCAddress,
+		GRPCAddress:           *grpcAddress,
+		ABCIAddress:           *abciAddress,
 		ReadyFile:             *readyFile,
 		DestinationLCDBaseURL: *destinationLCDBaseURL,
 		TickInterval:          time.Duration(*tickIntervalMS) * time.Millisecond,
@@ -1281,9 +1290,9 @@ func txApplyLimitUpdateProposal(args []string, stdout io.Writer) error {
 	proposal := governancekeeper.LimitUpdateProposal{
 		ProposalID: *proposalID,
 		Limit: limittypes.RateLimit{
-			AssetID:       *assetID,
+			AssetID:      *assetID,
 			WindowBlocks: *windowSeconds,
-			MaxAmount:     maxAmount,
+			MaxAmount:    maxAmount,
 		},
 	}
 	if err := service.ApplyLimitUpdateProposal(*authority, proposal); err != nil {
