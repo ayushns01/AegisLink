@@ -15,6 +15,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
@@ -268,9 +269,9 @@ func writeInboundFixtures(t *testing.T) fixturePaths {
 	claim := depositClaimFromEvent(t, deposit)
 	votes := persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 140},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 150},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[2], Expiry: 120},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[0], Expiry: 140},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[1], Expiry: 150},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[2], Expiry: 120},
 		},
 	}
 
@@ -321,7 +322,7 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser"},
 		StatePath:         statePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -341,7 +342,7 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set runtime limit: %v", err)
@@ -369,12 +370,12 @@ func writeRuntimeStateFixture(t *testing.T) (string, string) {
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			t.Fatalf("sign runtime attestation: %v", err)
@@ -440,7 +441,7 @@ func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress strin
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser"},
 		StatePath:         statePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -460,7 +461,7 @@ func writeRuntimeChainBootstrapWithAssetAddress(t *testing.T, assetAddress strin
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set bootstrap limit: %v", err)

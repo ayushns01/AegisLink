@@ -15,12 +15,21 @@ type Attestation struct {
 	SignerSetVersion uint64
 }
 
+// maxProofsPerAttestation is an upper bound on the number of proofs accepted
+// per attestation. It prevents unbounded ECDSA recovery loops that could be
+// used to DoS validator nodes via crafted transactions. The limit is generous
+// enough to accommodate any realistic signer-set size.
+const maxProofsPerAttestation = 128
+
 func (a Attestation) ValidateBasic() error {
 	if err := a.validateEnvelope(); err != nil {
 		return err
 	}
 	if len(a.Proofs) == 0 {
 		return fmt.Errorf("%w: missing proofs", ErrInvalidAttestation)
+	}
+	if len(a.Proofs) > maxProofsPerAttestation {
+		return fmt.Errorf("%w: proof count %d exceeds maximum %d", ErrInvalidAttestation, len(a.Proofs), maxProofsPerAttestation)
 	}
 	if int(a.Threshold) > len(a.Proofs) {
 		return fmt.Errorf("%w: threshold exceeds proof count", ErrInvalidAttestation)

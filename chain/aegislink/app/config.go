@@ -10,7 +10,6 @@ import (
 
 	bankmodule "github.com/ayushns01/aegislink/chain/aegislink/x/bank"
 	bridgemodule "github.com/ayushns01/aegislink/chain/aegislink/x/bridge"
-	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 	governancemodule "github.com/ayushns01/aegislink/chain/aegislink/x/governance"
 	ibcroutermodule "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter"
 	limitsmodule "github.com/ayushns01/aegislink/chain/aegislink/x/limits"
@@ -66,7 +65,10 @@ func DefaultConfig() Config {
 			ibcroutermodule.ModuleName,
 			governancemodule.ModuleName,
 		},
-		AllowedSigners:        bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		// AllowedSigners must be set explicitly via genesis or --allowed-signers flag.
+		// No default is provided: using predictable test keys on a real network is a
+		// critical security vulnerability.
+		AllowedSigners:        []string{},
 		GovernanceAuthorities: []string{"guardian-1"},
 		RequiredThreshold:     2,
 	}

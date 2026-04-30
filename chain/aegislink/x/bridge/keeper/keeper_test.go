@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
@@ -105,7 +106,7 @@ func TestExecuteDepositClaimRejectsOverLimitClaim(t *testing.T) {
 
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       claim.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("1"),
 	}); err != nil {
 		t.Fatalf("expected limit update to succeed, got %v", err)
@@ -219,7 +220,7 @@ func TestExecuteWithdrawalRejectsOverLimitClaim(t *testing.T) {
 	}
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       claim.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("1"),
 	}); err != nil {
 		t.Fatalf("expected limit update to succeed, got %v", err)
@@ -331,7 +332,7 @@ func TestBridgeAccountingSeparatesNativeETHAndERC20Supply(t *testing.T) {
 	}
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("100000000000000000000"),
 	}); err != nil {
 		t.Fatalf("expected native rate limit registration to succeed, got %v", err)
@@ -412,13 +413,13 @@ func newKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, bridgety
 	}
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       asset.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("100000000000000000000"),
 	}); err != nil {
 		t.Fatalf("expected rate limit registration to succeed, got %v", err)
 	}
 
-	keeper := NewKeeper(registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	keeper := NewKeeper(registry, limits, pauser, bridgetestutil.DefaultHarnessSignerAddresses()[:3], 2)
 	keeper.SetCurrentHeight(50)
 
 	claim := validDepositClaim()
@@ -448,13 +449,13 @@ func newNativeKeeperFixture(t *testing.T) (*Keeper, bridgetypes.DepositClaim, br
 	}
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       asset.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("100000000000000000000"),
 	}); err != nil {
 		t.Fatalf("expected native rate limit registration to succeed, got %v", err)
 	}
 
-	keeper := NewKeeper(registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	keeper := NewKeeper(registry, limits, pauser, bridgetestutil.DefaultHarnessSignerAddresses()[:3], 2)
 	keeper.SetCurrentHeight(50)
 
 	claim := validNativeDepositClaim()
@@ -509,7 +510,7 @@ func validAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           100,
 		SignerSetVersion: 1,
@@ -519,7 +520,7 @@ func validAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
 }
 
 func signAttestationForTestsFromHelpers(attestation bridgetypes.Attestation, signerIndexes ...int) []bridgetypes.AttestationProof {
-	signers := bridgetypes.DefaultHarnessAttestationSigners()
+	signers := bridgetestutil.DefaultHarnessAttestationSigners()
 	proofs := make([]bridgetypes.AttestationProof, 0, len(signerIndexes))
 	for _, idx := range signerIndexes {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, signers[idx].PrivateKeyHex)

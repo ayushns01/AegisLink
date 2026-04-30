@@ -9,6 +9,7 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	limitkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
@@ -163,8 +164,8 @@ func TestRelayerCanBridgeLiveAnvilDepositIntoAegisLinkRuntime(t *testing.T) {
 	fixtures := writeEmptyRelayerFixtures(t)
 	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
 		},
 	})
 
@@ -279,8 +280,8 @@ func TestFullLiveBridgeLoopReleasesBackToEthereum(t *testing.T) {
 	fixtures := writeEmptyRelayerFixtures(t)
 	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
 		},
 	})
 
@@ -365,7 +366,7 @@ func newInboundServer(t *testing.T, opts inboundServerOptions) (bridgekeeper.Msg
 
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -377,7 +378,7 @@ func newInboundServer(t *testing.T, opts inboundServerOptions) (bridgekeeper.Msg
 		}
 	}
 
-	keeper := bridgekeeper.NewKeeper(registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	keeper := bridgekeeper.NewKeeper(registry, limits, pauser, bridgetestutil.DefaultHarnessSignerAddresses()[:3], 2)
 	keeper.SetCurrentHeight(50)
 	return bridgekeeper.NewMsgServer(keeper), keeper, registry, limits, pauser
 }

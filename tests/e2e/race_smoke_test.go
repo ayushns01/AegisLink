@@ -8,6 +8,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -19,7 +20,7 @@ func TestRaceSmokeSerializedRuntimeAccess(t *testing.T) {
 	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:               aegisapp.AppName,
 		StatePath:             filepath.Join(t.TempDir(), "race-runtime.json"),
-		AllowedSigners:        bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:        bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold:     2,
 		GovernanceAuthorities: []string{"guardian-1"},
 		Modules:               []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
@@ -32,7 +33,7 @@ func TestRaceSmokeSerializedRuntimeAccess(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -92,7 +93,7 @@ func TestRaceSmokeSerializedRuntimeAccess(t *testing.T) {
 				ProposalID: fmt.Sprintf("limit-race-%d", i),
 				Limit: limittypes.RateLimit{
 					AssetID:       "eth.usdc",
-					WindowSeconds: 600,
+					WindowBlocks: 600,
 					MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 				},
 			}); err != nil {

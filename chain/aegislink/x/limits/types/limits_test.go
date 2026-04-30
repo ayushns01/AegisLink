@@ -9,7 +9,7 @@ import (
 func TestRateLimitValidateBasic(t *testing.T) {
 	limit := RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("1000000000000000000000000000000"),
 	}
 
@@ -19,7 +19,7 @@ func TestRateLimitValidateBasic(t *testing.T) {
 
 	cases := map[string]func(*RateLimit){
 		"missing asset id":    func(l *RateLimit) { l.AssetID = "" },
-		"missing window":      func(l *RateLimit) { l.WindowSeconds = 0 },
+		"missing window":      func(l *RateLimit) { l.WindowBlocks = 0 },
 		"missing max amount":  func(l *RateLimit) { l.MaxAmount = nil },
 		"negative max amount": func(l *RateLimit) { l.MaxAmount = big.NewInt(-1) },
 	}

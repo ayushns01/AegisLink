@@ -416,7 +416,7 @@ func seedRealIBCAegisLinkRuntime(t *testing.T, homeDir string) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)

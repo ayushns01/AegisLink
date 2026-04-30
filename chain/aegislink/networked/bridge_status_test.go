@@ -13,6 +13,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
@@ -373,7 +374,7 @@ func newBridgeStatusTestApp(t *testing.T) *aegisapp.App {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(2_000_000_000_000_000_000),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -422,12 +423,12 @@ func bridgeStatusAttestation(t *testing.T, claim bridgetypes.DepositClaim) bridg
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			t.Fatalf("sign attestation: %v", err)

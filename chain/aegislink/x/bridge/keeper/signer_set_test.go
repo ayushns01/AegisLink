@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 )
 
 func TestSignerSetAcceptsActiveVersionAtCurrentHeight(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
-	signers := bridgetypes.DefaultHarnessSignerAddresses()
+	signers := bridgetestutil.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     2,
 		Signers:     signers[3:6],
@@ -40,7 +41,7 @@ func TestSignerSetRejectsVersionBeforeActivation(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
-	signers := bridgetypes.DefaultHarnessSignerAddresses()
+	signers := bridgetestutil.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     2,
 		Signers:     signers[3:6],
@@ -66,7 +67,7 @@ func TestSignerSetRejectsExpiredSet(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
-	signers := bridgetypes.DefaultHarnessSignerAddresses()
+	signers := bridgetestutil.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     1,
 		Signers:     signers[:3],
@@ -91,7 +92,7 @@ func TestSignerSetRejectsMismatchAgainstActiveVersion(t *testing.T) {
 	t.Parallel()
 
 	keeper, claim, _, _, _, _ := newKeeperFixture(t)
-	signers := bridgetypes.DefaultHarnessSignerAddresses()
+	signers := bridgetestutil.DefaultHarnessSignerAddresses()
 	if err := keeper.UpsertSignerSet(SignerSet{
 		Version:     2,
 		Signers:     signers[3:6],

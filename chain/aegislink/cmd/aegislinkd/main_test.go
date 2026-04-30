@@ -20,6 +20,7 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -126,7 +127,7 @@ func TestRunQueryStatusPrintsRuntimeSummary(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
+		Signers:     bridgetestutil.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -217,7 +218,7 @@ func TestRunStartLogsStructuredStartupSummary(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
+		Signers:     bridgetestutil.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -1002,7 +1003,7 @@ func TestRunQuerySignerSetReturnsActiveSignerSet(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
+		Signers:     bridgetestutil.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -1045,7 +1046,7 @@ func TestRunQuerySignerSetsListsHistory(t *testing.T) {
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
+		Signers:     bridgetestutil.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -1120,7 +1121,7 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -1139,7 +1140,7 @@ func TestRunTxSubmitDepositClaimPersistsAcceptedClaim(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -2170,12 +2171,12 @@ func validAttestationForClaim(claim bridgetypes.DepositClaim) bridgetypes.Attest
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			panic(err)
@@ -2221,7 +2222,7 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 		AppName:           aegisapp.AppName,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -2240,7 +2241,7 @@ func seededRuntimeApp(t *testing.T, statePath string) *aegisapp.App {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -2349,7 +2350,7 @@ func initSDKRuntimeHome(t *testing.T, homeDir string) aegisapp.Config {
 		ChainID:           "aegislink-sdk-1",
 		RuntimeMode:       aegisapp.RuntimeModeSDKStore,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	}, false)
 	if err != nil {
@@ -2378,7 +2379,7 @@ func seededSDKRuntimeApp(t *testing.T, cfg aegisapp.Config) *aegisapp.App {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)

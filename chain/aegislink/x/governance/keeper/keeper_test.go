@@ -64,7 +64,7 @@ func TestLimitUpdateProposalAppliesNewLimit(t *testing.T) {
 		ProposalID: "limit-update-1",
 		Limit: limittypes.RateLimit{
 			AssetID:       "eth.usdc",
-			WindowSeconds: 1800,
+			WindowBlocks: 1800,
 			MaxAmount:     big.NewInt(900000000),
 		},
 	}); err != nil {
@@ -75,8 +75,8 @@ func TestLimitUpdateProposalAppliesNewLimit(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected limit to exist after update")
 	}
-	if limit.WindowSeconds != 1800 {
-		t.Fatalf("expected updated window seconds, got %d", limit.WindowSeconds)
+	if limit.WindowBlocks != 1800 {
+		t.Fatalf("expected updated window seconds, got %d", limit.WindowBlocks)
 	}
 	if limit.MaxAmount.Cmp(big.NewInt(900000000)) != 0 {
 		t.Fatalf("expected updated max amount 900000000, got %s", limit.MaxAmount.String())
@@ -133,7 +133,7 @@ func seededGovernanceKeeper(t *testing.T) (*Keeper, *registrykeeper.Keeper, *lim
 
 	if err := limitsKeeper.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(250000000),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)

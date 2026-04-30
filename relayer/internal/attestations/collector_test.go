@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 )
 
 func TestCollectorCollectBuildsThresholdAttestationDeterministically(t *testing.T) {
@@ -14,13 +15,13 @@ func TestCollectorCollectBuildsThresholdAttestationDeterministically(t *testing.
 
 	source := &stubSource{
 		votes: []Vote{
-			{Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 120},
-			{Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 140},
-			{Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 130},
-			{Signer: bridgetypes.DefaultHarnessSignerAddresses()[2], Expiry: 150},
+			{Signer: bridgetestutil.DefaultHarnessSignerAddresses()[1], Expiry: 120},
+			{Signer: bridgetestutil.DefaultHarnessSignerAddresses()[0], Expiry: 140},
+			{Signer: bridgetestutil.DefaultHarnessSignerAddresses()[1], Expiry: 130},
+			{Signer: bridgetestutil.DefaultHarnessSignerAddresses()[2], Expiry: 150},
 		},
 	}
-	collector := NewCollector(source, 2, 1, bridgetypes.DefaultHarnessSignerPrivateKeys()[:3])
+	collector := NewCollector(source, 2, 1, bridgetestutil.DefaultHarnessSignerPrivateKeys()[:3])
 
 	attestation, err := collector.Collect(context.Background(), "message-1", "payload-1")
 	if err != nil {
@@ -47,7 +48,7 @@ func TestCollectorCollectBuildsThresholdAttestationDeterministically(t *testing.
 		t.Fatalf("expected signer set version 1, got %d", attestation.SignerSetVersion)
 	}
 
-	wantSigners := []string{bridgetypes.DefaultHarnessSignerAddresses()[0], bridgetypes.DefaultHarnessSignerAddresses()[2]}
+	wantSigners := []string{bridgetestutil.DefaultHarnessSignerAddresses()[0], bridgetestutil.DefaultHarnessSignerAddresses()[2]}
 	sort.Strings(wantSigners)
 	if len(attestation.Signers) != len(wantSigners) {
 		t.Fatalf("expected %d signers, got %d", len(wantSigners), len(attestation.Signers))
@@ -67,10 +68,10 @@ func TestCollectorCollectRejectsWhenThresholdNotMet(t *testing.T) {
 
 	source := &stubSource{
 		votes: []Vote{
-			{Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 100},
+			{Signer: bridgetestutil.DefaultHarnessSignerAddresses()[0], Expiry: 100},
 		},
 	}
-	collector := NewCollector(source, 2, 1, bridgetypes.DefaultHarnessSignerPrivateKeys()[:3])
+	collector := NewCollector(source, 2, 1, bridgetestutil.DefaultHarnessSignerPrivateKeys()[:3])
 
 	_, err := collector.Collect(context.Background(), "message-1", "payload-1")
 	if !errors.Is(err, ErrThresholdNotMet) {
@@ -82,7 +83,7 @@ func TestCollectorCollectFallsBackToLocalSignerKeysWhenVoteFileIsEmpty(t *testin
 	t.Parallel()
 
 	source := &stubSource{}
-	collector := NewCollector(source, 2, 1, bridgetypes.DefaultHarnessSignerPrivateKeys()[:3])
+	collector := NewCollector(source, 2, 1, bridgetestutil.DefaultHarnessSignerPrivateKeys()[:3])
 
 	attestation, err := collector.Collect(context.Background(), "message-1", "payload-1")
 	if err != nil {

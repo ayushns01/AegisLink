@@ -7,6 +7,7 @@ import (
 	storetypes "cosmossdk.io/store/types"
 	"github.com/ayushns01/aegislink/chain/aegislink/testutil"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	pauserkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/pauser/keeper"
@@ -31,7 +32,7 @@ func TestSDKKeeperPersistsBridgeAccountingAcrossReload(t *testing.T) {
 	}
 
 	_, claim, attestation, _, _, _ := newKeeperFixture(t)
-	storeKeeper, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	storeKeeper, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetestutil.DefaultHarnessSignerAddresses()[:3], 2)
 	if err != nil {
 		t.Fatalf("expected store-backed bridge keeper, got %v", err)
 	}
@@ -49,7 +50,7 @@ func TestSDKKeeperPersistsBridgeAccountingAcrossReload(t *testing.T) {
 	}
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       claim.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(250000000),
 	}); err != nil {
 		t.Fatalf("expected limit registration to succeed, got %v", err)
@@ -59,7 +60,7 @@ func TestSDKKeeperPersistsBridgeAccountingAcrossReload(t *testing.T) {
 		t.Fatalf("expected deposit claim to succeed, got %v", err)
 	}
 
-	reloaded, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	reloaded, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetestutil.DefaultHarnessSignerAddresses()[:3], 2)
 	if err != nil {
 		t.Fatalf("expected bridge keeper reload to succeed, got %v", err)
 	}
@@ -90,7 +91,7 @@ func TestSDKKeeperStoresClaimsAndSupplyUnderPrefixKeys(t *testing.T) {
 	}
 
 	keeper, claim, attestation, _, _, _ := newKeeperFixture(t)
-	storeKeeper, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetypes.DefaultHarnessSignerAddresses()[:3], 2)
+	storeKeeper, err := NewStoreKeeper(store, keys["bridge"], registry, limits, pauser, bridgetestutil.DefaultHarnessSignerAddresses()[:3], 2)
 	if err != nil {
 		t.Fatalf("expected store-backed bridge keeper, got %v", err)
 	}
@@ -107,7 +108,7 @@ func TestSDKKeeperStoresClaimsAndSupplyUnderPrefixKeys(t *testing.T) {
 	}
 	if err := limits.SetLimit(limittypes.RateLimit{
 		AssetID:       claim.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(250000000),
 	}); err != nil {
 		t.Fatalf("expected limit registration to succeed, got %v", err)

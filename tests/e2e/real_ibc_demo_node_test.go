@@ -14,6 +14,7 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	"github.com/ayushns01/aegislink/chain/aegislink/networked"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	abcicli "github.com/cometbft/cometbft/abci/client"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -736,7 +737,7 @@ func initSDKDemoNodeHome(t *testing.T, homeDir string) aegisapp.Config {
 		ChainID:           "aegislink-public-testnet-1",
 		RuntimeMode:       aegisapp.RuntimeModeSDKStore,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	}, false)
 	if err != nil {

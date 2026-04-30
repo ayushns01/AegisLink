@@ -16,6 +16,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 )
 
@@ -1183,8 +1184,8 @@ func TestFullBridgeLoopCanRouteDepositToCompletedOsmosisTransfer(t *testing.T) {
 	fixtures := writeEmptyRelayerFixtures(t)
 	writeJSON(t, fixtures.voteStatePath, persistedVoteState{
 		Votes: []persistedVote{
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
-			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetypes.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[0], Expiry: 10000000100},
+			{MessageID: claim.Identity.MessageID, PayloadHash: claim.Digest(), Signer: bridgetestutil.DefaultHarnessSignerAddresses()[1], Expiry: 10000000100},
 		},
 	})
 

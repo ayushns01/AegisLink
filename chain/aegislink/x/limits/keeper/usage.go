@@ -100,7 +100,7 @@ func activeUsage(limit limittypes.RateLimit, usage limittypes.WindowUsage, atHei
 	if usage.WindowStart == 0 {
 		return usage
 	}
-	if atHeight >= usage.WindowStart+limit.WindowSeconds {
+	if atHeight >= usage.WindowStart+limit.WindowBlocks {
 		return limittypes.WindowUsage{
 			AssetID:     limit.AssetID,
 			WindowStart: atHeight,

@@ -15,63 +15,33 @@ type AttestationProof struct {
 	Signature []byte `json:"signature"`
 }
 
-type HarnessSigner struct {
-	Address       string `json:"address"`
-	PrivateKeyHex string `json:"private_key_hex"`
-}
-
-var defaultHarnessSignerPrivateKeys = []string{
-	"0000000000000000000000000000000000000000000000000000000000000001",
-	"0000000000000000000000000000000000000000000000000000000000000002",
-	"0000000000000000000000000000000000000000000000000000000000000003",
-	"0000000000000000000000000000000000000000000000000000000000000004",
-	"0000000000000000000000000000000000000000000000000000000000000005",
-	"0000000000000000000000000000000000000000000000000000000000000006",
-}
-
-func DefaultHarnessAttestationSigners() []HarnessSigner {
-	signers := make([]HarnessSigner, 0, len(defaultHarnessSignerPrivateKeys))
-	for _, key := range defaultHarnessSignerPrivateKeys {
-		address, err := SignerAddressFromPrivateKeyHex(key)
-		if err != nil {
-			panic(err)
-		}
-		signers = append(signers, HarnessSigner{
-			Address:       address,
-			PrivateKeyHex: key,
-		})
-	}
-	return signers
-}
-
-func DefaultHarnessSignerAddresses() []string {
-	signers := DefaultHarnessAttestationSigners()
-	addresses := make([]string, 0, len(signers))
-	for _, signer := range signers {
-		addresses = append(addresses, signer.Address)
-	}
-	return addresses
-}
-
-func DefaultHarnessSignerPrivateKeys() []string {
-	keys := make([]string, 0, len(defaultHarnessSignerPrivateKeys))
-	keys = append(keys, defaultHarnessSignerPrivateKeys...)
-	return keys
-}
-
+// SigningDigest returns the canonical digest that attestation signers must sign.
+//
+// Each field is length-prefixed as "<len>:<value>" before being joined with "|"
+// so that no choice of MessageID or PayloadHash can produce the same byte
+// sequence as a different (MessageID, PayloadHash) pair — preventing hash
+// collision attacks via embedded delimiter characters.
 func (a Attestation) SigningDigest() ([]byte, error) {
 	if err := a.validateEnvelope(); err != nil {
 		return nil, err
 	}
 
-	payload := strings.Join([]string{
+	fields := []string{
 		"aegislink.attestation.v1",
 		strings.TrimSpace(a.MessageID),
 		strings.ToLower(strings.TrimSpace(a.PayloadHash)),
 		fmt.Sprintf("%d", a.Threshold),
 		fmt.Sprintf("%d", a.Expiry),
 		fmt.Sprintf("%d", a.SignerSetVersion),
-	}, "|")
+	}
+
+	// Length-prefix every field: "<len>:<value>". This ensures the serialization
+	// is unambiguous even when fields contain the "|" separator character.
+	encoded := make([]string, len(fields))
+	for i, f := range fields {
+		encoded[i] = fmt.Sprintf("%d:%s", len(f), f)
+	}
+	payload := strings.Join(encoded, "|")
 
 	digest := keccak256([]byte(payload))
 	return digest, nil
@@ -124,6 +94,33 @@ func parsePrivateKeyHex(privateKeyHex string) (*secp256k1.PrivateKey, error) {
 		return nil, fmt.Errorf("%w: zero private key", ErrInvalidAttestation)
 	}
 	return privateKey, nil
+}
+
+// SignRawPayload signs an arbitrary byte payload with the given secp256k1
+// private key and returns a compact signature. Use for non-attestation domains
+// (e.g. vote signing) where a custom domain-separation prefix is baked into
+// the payload by the caller.
+func SignRawPayload(payload []byte, privateKeyHex string) ([]byte, error) {
+	privateKey, err := parsePrivateKeyHex(privateKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	digest := keccak256(payload)
+	return ecdsa.SignCompact(privateKey, digest, false), nil
+}
+
+// RecoverSignerFromPayload recovers the Ethereum address of the signer of
+// payload given a compact secp256k1 signature produced by SignRawPayload.
+func RecoverSignerFromPayload(payload []byte, signature []byte) (string, error) {
+	if len(signature) == 0 {
+		return "", fmt.Errorf("%w: empty signature", ErrInvalidAttestation)
+	}
+	digest := keccak256(payload)
+	publicKey, _, err := ecdsa.RecoverCompact(signature, digest)
+	if err != nil {
+		return "", fmt.Errorf("%w: recover signer: %v", ErrInvalidAttestation, err)
+	}
+	return SignerAddressFromPublicKey(publicKey), nil
 }
 
 func keccak256(data []byte) []byte {

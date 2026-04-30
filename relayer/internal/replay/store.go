@@ -8,7 +8,11 @@ import (
 	"sync"
 )
 
-const defaultStoreFile = "aegislink-relayer-replay.json"
+// There is intentionally no default store file path. Callers must supply an
+// explicit path via NewStoreAt so the replay store is never silently written
+// to /tmp (which is ephemeral on many systems). Losing the replay store
+// removes the off-chain deduplication guard.
+const defaultStoreFile = ""
 
 type Store struct {
 	mu          sync.Mutex
@@ -30,9 +34,14 @@ func NewStore() *Store {
 	}
 }
 
+// NewStoreAt creates a Store backed by the file at path. path must be a
+// non-empty absolute path to a persistent location. Passing an empty string
+// panics: the relay store must never fall back to an ephemeral directory such
+// as /tmp, because losing it would remove the off-chain replay guard.
 func NewStoreAt(path string) *Store {
 	if path == "" {
-		path = filepath.Join(os.TempDir(), defaultStoreFile)
+		panic("replay.NewStoreAt: path must be a non-empty persistent file path; " +
+			"set AEGISLINK_RELAYER_REPLAY_STORE_PATH to a durable location")
 	}
 
 	store := &Store{

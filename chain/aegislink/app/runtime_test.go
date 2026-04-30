@@ -11,6 +11,7 @@ import (
 
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
@@ -27,7 +28,7 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 		AppName:           AppName,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -48,7 +49,7 @@ func TestSaveAndLoadPreservesBridgeRuntimeState(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       asset.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -162,7 +163,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 		RuntimeMode:       RuntimeModeSDKStore,
 		Modules:           []string{"bridge", "bank", "registry", "limits", "pauser", "ibcrouter", "governance"},
 		StatePath:         storePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -183,7 +184,7 @@ func TestStoreRuntimePreservesBridgeStateAcrossReload(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       asset.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -237,7 +238,7 @@ func TestSaveAndLoadPreservesWalletBalances(t *testing.T) {
 		AppName:           AppName,
 		Modules:           []string{"bank", "bridge", "registry", "limits", "pauser", "governance"},
 		StatePath:         statePath,
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -272,14 +273,14 @@ func TestSaveAndLoadPreservesWalletBalances(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "2000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set eth limit: %v", err)
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "100000000"),
 	}); err != nil {
 		t.Fatalf("set erc20 limit: %v", err)
@@ -446,7 +447,7 @@ func TestSDKHomeRuntimePreservesIBCRouteAcrossReload(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       asset.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -608,7 +609,7 @@ func TestResolveConfigRejectsThresholdAboveSignerCount(t *testing.T) {
 
 	_, err := ResolveConfig(Config{
 		HomeDir:           filepath.Join(t.TempDir(), "home"),
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:1],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:1],
 		RequiredThreshold: 2,
 	})
 	if err == nil {
@@ -644,12 +645,12 @@ func validAttestationForClaim(claim bridgetypes.DepositClaim) bridgetypes.Attest
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			panic(err)
@@ -708,12 +709,12 @@ func attestationForWalletTest(t *testing.T, claim bridgetypes.DepositClaim) brid
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			t.Fatalf("sign attestation: %v", err)

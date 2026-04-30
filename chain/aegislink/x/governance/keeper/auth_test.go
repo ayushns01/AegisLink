@@ -41,7 +41,7 @@ func TestGovernanceAcceptsAuthorizedGuardianAndRecordsAppliedBy(t *testing.T) {
 		ProposalID: "limit-update-1",
 		Limit: limittypes.RateLimit{
 			AssetID:       "eth.usdc",
-			WindowSeconds: 1800,
+			WindowBlocks: 1800,
 			MaxAmount:     big.NewInt(900000000),
 		},
 	}); err != nil {
@@ -63,7 +63,7 @@ func TestGovernanceAcceptsAuthorizedGuardianAndRecordsAppliedBy(t *testing.T) {
 		t.Fatalf("expected asset to be disabled by authorized proposal, got %+v exists=%t", asset, ok)
 	}
 	limit, ok := limitsKeeper.GetLimit("eth.usdc")
-	if !ok || limit.WindowSeconds != 1800 {
+	if !ok || limit.WindowBlocks != 1800 {
 		t.Fatalf("expected limit update to be applied, got %+v exists=%t", limit, ok)
 	}
 	profile, ok := routerKeeper.GetRouteProfile("osmosis-fast")

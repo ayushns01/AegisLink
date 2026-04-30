@@ -8,6 +8,7 @@ import (
 	bankkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bank/keeper"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	governancekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/governance/keeper"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -157,7 +158,7 @@ func TestBridgeQueryServiceReturnsActiveSignerSetAndHistory(t *testing.T) {
 
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[1:4],
+		Signers:     bridgetestutil.DefaultHarnessSignerAddresses()[1:4],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -227,7 +228,7 @@ func seedBridgeRuntime(t *testing.T, app *App) {
 
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(250000000),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -269,12 +270,12 @@ func sampleAttestation(claim bridgetypes.DepositClaim) bridgetypes.Attestation {
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			panic(err)

@@ -11,6 +11,7 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcroutertypes "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/types"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
@@ -294,7 +295,7 @@ func TestABCIApplicationKeepsBaseAppHeightInSyncAfterCustomDepositBlock(t *testi
 	}
 	if err := bridgeApp.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(2_000_000_000_000_000),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -320,12 +321,12 @@ func TestABCIApplicationKeepsBaseAppHeightInSyncAfterCustomDepositBlock(t *testi
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			t.Fatalf("sign attestation: %v", err)
@@ -440,7 +441,7 @@ func TestABCIApplicationInitiateIBCTransferEmitsPacketEvents(t *testing.T) {
 	}
 	if err := bridgeApp.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(2_000_000_000_000_000),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)

@@ -13,7 +13,7 @@ func TestSetLimitRejectsInvalidLimit(t *testing.T) {
 
 	err := keeper.SetLimit(limittypes.RateLimit{
 		AssetID:       "",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(10),
 	})
 	if !errors.Is(err, limittypes.ErrInvalidRateLimit) {
@@ -91,14 +91,14 @@ func TestCheckTransferTracksUsageSeparatelyPerAsset(t *testing.T) {
 	keeper := NewKeeper()
 	if err := keeper.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("1000"),
 	}); err != nil {
 		t.Fatalf("expected usdc limit to succeed, got %v", err)
 	}
 	if err := keeper.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdt",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("500"),
 	}); err != nil {
 		t.Fatalf("expected usdt limit to succeed, got %v", err)
@@ -118,7 +118,7 @@ func TestCheckTransferTracksUsageSeparatelyPerAsset(t *testing.T) {
 func validLimit() limittypes.RateLimit {
 	return limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustAmount("1000"),
 	}
 }

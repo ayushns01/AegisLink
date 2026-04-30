@@ -17,6 +17,7 @@ import (
 
 var ErrInvalidProposal = errors.New("invalid governance proposal")
 var ErrUnauthorizedProposal = errors.New("unauthorized governance proposal")
+var ErrDuplicateProposal = errors.New("governance proposal already applied")
 
 type ProposalKind string
 
@@ -152,8 +153,23 @@ func NewStoreKeeper(
 	return keeper, nil
 }
 
+// assertProposalNotApplied returns ErrDuplicateProposal if a record with the
+// same ProposalID already exists in k.applied, preventing replay of proposals.
+func (k *Keeper) assertProposalNotApplied(proposalID string) error {
+	id := strings.TrimSpace(proposalID)
+	for _, record := range k.applied {
+		if record.ProposalID == id {
+			return fmt.Errorf("%w: %s", ErrDuplicateProposal, id)
+		}
+	}
+	return nil
+}
+
 func (k *Keeper) ApplyAssetStatusProposal(authority string, proposal AssetStatusProposal) error {
 	if err := proposal.ValidateBasic(); err != nil {
+		return err
+	}
+	if err := k.assertProposalNotApplied(proposal.ProposalID); err != nil {
 		return err
 	}
 	appliedBy, err := k.authorize(authority)
@@ -185,6 +201,9 @@ func (k *Keeper) ApplyLimitUpdateProposal(authority string, proposal LimitUpdate
 	if err := proposal.ValidateBasic(); err != nil {
 		return err
 	}
+	if err := k.assertProposalNotApplied(proposal.ProposalID); err != nil {
+		return err
+	}
 	appliedBy, err := k.authorize(authority)
 	if err != nil {
 		return err
@@ -208,6 +227,9 @@ func (k *Keeper) ApplyLimitUpdateProposal(authority string, proposal LimitUpdate
 
 func (k *Keeper) ApplyRoutePolicyUpdateProposal(authority string, proposal RoutePolicyUpdateProposal) error {
 	if err := proposal.ValidateBasic(); err != nil {
+		return err
+	}
+	if err := k.assertProposalNotApplied(proposal.ProposalID); err != nil {
 		return err
 	}
 	appliedBy, err := k.authorize(authority)

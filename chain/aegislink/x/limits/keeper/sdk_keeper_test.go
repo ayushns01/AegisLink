@@ -18,7 +18,7 @@ func TestSDKKeeperPersistsRateLimitsAcrossReload(t *testing.T) {
 
 	limit := limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(100000000),
 	}
 	if err := keeper.SetLimit(limit); err != nil {
@@ -49,7 +49,7 @@ func TestSDKKeeperPersistsWindowUsageAcrossReload(t *testing.T) {
 
 	if err := keeper.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     big.NewInt(100000000),
 	}); err != nil {
 		t.Fatalf("expected rate limit registration to succeed, got %v", err)

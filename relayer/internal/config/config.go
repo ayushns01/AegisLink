@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
 )
 
 type Config struct {
@@ -43,7 +42,10 @@ func LoadFromEnv() Config {
 		CosmosChainID:               getString("AEGISLINK_RELAYER_COSMOS_CHAIN_ID", "aegislink-1"),
 		AttestationThreshold:        uint32(getInt("AEGISLINK_RELAYER_ATTESTATION_THRESHOLD", 2)),
 		AttestationSignerSetVersion: uint64(getInt("AEGISLINK_RELAYER_ATTESTATION_SIGNER_SET_VERSION", 1)),
-		AttestationSignerKeys:       getFieldsWithFallback("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS", bridgetypes.DefaultHarnessSignerPrivateKeys()[:3]),
+		// AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS must be provided explicitly.
+		// No default is used: falling back to well-known test keys on a real network
+		// would allow anyone to forge attestations and drain the bridge.
+		AttestationSignerKeys: getFields("AEGISLINK_RELAYER_ATTESTATION_SIGNER_KEYS"),
 		Loop:                        getBool("AEGISLINK_RELAYER_LOOP", false),
 		PollInterval:                time.Duration(getInt("AEGISLINK_RELAYER_POLL_INTERVAL_MS", 1000)) * time.Millisecond,
 		FailureBackoff:              time.Duration(getInt("AEGISLINK_RELAYER_FAILURE_BACKOFF_MS", 5000)) * time.Millisecond,

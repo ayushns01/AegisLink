@@ -35,7 +35,10 @@ func (s SignerSet) ValidateBasic() error {
 
 	seen := make(map[string]struct{}, len(s.Signers))
 	for _, signer := range s.Signers {
-		signer = strings.TrimSpace(signer)
+		// Normalize before the duplicate check so that "0xABCD" and "0xabcd"
+		// are correctly detected as the same address (they collapse to the same
+		// key after normalizeSignerSet lowercases all entries).
+		signer = strings.ToLower(strings.TrimSpace(signer))
 		if signer == "" {
 			return fmt.Errorf("empty signer")
 		}

@@ -17,7 +17,7 @@ import (
 
 type SeedBridgeLimitPayload struct {
 	AssetID       string `json:"asset_id"`
-	WindowSeconds uint64 `json:"window_seconds"`
+	WindowBlocks uint64 `json:"window_seconds"`
 	MaxAmount     string `json:"max_amount"`
 }
 
@@ -31,7 +31,7 @@ type SeedBridgeAssetsResult struct {
 	Assets        int      `json:"assets"`
 	Limits        int      `json:"limits"`
 	SeededAssets  []string `json:"seeded_assets"`
-	WindowSeconds []uint64 `json:"window_seconds,omitempty"`
+	WindowBlocks []uint64 `json:"window_seconds,omitempty"`
 }
 
 type SetRouteProfilePayload struct {
@@ -154,13 +154,13 @@ func (n DemoNode) handleSeedBridgeAssets(w http.ResponseWriter, r *http.Request)
 		amount := parsedLimits[limit.AssetID]
 		rateLimit := limittypes.RateLimit{
 			AssetID:       limit.AssetID,
-			WindowSeconds: limit.WindowSeconds,
+			WindowBlocks: limit.WindowBlocks,
 			MaxAmount:     new(big.Int).Set(amount),
 		}
 		if err := n.app.SetLimit(rateLimit); err != nil {
 			return err
 		}
-		windowSeconds = append(windowSeconds, limit.WindowSeconds)
+		windowSeconds = append(windowSeconds, limit.WindowBlocks)
 	}
 	if err := n.app.Save(); err != nil {
 		return err
@@ -170,7 +170,7 @@ func (n DemoNode) handleSeedBridgeAssets(w http.ResponseWriter, r *http.Request)
 		Assets:        len(payload.Assets),
 		Limits:        len(payload.Limits),
 		SeededAssets:  seededAssets,
-		WindowSeconds: windowSeconds,
+		WindowBlocks: windowSeconds,
 	})
 }
 
@@ -235,7 +235,7 @@ func decodeSeedBridgeAssetsPayload(payload SeedBridgeAssetsPayload) (SeedBridgeA
 		if limit.AssetID == "" {
 			return SeedBridgeAssetsPayload{}, nil, fmt.Errorf("missing rate-limit asset id")
 		}
-		if limit.WindowSeconds == 0 {
+		if limit.WindowBlocks == 0 {
 			return SeedBridgeAssetsPayload{}, nil, fmt.Errorf("missing rate-limit window seconds for %s", limit.AssetID)
 		}
 		if _, ok := assetIDs[limit.AssetID]; !ok {

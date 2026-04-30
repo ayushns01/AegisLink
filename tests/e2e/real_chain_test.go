@@ -10,6 +10,7 @@ import (
 
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 )
@@ -170,7 +171,7 @@ func seedRealChainRuntime(t *testing.T, homeDir string) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set limit: %v", err)
@@ -248,11 +249,11 @@ func writeRuntimeSubmissionFile(t *testing.T, path string, claim bridgetypes.Dep
 
 	payload.Attestation.MessageID = claim.Identity.MessageID
 	payload.Attestation.PayloadHash = claim.Digest()
-	payload.Attestation.Signers = bridgetypes.DefaultHarnessSignerAddresses()[:2]
+	payload.Attestation.Signers = bridgetestutil.DefaultHarnessSignerAddresses()[:2]
 	payload.Attestation.Threshold = 2
 	payload.Attestation.Expiry = 120
 	payload.Attestation.SignerSetVersion = 1
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(bridgetypes.Attestation{
 			MessageID:        payload.Attestation.MessageID,
 			PayloadHash:      payload.Attestation.PayloadHash,

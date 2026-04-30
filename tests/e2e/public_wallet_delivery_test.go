@@ -16,6 +16,7 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	"github.com/ayushns01/aegislink/chain/aegislink/networked"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 	registrytypes "github.com/ayushns01/aegislink/chain/aegislink/x/registry/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -149,14 +150,14 @@ func registerPublicBridgeAssetsWithERC20Address(t *testing.T, app *aegisapp.App,
 
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       nativeETH.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustWalletAmount(t, "2000000000000000000"),
 	}); err != nil {
 		return err
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       erc20.AssetID,
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustWalletAmount(t, "100000000"),
 	}); err != nil {
 		return err
@@ -430,12 +431,12 @@ func testAttestationForClaim(t *testing.T, claim bridgetypes.DepositClaim) bridg
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           200,
 		SignerSetVersion: 1,
 	}
-	for _, key := range bridgetypes.DefaultHarnessSignerPrivateKeys()[:2] {
+	for _, key := range bridgetestutil.DefaultHarnessSignerPrivateKeys()[:2] {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, key)
 		if err != nil {
 			t.Fatalf("sign attestation: %v", err)
@@ -605,7 +606,7 @@ func writeAttestationVotes(t *testing.T, path string, claims ...bridgetypes.Depo
 		Votes []persistedVote `json:"votes"`
 	}
 
-	signers := bridgetypes.DefaultHarnessSignerAddresses()[:2]
+	signers := bridgetestutil.DefaultHarnessSignerAddresses()[:2]
 	state := persistedVotes{}
 	for _, claim := range claims {
 		for _, signer := range signers {

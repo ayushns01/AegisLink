@@ -1282,7 +1282,7 @@ func txApplyLimitUpdateProposal(args []string, stdout io.Writer) error {
 		ProposalID: *proposalID,
 		Limit: limittypes.RateLimit{
 			AssetID:       *assetID,
-			WindowSeconds: *windowSeconds,
+			WindowBlocks: *windowSeconds,
 			MaxAmount:     maxAmount,
 		},
 	}
@@ -1296,7 +1296,7 @@ func txApplyLimitUpdateProposal(args []string, stdout io.Writer) error {
 		"proposal_id":    proposal.ProposalID,
 		"kind":           governancekeeper.ProposalKindLimitUpdate,
 		"target_id":      proposal.Limit.AssetID,
-		"window_seconds": proposal.Limit.WindowSeconds,
+		"window_seconds": proposal.Limit.WindowBlocks,
 		"max_amount":     proposal.Limit.MaxAmount.String(),
 		"applied_by":     strings.TrimSpace(*authority),
 	})

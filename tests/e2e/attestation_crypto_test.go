@@ -8,6 +8,7 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
 )
 
@@ -56,7 +57,7 @@ func newAttestationRuntime(t *testing.T) *aegisapp.App {
 	app, err := aegisapp.NewWithConfig(aegisapp.Config{
 		AppName:           aegisapp.AppName,
 		StatePath:         filepath.Join(t.TempDir(), "aegislink-state.json"),
-		AllowedSigners:    bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		AllowedSigners:    bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		RequiredThreshold: 2,
 	})
 	if err != nil {
@@ -67,7 +68,7 @@ func newAttestationRuntime(t *testing.T) *aegisapp.App {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 600,
+		WindowBlocks: 600,
 		MaxAmount:     mustBigAmount(t, "1000000000000000000"),
 	}); err != nil {
 		t.Fatalf("set runtime limit: %v", err)
@@ -101,7 +102,7 @@ func signedAttestationForClaim(t *testing.T, claim bridgetypes.DepositClaim, sig
 	attestation := bridgetypes.Attestation{
 		MessageID:        claim.Identity.MessageID,
 		PayloadHash:      claim.Digest(),
-		Signers:          bridgetypes.DefaultHarnessSignerAddresses()[:2],
+		Signers:          bridgetestutil.DefaultHarnessSignerAddresses()[:2],
 		Threshold:        2,
 		Expiry:           120,
 		SignerSetVersion: 1,
@@ -113,7 +114,7 @@ func signedAttestationForClaim(t *testing.T, claim bridgetypes.DepositClaim, sig
 func signAttestationWithSignerIndexes(t *testing.T, attestation bridgetypes.Attestation, signerIndexes ...int) []bridgetypes.AttestationProof {
 	t.Helper()
 
-	privateKeys := bridgetypes.DefaultHarnessSignerPrivateKeys()
+	privateKeys := bridgetestutil.DefaultHarnessSignerPrivateKeys()
 	proofs := make([]bridgetypes.AttestationProof, 0, len(signerIndexes))
 	for _, idx := range signerIndexes {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, privateKeys[idx])

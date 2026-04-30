@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 )
 
 func TestVerifyAttestationRejectsSignerNamesWithoutSignatureProofs(t *testing.T) {
@@ -67,7 +68,7 @@ func TestVerifyAttestationRequiresThresholdValidSignaturesFromActiveSet(t *testi
 func signAttestationForTests(t *testing.T, attestation bridgetypes.Attestation, signerIndexes ...int) []bridgetypes.AttestationProof {
 	t.Helper()
 
-	signers := bridgetypes.DefaultHarnessAttestationSigners()
+	signers := bridgetestutil.DefaultHarnessAttestationSigners()
 	proofs := make([]bridgetypes.AttestationProof, 0, len(signerIndexes))
 	for _, idx := range signerIndexes {
 		proof, err := bridgetypes.SignAttestationWithPrivateKeyHex(attestation, signers[idx].PrivateKeyHex)
@@ -81,7 +82,7 @@ func signAttestationForTests(t *testing.T, attestation bridgetypes.Attestation, 
 
 func invalidProofForTests() bridgetypes.AttestationProof {
 	return bridgetypes.AttestationProof{
-		Signer:    bridgetypes.DefaultHarnessAttestationSigners()[1].Address,
+		Signer:    bridgetestutil.DefaultHarnessAttestationSigners()[1].Address,
 		Signature: []byte("not-a-valid-compact-signature"),
 	}
 }

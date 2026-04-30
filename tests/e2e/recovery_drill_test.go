@@ -11,6 +11,7 @@ import (
 	aegisapp "github.com/ayushns01/aegislink/chain/aegislink/app"
 	bridgekeeper "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/keeper"
 	bridgetypes "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types"
+	bridgetestutil "github.com/ayushns01/aegislink/chain/aegislink/x/bridge/types/testutil"
 	ibcrouterkeeper "github.com/ayushns01/aegislink/chain/aegislink/x/ibcrouter/keeper"
 	limitskeeper "github.com/ayushns01/aegislink/chain/aegislink/x/limits/keeper"
 	limittypes "github.com/ayushns01/aegislink/chain/aegislink/x/limits/types"
@@ -200,7 +201,7 @@ func TestRecoveryDrillRejectsSignerSetMismatchUntilAttestationIsUpdated(t *testi
 	app.SetCurrentHeight(90)
 	if err := app.BridgeKeeper.UpsertSignerSet(bridgekeeper.SignerSet{
 		Version:     2,
-		Signers:     bridgetypes.DefaultHarnessSignerAddresses()[:3],
+		Signers:     bridgetestutil.DefaultHarnessSignerAddresses()[:3],
 		Threshold:   2,
 		ActivatedAt: 80,
 	}); err != nil {
@@ -232,7 +233,7 @@ func TestRecoveryDrillRateLimitWindowRecoversAfterWindowExpires(t *testing.T) {
 	}
 	if err := app.SetLimit(limittypes.RateLimit{
 		AssetID:       "eth.usdc",
-		WindowSeconds: 10,
+		WindowBlocks: 10,
 		MaxAmount:     mustBigAmount(t, "100000000"),
 	}); err != nil {
 		t.Fatalf("set narrow limit: %v", err)

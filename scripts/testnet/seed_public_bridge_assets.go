@@ -88,7 +88,7 @@ func run() error {
 		seedPayload.Assets = append(seedPayload.Assets, normalized)
 		seedPayload.Limits = append(seedPayload.Limits, networked.SeedBridgeLimitPayload{
 			AssetID:       normalized.AssetID,
-			WindowSeconds: *windowSeconds,
+			WindowBlocks: *windowSeconds,
 			MaxAmount:     maxAmount.String(),
 		})
 		seededAssets = append(seededAssets, normalized.AssetID)
@@ -124,7 +124,7 @@ func run() error {
 		maxAmount, _ := new(big.Int).SetString(seedPayload.Limits[i].MaxAmount, 10)
 		if err := app.SetLimit(limittypes.RateLimit{
 			AssetID:       seedPayload.Limits[i].AssetID,
-			WindowSeconds: seedPayload.Limits[i].WindowSeconds,
+			WindowBlocks: seedPayload.Limits[i].WindowBlocks,
 			MaxAmount:     maxAmount,
 		}); err != nil {
 			return err
