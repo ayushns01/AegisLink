@@ -52,8 +52,8 @@ func TestCoordinatorRunOnceInitiatesAndFlushesWhenClaimedIntentIsReady(t *testin
 	if submitter.calls[0].Receiver != "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8" {
 		t.Fatalf("unexpected initiation payload: %+v", submitter.calls[0])
 	}
-	if len(flusher.channels) != 1 || flusher.channels[0] != "channel-0" {
-		t.Fatalf("expected one flush for channel-0, got %v", flusher.channels)
+	if len(flusher.calls) != 1 || flusher.calls[0].channelID != "channel-0" || flusher.calls[0].routeID != "osmosis-public-wallet" {
+		t.Fatalf("expected one flush for channel-0 with osmosis route, got %v", flusher.calls)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestCoordinatorRunOnceWaitsWhileSepoliaConfirmationIsPending(t *testing.T) 
 	if len(submitter.calls) != 0 {
 		t.Fatalf("expected no initiation calls, got %d", len(submitter.calls))
 	}
-	if len(flusher.channels) != 0 {
-		t.Fatalf("expected no flushes, got %v", flusher.channels)
+	if len(flusher.calls) != 0 {
+		t.Fatalf("expected no flushes, got %v", flusher.calls)
 	}
 }
 
@@ -166,11 +166,11 @@ func (s *stubTransferSubmitter) InitiateTransfer(_ context.Context, intent Inten
 }
 
 type stubFlusher struct {
-	channels []string
-	err      error
+	calls []struct{ routeID, channelID string }
+	err   error
 }
 
-func (s *stubFlusher) Flush(_ context.Context, channelID string) error {
-	s.channels = append(s.channels, channelID)
+func (s *stubFlusher) Flush(_ context.Context, routeID, channelID string) error {
+	s.calls = append(s.calls, struct{ routeID, channelID string }{routeID, channelID})
 	return s.err
 }
