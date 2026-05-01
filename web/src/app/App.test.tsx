@@ -36,12 +36,12 @@ describe("App", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /connect ethereum to the cosmos ecosystem/i,
+        name: /move eth across chains, in one step/i,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /connect wallet/i }),
-    ).toBeInTheDocument();
+      screen.getAllByRole("button", { name: /connect wallet/i }).length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: /open aegislink menu/i }),
     ).toBeInTheDocument();
@@ -69,7 +69,7 @@ describe("App", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /connect ethereum to the cosmos ecosystem/i,
+        name: /move eth across chains, in one step/i,
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^transfer$/i })).not.toBeInTheDocument();
@@ -112,7 +112,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", {
-        name: /connect ethereum to the cosmos ecosystem/i,
+        name: /move eth across chains, in one step/i,
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -197,12 +197,12 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: /transfer in progress/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /ibc handoff/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /ibc relayed/i })).toBeInTheDocument();
     expect(screen.queryByTestId("progress-energy-packet")).not.toBeInTheDocument();
     expect(screen.queryByTestId("progress-flow-lane")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", {
-        name: /connect ethereum to the cosmos ecosystem/i,
+        name: /move eth across chains, in one step/i,
       }),
     ).not.toBeInTheDocument();
     expect(

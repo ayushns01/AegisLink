@@ -13,8 +13,10 @@ import { useBridgeSessionStatus } from "./useBridgeSessionStatus";
 type Destination = {
   id: string;
   label: string;
+  shortName: string;
   symbol: string;
-  helper: string;
+  color: string;
+  logo?: string;
   enabled: boolean;
   prefix: string;
   routeId: string;
@@ -24,8 +26,10 @@ const destinations: Destination[] = [
   {
     id: "osmosis-testnet-osmo",
     label: "Osmosis Testnet (OSMO)",
+    shortName: "Osmosis Testnet",
     symbol: "OSMO",
-    helper: "Live route available now",
+    color: "#5E12A0",
+    logo: "/chains/osmo.svg",
     enabled: true,
     prefix: "osmo1",
     routeId: "osmosis-public-wallet",
@@ -33,8 +37,10 @@ const destinations: Destination[] = [
   {
     id: "neutron-testnet-ntrn",
     label: "Neutron Testnet (NTRN)",
+    shortName: "Neutron Testnet",
     symbol: "NTRN",
-    helper: "Live route available now",
+    color: "#1a1a2e",
+    logo: "/chains/ntrn.svg",
     enabled: true,
     prefix: "neutron1",
     routeId: "neutron-public-wallet",
@@ -42,8 +48,10 @@ const destinations: Destination[] = [
   {
     id: "osmosis-mainnet-osmo",
     label: "Osmosis Mainnet (OSMO)",
+    shortName: "Osmosis Mainnet",
     symbol: "OSMO",
-    helper: "Coming soon",
+    color: "#5E12A0",
+    logo: "/chains/osmo.svg",
     enabled: false,
     prefix: "osmo1",
     routeId: "",
@@ -51,8 +59,9 @@ const destinations: Destination[] = [
   {
     id: "celestia-mainnet-tia",
     label: "Celestia Mainnet (TIA)",
+    shortName: "Celestia Mainnet",
     symbol: "TIA",
-    helper: "Coming soon",
+    color: "#7c3aed",
     enabled: false,
     prefix: "celestia1",
     routeId: "",
@@ -60,8 +69,9 @@ const destinations: Destination[] = [
   {
     id: "celestia-mocha-testnet-tia",
     label: "Celestia Mocha Testnet (TIA)",
+    shortName: "Celestia Mocha",
     symbol: "TIA",
-    helper: "Coming soon",
+    color: "#7c3aed",
     enabled: false,
     prefix: "celestia1",
     routeId: "",
@@ -69,8 +79,9 @@ const destinations: Destination[] = [
   {
     id: "injective-mainnet-inj",
     label: "Injective Mainnet (INJ)",
+    shortName: "Injective Mainnet",
     symbol: "INJ",
-    helper: "Coming soon",
+    color: "#0ea5e9",
     enabled: false,
     prefix: "inj1",
     routeId: "",
@@ -78,8 +89,9 @@ const destinations: Destination[] = [
   {
     id: "injective-testnet-inj",
     label: "Injective Testnet (INJ)",
+    shortName: "Injective Testnet",
     symbol: "INJ",
-    helper: "Coming soon",
+    color: "#0ea5e9",
     enabled: false,
     prefix: "inj1",
     routeId: "",
@@ -87,8 +99,9 @@ const destinations: Destination[] = [
   {
     id: "dydx-mainnet-dydx",
     label: "dYdX Mainnet (DYDX)",
+    shortName: "dYdX Mainnet",
     symbol: "DYDX",
-    helper: "Coming soon",
+    color: "#22c55e",
     enabled: false,
     prefix: "dydx1",
     routeId: "",
@@ -96,8 +109,9 @@ const destinations: Destination[] = [
   {
     id: "dydx-testnet-dydx",
     label: "dYdX Testnet (DYDX)",
+    shortName: "dYdX Testnet",
     symbol: "DYDX",
-    helper: "Coming soon",
+    color: "#22c55e",
     enabled: false,
     prefix: "dydx1",
     routeId: "",
@@ -105,8 +119,9 @@ const destinations: Destination[] = [
   {
     id: "akash-mainnet-akt",
     label: "Akash Mainnet (AKT)",
+    shortName: "Akash Mainnet",
     symbol: "AKT",
-    helper: "Coming soon",
+    color: "#f97316",
     enabled: false,
     prefix: "akash1",
     routeId: "",
@@ -114,13 +129,52 @@ const destinations: Destination[] = [
   {
     id: "akash-sandbox-akt",
     label: "Akash Sandbox (AKT)",
+    shortName: "Akash Sandbox",
     symbol: "AKT",
-    helper: "Coming soon",
+    color: "#f97316",
     enabled: false,
     prefix: "akash1",
     routeId: "",
   },
 ];
+
+const liveDestinations = destinations.filter((d) => d.enabled);
+const soonDestinations = destinations.filter((d) => !d.enabled);
+
+function ChainAvatar({
+  destination,
+  size,
+  muted = false,
+}: {
+  destination: Destination;
+  size: "md" | "sm";
+  muted?: boolean;
+}) {
+  const className = [
+    "chain-avatar",
+    size === "sm" ? "chain-avatar--sm" : "",
+    muted ? "chain-avatar--muted" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (destination.logo) {
+    return (
+      <img
+        alt={destination.symbol}
+        className={className}
+        src={destination.logo}
+        style={{ background: "transparent" }}
+      />
+    );
+  }
+
+  return (
+    <span className={className} style={{ background: destination.color }}>
+      {destination.symbol.slice(0, 2)}
+    </span>
+  );
+}
 
 export function TransferPage() {
   const wallet = useBridgeWallet();
@@ -218,123 +272,175 @@ export function TransferPage() {
     <div className="transfer-card">
       <div className="transfer-card__header">
         <div>
-          <p className="eyebrow eyebrow--dark">Bridge</p>
+          <p className="eyebrow eyebrow--dark">Sepolia → Cosmos</p>
           <h2>Transfer</h2>
-          <p className="transfer-card__copy">
-            Select a supported Cosmos destination, enter the matching recipient
-            address, and bridge ETH from the connected Sepolia wallet.
-          </p>
         </div>
-        <div className="wallet-chip">
+        <div className={`wallet-chip${wallet.isWrongChain ? " wallet-chip--warning" : ""}`}>
           {wallet.isWrongChain
             ? "Wrong chain"
             : wallet.address
-              ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`
-              : "Wallet connected"}
+              ? `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}`
+              : "—"}
         </div>
       </div>
 
       <div className="field-grid">
-        <div className="field-card field-card--amount">
-          <label className="field-label" htmlFor="bridge-amount">
-            Amount
-          </label>
-          <div className="field-input-wrap field-input-wrap--amount">
-            <input
-              aria-label="Amount"
-              className="field-input field-input--amount"
-              id="bridge-amount"
-              inputMode="decimal"
-              onChange={(event) => setAmount(event.target.value)}
-              value={amount}
-            />
-            <span className="field-suffix">ETH</span>
-          </div>
-          <span className="field-helper">ETH from connected Sepolia wallet</span>
-        </div>
-
-        <div className="field-card">
-          <small>Destination chain</small>
-          <div className="destination-picker">
-            <button
-              aria-expanded={isDestinationMenuOpen}
-              aria-haspopup="menu"
-              aria-label={`Destination chain: ${destination.label}`}
-              className="destination-trigger"
-              onClick={() => setIsDestinationMenuOpen((value) => !value)}
-              type="button"
-            >
-              <span className="destination-trigger__label destination-trigger__label--active">
-                {destination.label}
-              </span>
-              <em>{destination.symbol}</em>
-            </button>
-
-            {isDestinationMenuOpen ? (
-              <div className="destination-menu destination-menu--scrollable" role="menu">
-                {destinations.map((option) => (
+        <div className="transfer-row">
+          <div className="field-card field-card--amount">
+            <div className="amount-header">
+              <label className="field-label" htmlFor="bridge-amount">
+                Amount
+              </label>
+              <div className="amount-display">
+                <span className="amount-display__value">
+                  {parseFloat(amount).toFixed(3)}
+                </span>
+                <span className="amount-display__unit">ETH</span>
+              </div>
+            </div>
+            <div className="amount-slider-wrap">
+              <input
+                aria-label="Amount"
+                className="amount-slider"
+                id="bridge-amount"
+                max="1"
+                min="0.001"
+                onChange={(event) =>
+                  setAmount(parseFloat(event.target.value).toFixed(3))
+                }
+                step="0.001"
+                style={
+                  {
+                    "--slider-pct": `${Math.round(parseFloat(amount) * 100)}%`,
+                  } as { [key: string]: string }
+                }
+                type="range"
+                value={amount}
+              />
+            </div>
+            <div className="amount-presets">
+              {(["0.050", "0.100", "0.250", "0.500", "1.000"] as const).map(
+                (v) => (
                   <button
-                    className={
-                      option.id === destination.id
-                        ? "destination-option destination-option--active"
-                        : "destination-option"
-                    }
-                    disabled={!option.enabled}
-                    key={option.id}
-                    onClick={() => {
-                      if (!option.enabled) {
-                        return;
-                      }
-
-                      setSelectedDestinationId(option.id);
-                      setRecipient("");
-                      setSubmissionError(null);
-                      setIsDestinationMenuOpen(false);
-                    }}
-                    role="menuitem"
+                    className={`amount-preset${amount === v ? " amount-preset--active" : ""}`}
+                    key={v}
+                    onClick={() => setAmount(v)}
                     type="button"
                   >
-                    <div>
-                      <strong
-                        className={
-                          option.id === destination.id
-                            ? "destination-option__title destination-option__title--active"
-                            : "destination-option__title"
-                        }
-                      >
-                        {option.label}
-                      </strong>
-                      <span>{option.helper}</span>
-                    </div>
-                    <em>{option.enabled ? "Live" : "Soon"}</em>
+                    {parseFloat(v)}
                   </button>
-                ))}
-              </div>
-            ) : null}
+                ),
+              )}
+            </div>
+          </div>
+
+          <div className="field-card field-card--destination">
+            <label className="field-label">To</label>
+            <div className="chain-picker">
+              <button
+                aria-expanded={isDestinationMenuOpen}
+                aria-haspopup="menu"
+                aria-label={`Destination chain: ${destination.label}`}
+                className="chain-trigger"
+                onClick={() => setIsDestinationMenuOpen((value) => !value)}
+                type="button"
+              >
+                <ChainAvatar destination={destination} size="md" />
+                <span className="chain-trigger__name">{destination.shortName}</span>
+                <span className="chain-trigger__chevron" aria-hidden="true">
+                  {isDestinationMenuOpen ? "▲" : "▼"}
+                </span>
+              </button>
+
+              {isDestinationMenuOpen ? (
+                <div className="chain-menu" role="menu">
+                  <p className="chain-menu__group">Live now</p>
+                  {liveDestinations.map((option) => (
+                    <button
+                      className={`chain-option${option.id === destination.id ? " chain-option--active" : ""}`}
+                      key={option.id}
+                      onClick={() => {
+                        setSelectedDestinationId(option.id);
+                        setRecipient("");
+                        setSubmissionError(null);
+                        setIsDestinationMenuOpen(false);
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <ChainAvatar destination={option} size="sm" />
+                      <span className="chain-option__info">
+                        <strong className="chain-option__name">{option.shortName}</strong>
+                        <span className="chain-option__symbol">{option.symbol}</span>
+                      </span>
+                      <span className="chain-badge chain-badge--live">● Live</span>
+                    </button>
+                  ))}
+
+                  <div className="chain-menu__divider" />
+                  <p className="chain-menu__group">Coming soon</p>
+                  {soonDestinations.map((option) => (
+                    <button
+                      className="chain-option chain-option--soon"
+                      disabled
+                      key={option.id}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <ChainAvatar destination={option} size="sm" muted />
+                      <span className="chain-option__info">
+                        <strong className="chain-option__name">{option.shortName}</strong>
+                        <span className="chain-option__symbol">{option.symbol}</span>
+                      </span>
+                      <span className="chain-badge chain-badge--soon">Soon</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
         <div className="field-card">
           <label className="field-label" htmlFor="bridge-recipient">
-            Recipient
+            Recipient address
           </label>
           <input
             aria-label="Recipient"
-            className="field-input field-input--recipient"
+            className={`field-input field-input--recipient ${recipientIsValid ? "field-input--valid" : recipient.length > 0 ? "field-input--invalid" : ""}`}
             id="bridge-recipient"
             onChange={(event) => setRecipient(event.target.value)}
+            placeholder={`${destination.prefix}1…`}
             value={recipient}
           />
           <span className="field-helper">
-            Recipient must match the selected chain prefix.
+            Starts with <code className="field-prefix-hint">{destination.prefix}</code>
           </span>
-          {!recipientIsValid ? (
+          {recipient.length > 0 && !recipientIsValid ? (
             <p className="field-error">
-              Enter a valid {destination.prefix} recipient.
+              Must start with <strong>{destination.prefix}</strong> and be at least {destination.prefix.length + 9} characters.
             </p>
+          ) : recipientIsValid ? (
+            <p className="field-success">Valid address ✓</p>
           ) : null}
         </div>
       </div>
+
+      {canSubmit ? (
+        <div className="transfer-summary">
+          <span className="transfer-summary__from">{amount} ETH</span>
+          <span className="transfer-summary__arrow">→</span>
+          <span className="transfer-summary__to">{destination.label}</span>
+        </div>
+      ) : !wallet.isConnected ? (
+        <p className="submit-hint">Connect your Sepolia wallet to continue.</p>
+      ) : wallet.isWrongChain ? (
+        <p className="submit-hint submit-hint--warn">Switch to Sepolia to bridge.</p>
+      ) : !amountIsValid ? (
+        <p className="submit-hint">Enter a valid ETH amount above.</p>
+      ) : !recipientIsValid ? (
+        <p className="submit-hint">Enter a valid {destination.prefix} address above.</p>
+      ) : null}
 
       <button
         className="primary-cta"
@@ -342,7 +448,11 @@ export function TransferPage() {
         onClick={() => void handleSubmit()}
         type="button"
       >
-        {isSubmitting ? "Opening Bridge Tunnel..." : `Bridge to ${destination.label}`}
+        {isSubmitting
+          ? "Opening Bridge Tunnel…"
+          : canSubmit
+            ? `Bridge ${amount} ETH → ${destination.symbol}`
+            : `Bridge to ${destination.label}`}
       </button>
       {submissionError ? <p className="field-error field-error--spaced">{submissionError}</p> : null}
     </div>

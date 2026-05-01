@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { AboutSection } from "../../features/about/AboutSection";
-import { AbcSection } from "../../features/about/AbcSection";
 import { TransferPage } from "../../features/bridge/TransferPage";
 import { WalletConnectButton } from "../../features/wallet/WalletConnectButton";
 import { useBridgeWallet } from "../../features/wallet/useBridgeWallet";
@@ -8,7 +7,7 @@ import { useBridgeWallet } from "../../features/wallet/useBridgeWallet";
 export function LandingPage() {
   const wallet = useBridgeWallet();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<"hero" | "transfer" | "about" | "abc">("hero");
+  const [activeView, setActiveView] = useState<"hero" | "transfer" | "about">("hero");
 
   function handleSelectTransfer() {
     setActiveView("transfer");
@@ -17,11 +16,6 @@ export function LandingPage() {
 
   function handleSelectAbout() {
     setActiveView("about");
-    setIsMenuOpen(false);
-  }
-
-  function handleSelectAbc() {
-    setActiveView("abc");
     setIsMenuOpen(false);
   }
 
@@ -59,14 +53,6 @@ export function LandingPage() {
                 >
                   About
                 </button>
-                <button
-                  className="brand-menu__item"
-                  onClick={handleSelectAbc}
-                  role="menuitem"
-                  type="button"
-                >
-                  Abc
-                </button>
               </div>
             ) : null}
           </div>
@@ -76,20 +62,16 @@ export function LandingPage() {
 
       <section
         className={
-          activeView === "transfer" || activeView === "abc"
+          activeView === "transfer"
             ? "hero hero--with-card"
             : activeView === "about"
               ? "hero hero--with-card hero--with-about-page"
-            : "hero"
+              : "hero"
         }
       >
         {activeView === "transfer" ? (
           <div className="landing-transfer-card landing-transfer-card--compact">
             <TransferPage />
-          </div>
-        ) : activeView === "abc" ? (
-          <div className="landing-transfer-card landing-transfer-card--compact">
-            <AbcSection />
           </div>
         ) : activeView === "about" ? (
           <div className="about-page-shell">
@@ -97,17 +79,59 @@ export function LandingPage() {
           </div>
         ) : (
           <>
-            <p className="eyebrow">Ethereum to Cosmos bridge surface</p>
-            <h1>Connect Ethereum to the Cosmos ecosystem.</h1>
+            <p className="eyebrow">Ethereum → Cosmos Bridge</p>
+            <h1>Move ETH across chains, in one step.</h1>
             <p className="hero-copy">
-              AegisLink gives users one clear bridge action, one premium entry
-              point, and one place to track a transfer from Sepolia through final
-              destination delivery.
+              Connect your Sepolia wallet, pick a Cosmos destination, and bridge.
+              AegisLink handles verification, IBC routing, and live delivery tracking end-to-end.
             </p>
+
+            <div className="hero-destinations">
+              <span className="hero-destination hero-destination--live">
+                <i className="hero-destination__dot" />
+                Osmosis Testnet
+              </span>
+              <span className="hero-destination hero-destination--live">
+                <i className="hero-destination__dot" />
+                Neutron Testnet
+              </span>
+              <span className="hero-destination hero-destination--soon">
+                Celestia · dYdX · Injective · soon
+              </span>
+            </div>
+
+            <div className="hero-actions">
+              {wallet.isConnected ? (
+                <button
+                  className="primary-cta primary-cta--hero"
+                  onClick={handleSelectTransfer}
+                  type="button"
+                >
+                  Start bridging
+                </button>
+              ) : (
+                <button
+                  className="primary-cta primary-cta--hero"
+                  onClick={handleSelectTransfer}
+                  type="button"
+                >
+                  Connect wallet &amp; bridge
+                </button>
+              )}
+              <button
+                className="ghost-cta"
+                onClick={handleSelectAbout}
+                type="button"
+              >
+                How it works
+              </button>
+            </div>
+
             <div className="hero-meta">
               <span>Sepolia source</span>
-              <span>Cosmos destinations</span>
-              <span>Transaction visibility</span>
+              <span>IBC delivery</span>
+              <span>Live status tracking</span>
+              <span>No custodian</span>
             </div>
           </>
         )}
