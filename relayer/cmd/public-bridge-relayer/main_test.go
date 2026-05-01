@@ -114,3 +114,50 @@ func stubLatestLCDHeightFunc(stub func(string) (uint64, error)) func() {
 		latestLCDHeightFunc = previous
 	}
 }
+
+func TestParseRlyPathMapEmptyStringReturnsEmptyMap(t *testing.T) {
+	got := parseRlyPathMap("")
+	if len(got) != 0 {
+		t.Fatalf("expected empty map, got %v", got)
+	}
+}
+
+func TestParseRlyPathMapSingleEntry(t *testing.T) {
+	got := parseRlyPathMap("osmosis-public-wallet:live-osmo-path")
+	if got["osmosis-public-wallet"] != "live-osmo-path" {
+		t.Fatalf("expected live-osmo-path, got %v", got)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(got))
+	}
+}
+
+func TestParseRlyPathMapTwoEntries(t *testing.T) {
+	got := parseRlyPathMap("osmosis-public-wallet:live-osmo-path,neutron-public-wallet:live-ntrn-path")
+	if got["osmosis-public-wallet"] != "live-osmo-path" {
+		t.Fatalf("expected live-osmo-path for osmosis, got %v", got)
+	}
+	if got["neutron-public-wallet"] != "live-ntrn-path" {
+		t.Fatalf("expected live-ntrn-path for neutron, got %v", got)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(got))
+	}
+}
+
+func TestParseRlyPathMapIgnoresMalformedEntries(t *testing.T) {
+	got := parseRlyPathMap("osmosis-public-wallet:live-osmo-path,bad-entry-no-colon,neutron-public-wallet:live-ntrn-path")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 valid entries, got %d: %v", len(got), got)
+	}
+}
+
+func TestParseRlyPathMapIgnoresWhitespace(t *testing.T) {
+	got := parseRlyPathMap("  osmosis-public-wallet : live-osmo-path , neutron-public-wallet : live-ntrn-path  ")
+	if got["osmosis-public-wallet"] != "live-osmo-path" {
+		t.Fatalf("expected trimmed value, got %v", got)
+	}
+	if got["neutron-public-wallet"] != "live-ntrn-path" {
+		t.Fatalf("expected trimmed value, got %v", got)
+	}
+}

@@ -51,6 +51,7 @@ type publicBridgeConfig struct {
 	AutoDeliveryRelayerCommand  string
 	AutoDeliveryRelayerHome     string
 	AutoDeliveryPathName        string
+	AutoDeliveryPathByRoute     map[string]string
 	AutoDeliveryTimeoutHeight   uint64
 	AttestationThreshold        uint32
 	AttestationSignerSetVersion uint64
@@ -187,6 +188,7 @@ func buildPublicBridgeConfig(cfg config.Config) (publicBridgeConfig, error) {
 		AutoDeliveryRelayerCommand:  strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_CMD")),
 		AutoDeliveryRelayerHome:     strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_HOME")),
 		AutoDeliveryPathName:        strings.TrimSpace(os.Getenv("AEGISLINK_RELAYER_RLY_PATH_NAME")),
+		AutoDeliveryPathByRoute:     parseRlyPathMap(os.Getenv("AEGISLINK_RELAYER_RLY_PATH_MAP")),
 		AutoDeliveryTimeoutHeight:   loadAutoDeliveryTimeoutHeight(),
 		AttestationThreshold:        cfg.AttestationThreshold,
 		AttestationSignerSetVersion: cfg.AttestationSignerSetVersion,
@@ -194,9 +196,6 @@ func buildPublicBridgeConfig(cfg config.Config) (publicBridgeConfig, error) {
 	}
 	if public.AutoDeliveryRelayerCommand == "" {
 		public.AutoDeliveryRelayerCommand = "./bin/relayer"
-	}
-	if public.AutoDeliveryPathName == "" {
-		public.AutoDeliveryPathName = "osmosis-public-wallet"
 	}
 	if commandArgsContainFlag(public.AegisLinkCommandArgs, "--home") {
 		public.AegisLinkStatePath = ""
@@ -290,6 +289,27 @@ func parseConfiguredAutoDeliveryTimeoutHeight(value string) (uint64, bool) {
 		return 0, false
 	}
 	return parsed, true
+}
+
+// parseRlyPathMap parses "routeID:pathName,routeID:pathName" into a map.
+func parseRlyPathMap(raw string) map[string]string {
+	result := make(map[string]string)
+	for _, entry := range strings.Split(strings.TrimSpace(raw), ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		routeID, pathName, ok := strings.Cut(entry, ":")
+		if !ok {
+			continue
+		}
+		routeID = strings.TrimSpace(routeID)
+		pathName = strings.TrimSpace(pathName)
+		if routeID != "" && pathName != "" {
+			result[routeID] = pathName
+		}
+	}
+	return result
 }
 
 func fetchLatestLCDHeight(baseURL string) (uint64, error) {
@@ -426,9 +446,10 @@ func buildAutoDeliveryCoordinator(cfg publicBridgeConfig) (*autodelivery.Coordin
 			TimeoutHeight: cfg.AutoDeliveryTimeoutHeight,
 		},
 		autodelivery.RlyFlusher{
-			Command:  cfg.AutoDeliveryRelayerCommand,
-			PathName: cfg.AutoDeliveryPathName,
-			Home:     cfg.AutoDeliveryRelayerHome,
+			Command:     cfg.AutoDeliveryRelayerCommand,
+			PathByRoute: cfg.AutoDeliveryPathByRoute,
+			DefaultPath: cfg.AutoDeliveryPathName,
+			Home:        cfg.AutoDeliveryRelayerHome,
 		},
 	), nil
 }
