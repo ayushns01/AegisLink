@@ -115,19 +115,29 @@ func (s NetworkedTransferSubmitter) recordIntentTransfer(ctx context.Context, in
 }
 
 type RlyFlusher struct {
-	Command  string
-	PathName string
-	Home     string
+	Command     string
+	PathByRoute map[string]string // routeID → rly path name
+	DefaultPath string            // fallback when routeID not in map
+	Home        string
 }
 
-func (f RlyFlusher) Flush(ctx context.Context, channelID string) error {
+func (f RlyFlusher) resolvePath(routeID string) string {
+	if routeID != "" && f.PathByRoute != nil {
+		if path, ok := f.PathByRoute[routeID]; ok && strings.TrimSpace(path) != "" {
+			return strings.TrimSpace(path)
+		}
+	}
+	return strings.TrimSpace(f.DefaultPath)
+}
+
+func (f RlyFlusher) Flush(ctx context.Context, routeID, channelID string) error {
 	command := strings.TrimSpace(f.Command)
 	if command == "" {
 		command = "./bin/relayer"
 	}
-	pathName := strings.TrimSpace(f.PathName)
+	pathName := f.resolvePath(routeID)
 	if pathName == "" {
-		pathName = "osmosis-public-wallet"
+		return fmt.Errorf("missing relayer path for auto delivery flush (route: %q)", routeID)
 	}
 	home := strings.TrimSpace(f.Home)
 	if home == "" {

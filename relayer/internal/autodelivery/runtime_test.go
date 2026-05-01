@@ -60,3 +60,59 @@ func TestNetworkedTransferSubmitterInitiateTransferRecordsTransferOnIntent(t *te
 		t.Fatalf("expected transfer linkage to be recorded, got %+v", recordedIntent)
 	}
 }
+
+func TestRlyFlusherSelectsPathByRouteID(t *testing.T) {
+	t.Parallel()
+
+	flusher := RlyFlusher{
+		Command: "echo",
+		PathByRoute: map[string]string{
+			"osmosis-public-wallet": "live-osmo-path",
+			"neutron-public-wallet": "live-ntrn-path",
+		},
+		DefaultPath: "fallback-path",
+		Home:        "/tmp/rly-home",
+	}
+
+	resolved := flusher.resolvePath("neutron-public-wallet")
+	if resolved != "live-ntrn-path" {
+		t.Fatalf("expected live-ntrn-path, got %q", resolved)
+	}
+
+	resolved = flusher.resolvePath("osmosis-public-wallet")
+	if resolved != "live-osmo-path" {
+		t.Fatalf("expected live-osmo-path, got %q", resolved)
+	}
+}
+
+func TestRlyFlusherFallsBackToDefaultPathWhenRouteNotInMap(t *testing.T) {
+	t.Parallel()
+
+	flusher := RlyFlusher{
+		Command:     "echo",
+		PathByRoute: map[string]string{"other-route": "other-path"},
+		DefaultPath: "fallback-path",
+		Home:        "/tmp/rly-home",
+	}
+
+	resolved := flusher.resolvePath("unknown-route")
+	if resolved != "fallback-path" {
+		t.Fatalf("expected fallback-path, got %q", resolved)
+	}
+}
+
+func TestRlyFlusherReturnsEmptyWhenNoPathAvailable(t *testing.T) {
+	t.Parallel()
+
+	flusher := RlyFlusher{
+		Command:     "echo",
+		PathByRoute: map[string]string{},
+		DefaultPath: "",
+		Home:        "/tmp/rly-home",
+	}
+
+	resolved := flusher.resolvePath("any-route")
+	if resolved != "" {
+		t.Fatalf("expected empty path, got %q", resolved)
+	}
+}
