@@ -105,7 +105,11 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: /^transfer$/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/osmosis testnet/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis testnet \(osmo\)/i,
+      }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", {
         name: /connect ethereum to the cosmos ecosystem/i,

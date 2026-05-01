@@ -74,7 +74,11 @@ describe("TransferPage", () => {
     render(<TransferPage />);
 
     expect(
-      screen.getByText(/osmosis testnet \(osmo\)/i),
+      within(
+        screen.getByRole("button", {
+          name: /destination chain: osmosis testnet \(osmo\)/i,
+        }),
+      ).getByText(/osmosis testnet \(osmo\)/i),
     ).toHaveClass("destination-trigger__label--active");
     expect(
       screen.getByRole("button", {
@@ -378,6 +382,99 @@ describe("TransferPage", () => {
         sender: "cosmos1q5nq6v24qq0584nf00wuhqrku4anlxaq80aqy4",
         sourceTxHash: "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
       });
+    });
+  });
+
+  it("shows Neutron testnet as a live enabled destination", async () => {
+    seedConnectedWallet();
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis testnet \(osmo\)/i,
+      }),
+    );
+
+    const neutronItem = screen.getByRole("menuitem", {
+      name: /neutron testnet \(ntrn\)/i,
+    });
+    expect(neutronItem).toBeInTheDocument();
+    expect(neutronItem).not.toBeDisabled();
+    expect(within(neutronItem).getByText("Live")).toBeInTheDocument();
+  });
+
+  it("switches to Neutron testnet and validates neutron1 recipient prefix", async () => {
+    seedConnectedWallet();
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis testnet \(osmo\)/i,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: /neutron testnet \(ntrn\)/i }),
+    );
+
+    const recipientInput = screen.getByLabelText(/recipient/i);
+    await user.clear(recipientInput);
+    await user.type(recipientInput, "osmo1shouldfailneutronprefix");
+
+    expect(
+      screen.getByText(/enter a valid neutron1 recipient/i),
+    ).toBeInTheDocument();
+
+    await user.clear(recipientInput);
+    await user.type(
+      recipientInput,
+      "neutron1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+
+    expect(
+      screen.queryByText(/enter a valid neutron1 recipient/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("registers delivery intent with neutron-public-wallet routeId when Neutron is selected", async () => {
+    seedConnectedWallet();
+    submitEthDepositMock.mockResolvedValue(
+      "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    // Switch to Neutron.
+    await user.click(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis testnet \(osmo\)/i,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: /neutron testnet \(ntrn\)/i }),
+    );
+
+    // Enter a valid neutron1 recipient.
+    await user.clear(screen.getByLabelText(/recipient/i));
+    await user.type(
+      screen.getByLabelText(/recipient/i),
+      "neutron1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /bridge to neutron testnet/i }),
+    );
+
+    await waitFor(() => {
+      expect(registerBridgeDeliveryIntentMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routeId: "neutron-public-wallet",
+          receiver: "neutron1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+        }),
+      );
     });
   });
 });

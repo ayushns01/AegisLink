@@ -17,6 +17,7 @@ type Destination = {
   helper: string;
   enabled: boolean;
   prefix: string;
+  routeId: string;
 };
 
 const destinations: Destination[] = [
@@ -27,6 +28,16 @@ const destinations: Destination[] = [
     helper: "Live route available now",
     enabled: true,
     prefix: "osmo1",
+    routeId: "osmosis-public-wallet",
+  },
+  {
+    id: "neutron-testnet-ntrn",
+    label: "Neutron Testnet (NTRN)",
+    symbol: "NTRN",
+    helper: "Live route available now",
+    enabled: true,
+    prefix: "neutron1",
+    routeId: "neutron-public-wallet",
   },
   {
     id: "osmosis-mainnet-osmo",
@@ -35,6 +46,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "osmo1",
+    routeId: "",
   },
   {
     id: "celestia-mainnet-tia",
@@ -43,6 +55,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "celestia1",
+    routeId: "",
   },
   {
     id: "celestia-mocha-testnet-tia",
@@ -51,6 +64,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "celestia1",
+    routeId: "",
   },
   {
     id: "injective-mainnet-inj",
@@ -59,6 +73,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "inj1",
+    routeId: "",
   },
   {
     id: "injective-testnet-inj",
@@ -67,6 +82,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "inj1",
+    routeId: "",
   },
   {
     id: "dydx-mainnet-dydx",
@@ -75,6 +91,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "dydx1",
+    routeId: "",
   },
   {
     id: "dydx-testnet-dydx",
@@ -83,6 +100,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "dydx1",
+    routeId: "",
   },
   {
     id: "akash-mainnet-akt",
@@ -91,6 +109,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "akash1",
+    routeId: "",
   },
   {
     id: "akash-sandbox-akt",
@@ -99,6 +118,7 @@ const destinations: Destination[] = [
     helper: "Coming soon",
     enabled: false,
     prefix: "akash1",
+    routeId: "",
   },
 ];
 
@@ -161,7 +181,7 @@ export function TransferPage() {
       await registerBridgeDeliveryIntent({
         sourceTxHash: txHash,
         sender: frontendEnv.aegislinkDepositRecipient,
-        routeId: "osmosis-public-wallet",
+        routeId: destination.routeId,
         assetId: "eth",
         amount: parseEther(amount).toString(),
         receiver: recipient,
@@ -306,8 +326,7 @@ export function TransferPage() {
             value={recipient}
           />
           <span className="field-helper">
-            Recipient must match the selected chain prefix. Current route support
-            is live for Osmosis only.
+            Recipient must match the selected chain prefix.
           </span>
           {!recipientIsValid ? (
             <p className="field-error">
@@ -323,7 +342,7 @@ export function TransferPage() {
         onClick={() => void handleSubmit()}
         type="button"
       >
-        {isSubmitting ? "Opening Bridge Tunnel..." : "Bridge to Osmosis"}
+        {isSubmitting ? "Opening Bridge Tunnel..." : `Bridge to ${destination.label}`}
       </button>
       {submissionError ? <p className="field-error field-error--spaced">{submissionError}</p> : null}
     </div>
