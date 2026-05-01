@@ -31,6 +31,18 @@ LINK_RETRY_DELAY_SECONDS="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_RETRY_DELAY_SECOND
 LINK_TIMEOUT_DURATION="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_TIMEOUT_DURATION:-5m}"
 LINK_MAX_RETRIES="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_MAX_RETRIES:-6}"
 LINK_BLOCK_HISTORY="${AEGISLINK_PUBLIC_BACKEND_RLY_LINK_BLOCK_HISTORY:-5}"
+NEUTRON_CHAIN_NAME="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_CHAIN_NAME:-pion-1}"
+NEUTRON_CHAIN_ID="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_CHAIN_ID:-pion-1}"
+NEUTRON_RPC_ADDR="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_RPC_ADDR:-https://rpc-falcron.pion-1.ntrn.tech:443}"
+NEUTRON_GRPC_ADDR="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_GRPC_ADDR:-https://grpc-falcron.pion-1.ntrn.tech:443}"
+NEUTRON_LCD_BASE_URL="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_LCD_BASE_URL:-https://rest-falcron.pion-1.ntrn.tech}"
+NEUTRON_ACCOUNT_PREFIX="${AEGISLINK_RLY_NEUTRON_ACCOUNT_PREFIX:-neutron}"
+NEUTRON_GAS_PRICE_DENOM="${AEGISLINK_RLY_NEUTRON_GAS_PRICE_DENOM:-untrn}"
+NEUTRON_GAS_PRICE_AMOUNT="${AEGISLINK_RLY_NEUTRON_GAS_PRICE_AMOUNT:-1.3}"
+NEUTRON_KEY_NAME="${AEGISLINK_RLY_NEUTRON_KEY_NAME:-neutron-demo}"
+NEUTRON_MNEMONIC="${AEGISLINK_RLY_NEUTRON_MNEMONIC:-}"
+NEUTRON_PATH_NAME="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_PATH_NAME:-live-ntrn-ui-$RUN_ID}"
+NEUTRON_ROUTE_ID="neutron-public-wallet"
 PERSISTENT_RLY_HOME="${AEGISLINK_RELAYER_RLY_HOME:-$HOME/.aegislink-live-rly}"
 GOCACHE="${GOCACHE:-/tmp/aegislink-gocache}"
 STATUS_FILE="$RUNTIME_DIR/status.json"
@@ -88,6 +100,7 @@ write_rly_config() {
   local rly_home="$1"
   local source_key_name="$2"
   local destination_key_name="$3"
+  local neutron_key_name="$4"
 
   mkdir -p "$rly_home/config"
   cat >"$rly_home/config/config.yaml" <<EOF
@@ -128,6 +141,22 @@ chains:
       timeout: ${RLY_TIMEOUT_SECONDS}s
       output-format: json
       sign-mode: direct
+  $NEUTRON_CHAIN_NAME:
+    type: cosmos
+    value:
+      key: $neutron_key_name
+      chain-id: $NEUTRON_CHAIN_ID
+      rpc-addr: $NEUTRON_RPC_ADDR
+      websocket-addr: ""
+      grpc-addr: $NEUTRON_GRPC_ADDR
+      account-prefix: $NEUTRON_ACCOUNT_PREFIX
+      keyring-backend: test
+      gas-adjustment: 1.3
+      gas-prices: ${NEUTRON_GAS_PRICE_AMOUNT}${NEUTRON_GAS_PRICE_DENOM}
+      debug: false
+      timeout: ${RLY_TIMEOUT_SECONDS}s
+      output-format: json
+      sign-mode: direct
 paths: {}
 EOF
 }
@@ -144,17 +173,20 @@ cleanup_failed_startup() {
 }
 
 run_relayer_link_with_retry() {
+  local path_name="$1"
   local attempt=""
   local link_log=""
   local exit_code="0"
   local output=""
+  local safe_path_name=""
+  safe_path_name="$(printf '%s' "$path_name" | tr -cs '[:alnum:]' '_')"
 
   for ((attempt = 1; attempt <= LINK_RETRIES; attempt += 1)); do
-    link_log="$RUNTIME_DIR/rly-link-attempt-$attempt.log"
-    echo "+ ./bin/relayer transact link $PATH_NAME --home $RLY_HOME --override --timeout $LINK_TIMEOUT_DURATION --max-retries $LINK_MAX_RETRIES --block-history $LINK_BLOCK_HISTORY --debug --log-level debug"
+    link_log="$RUNTIME_DIR/rly-link-${safe_path_name}-attempt-$attempt.log"
+    echo "+ ./bin/relayer transact link $path_name --home $RLY_HOME --override --timeout $LINK_TIMEOUT_DURATION --max-retries $LINK_MAX_RETRIES --block-history $LINK_BLOCK_HISTORY --debug --log-level debug"
 
     set +e
-    ./bin/relayer transact link "$PATH_NAME" \
+    ./bin/relayer transact link "$path_name" \
       --home "$RLY_HOME" \
       --override \
       --timeout "$LINK_TIMEOUT_DURATION" \
@@ -205,10 +237,13 @@ ensure_rly_home() {
   local source_key_name="$2"
   local destination_key_name="$3"
   local destination_mnemonic="${4:-}"
+  local neutron_key_name="$5"
+  local neutron_mnemonic="${6:-}"
 
-  write_rly_config "$rly_home" "$source_key_name" "$destination_key_name"
+  write_rly_config "$rly_home" "$source_key_name" "$destination_key_name" "$neutron_key_name"
   ensure_relayer_key "aegislink-public-testnet-1" "$source_key_name" "$rly_home"
   ensure_relayer_key "$DESTINATION_CHAIN_NAME" "$destination_key_name" "$rly_home" "$destination_mnemonic"
+  ensure_relayer_key "$NEUTRON_CHAIN_NAME" "$neutron_key_name" "$rly_home" "$neutron_mnemonic"
 }
 
 destination_key_has_funds() {
@@ -218,6 +253,18 @@ destination_key_has_funds() {
 
   balance_output="$(
     ./bin/relayer query balance "$DESTINATION_CHAIN_NAME" "$destination_key_name" --home "$rly_home" -o json 2>/dev/null || true
+  )"
+  [[ "$balance_output" =~ \"amount\":\"[1-9][0-9]*\" ]] || \
+    [[ "$balance_output" =~ \"balance\":\"[1-9][0-9]*[[:alpha:]]+\" ]]
+}
+
+neutron_key_has_funds() {
+  local rly_home="$1"
+  local neutron_key_name="$2"
+  local balance_output=""
+
+  balance_output="$(
+    ./bin/relayer query balance "$NEUTRON_CHAIN_NAME" "$neutron_key_name" --home "$rly_home" -o json 2>/dev/null || true
   )"
   [[ "$balance_output" =~ \"amount\":\"[1-9][0-9]*\" ]] || \
     [[ "$balance_output" =~ \"balance\":\"[1-9][0-9]*[[:alpha:]]+\" ]]
@@ -317,7 +364,7 @@ pkill -f public-bridge-relayer >/dev/null 2>&1 || true
 pkill -f 'aegislinkd demo-node start' >/dev/null 2>&1 || true
 sleep 1
 
-ensure_rly_home "$RLY_HOME" "$SOURCE_KEY_NAME" "$DESTINATION_KEY_NAME" "$DESTINATION_MNEMONIC"
+ensure_rly_home "$RLY_HOME" "$SOURCE_KEY_NAME" "$DESTINATION_KEY_NAME" "$DESTINATION_MNEMONIC" "$NEUTRON_KEY_NAME" "$NEUTRON_MNEMONIC"
 
 DESTINATION_RELAYER_ADDRESS="$(
   ./bin/relayer keys show "$DESTINATION_CHAIN_NAME" "$DESTINATION_KEY_NAME" --home "$RLY_HOME" | tr -d '\r\n'
@@ -353,7 +400,7 @@ run curl -sS -X POST http://127.0.0.1:26657/tx/fund-account \
   -d "{\"address\":\"$SOURCE_RELAYER_ADDRESS\",\"denom\":\"stake\",\"amount\":\"1000000000\"}"
 
 run ./bin/relayer paths new aegislink-public-testnet-1 "$DESTINATION_CHAIN_NAME" "$PATH_NAME" --home "$RLY_HOME"
-run_relayer_link_with_retry
+run_relayer_link_with_retry "$PATH_NAME"
 
 run go run ./chain/aegislink/cmd/aegislinkd tx set-route-profile \
   --home "$HOME_DIR" \
@@ -361,6 +408,32 @@ run go run ./chain/aegislink/cmd/aegislinkd tx set-route-profile \
   --route-id osmosis-public-wallet \
   --destination-chain-id osmo-test-5 \
   --channel-id channel-0 \
+  --asset-id eth \
+  --destination-denom ibc/ueth \
+  --enabled=true \
+  --memo-prefixes "$AEGISLINK_PUBLIC_IBC_ALLOWED_MEMO_PREFIXES" \
+  --action-types "$AEGISLINK_PUBLIC_IBC_ALLOWED_ACTION_TYPES"
+
+NEUTRON_RELAYER_ADDRESS="$(
+  ./bin/relayer keys show "$NEUTRON_CHAIN_NAME" "$NEUTRON_KEY_NAME" --home "$RLY_HOME" | tr -d '\r\n'
+)"
+if ! neutron_key_has_funds "$RLY_HOME" "$NEUTRON_KEY_NAME"; then
+  echo "neutron relayer key is not funded yet" >&2
+  echo "Relayer home: $RLY_HOME" >&2
+  echo "Fund this address with testnet NTRN once, then rerun this same command:" >&2
+  echo "  $NEUTRON_RELAYER_ADDRESS" >&2
+  exit 1
+fi
+
+run ./bin/relayer paths new aegislink-public-testnet-1 "$NEUTRON_CHAIN_NAME" "$NEUTRON_PATH_NAME" --home "$RLY_HOME"
+run_relayer_link_with_retry "$NEUTRON_PATH_NAME"
+
+run go run ./chain/aegislink/cmd/aegislinkd tx set-route-profile \
+  --home "$HOME_DIR" \
+  --demo-node-ready-file "$READY_FILE" \
+  --route-id neutron-public-wallet \
+  --destination-chain-id pion-1 \
+  --channel-id channel-1 \
   --asset-id eth \
   --destination-denom ibc/ueth \
   --enabled=true \
@@ -375,6 +448,7 @@ export AEGISLINK_RELAYER_ATTESTATION_STATE_PATH="$ATTESTATION_STATE"
 export AEGISLINK_RELAYER_RLY_CMD="${AEGISLINK_RELAYER_RLY_CMD:-./bin/relayer}"
 export AEGISLINK_RELAYER_RLY_HOME="$RLY_HOME"
 export AEGISLINK_RELAYER_RLY_PATH_NAME="$PATH_NAME"
+export AEGISLINK_RELAYER_RLY_PATH_MAP="osmosis-public-wallet:$PATH_NAME,neutron-public-wallet:$NEUTRON_PATH_NAME"
 export AEGISLINK_RELAYER_AUTODELIVERY_ENABLED=true
 export AEGISLINK_RELAYER_IBC_TIMEOUT_HEIGHT
 export AEGISLINK_RELAYER_DESTINATION_LCD_BASE_URL="$DESTINATION_LCD_BASE_URL"
