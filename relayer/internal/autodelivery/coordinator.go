@@ -38,7 +38,7 @@ type TransferSubmitter interface {
 }
 
 type Flusher interface {
-	Flush(context.Context, string) error
+	Flush(ctx context.Context, routeID, channelID string) error
 }
 
 type RunSummary struct {
@@ -93,7 +93,7 @@ func (c *Coordinator) RunOnce(ctx context.Context) (RunSummary, error) {
 			if strings.TrimSpace(transfer.ChannelID) == "" {
 				continue
 			}
-			if err := c.flusher.Flush(ctx, transfer.ChannelID); err != nil {
+			if err := c.flusher.Flush(ctx, intent.RouteID, transfer.ChannelID); err != nil {
 				return summary, err
 			}
 			summary.FlushesTriggered++
@@ -103,7 +103,7 @@ func (c *Coordinator) RunOnce(ctx context.Context) (RunSummary, error) {
 				summary.IntentsWaiting++
 				continue
 			}
-			if err := c.flusher.Flush(ctx, channelID); err != nil {
+			if err := c.flusher.Flush(ctx, intent.RouteID, channelID); err != nil {
 				return summary, err
 			}
 			summary.FlushesTriggered++
