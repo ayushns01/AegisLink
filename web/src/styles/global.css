@@ -2,10 +2,52 @@
   box-sizing: border-box;
 }
 
+/* ── Background orbiting half-moon ── */
+.bg-moon {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bg-moon::before {
+  content: "";
+  position: absolute;
+  /* orbit centre sits slightly above-right of page centre */
+  top: 50%;
+  left: 50%;
+  width: 780px;
+  height: 780px;
+  margin-top: -390px;
+  margin-left: -390px;
+  border-radius: 50%;
+  /* half-moon: lit left half, dark right half */
+  background: linear-gradient(
+    105deg,
+    rgba(200, 210, 255, 0.13) 0%,
+    rgba(180, 195, 255, 0.09) 48%,
+    transparent 50%
+  );
+  box-shadow:
+    inset -18px 0 60px rgba(160, 180, 255, 0.08),
+    0 0 120px 40px rgba(140, 160, 255, 0.04);
+  filter: blur(42px);
+  animation: moon-orbit 55s linear infinite;
+  transform-origin: center center;
+}
+
+@keyframes moon-orbit {
+  from { transform: rotate(0deg)   translateX(330px) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(330px) rotate(-360deg); }
+}
+
 html,
 body,
 #root {
   min-height: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 body {

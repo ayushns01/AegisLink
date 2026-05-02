@@ -36,7 +36,7 @@ describe("App", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /move eth across chains, in one step/i,
+        name: /bridge eth to any ibc.*enabled cosmos chain/i,
       }),
     ).toBeInTheDocument();
     expect(
@@ -69,7 +69,7 @@ describe("App", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /move eth across chains, in one step/i,
+        name: /bridge eth to any ibc.*enabled cosmos chain/i,
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^transfer$/i })).not.toBeInTheDocument();
@@ -112,7 +112,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", {
-        name: /move eth across chains, in one step/i,
+        name: /bridge eth to any ibc.*enabled cosmos chain/i,
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -205,7 +205,7 @@ describe("App", () => {
     expect(screen.queryByTestId("progress-flow-lane")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", {
-        name: /move eth across chains, in one step/i,
+        name: /bridge eth to any ibc.*enabled cosmos chain/i,
       }),
     ).not.toBeInTheDocument();
     expect(

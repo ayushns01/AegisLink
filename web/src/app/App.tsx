@@ -6,7 +6,12 @@ export function App() {
     return <TransferWormholePreview />;
   }
 
-  return <LandingPage />;
+  return (
+    <>
+      <div className="bg-moon" aria-hidden="true" />
+      <LandingPage />
+    </>
+  );
 }
 
 function shouldRenderWormholePreview() {
