@@ -1,0 +1,27 @@
+{
+  "path_name": "neutron-mainnet-wallet",
+  "src": {
+    "chain_id": "aegislink-public-mainnet-1",
+    "client_id": "07-tendermint-aegislink-mainnet",
+    "connection_id": "connection-aegislink-mainnet",
+    "port_id": "transfer",
+    "channel_id": "channel-public-neutron-mainnet"
+  },
+  "dst": {
+    "chain_id": "neutron-1",
+    "client_id": "07-tendermint-neutron-mainnet",
+    "connection_id": "connection-neutron-mainnet",
+    "port_id": "transfer",
+    "channel_id": "channel-public-neutron-mainnet"
+  },
+  "manifest": {
+    "source_chain_id": "aegislink-public-mainnet-1",
+    "destination_chain_id": "neutron-1",
+    "channel_id": "channel-public-neutron-mainnet",
+    "port_id": "transfer",
+    "route_id": "neutron-mainnet-wallet",
+    "assets": [
+      { "asset_id": "eth", "source_denom": "ueth", "destination_denom": "ibc/ueth" }
+    ]
+  }
+}

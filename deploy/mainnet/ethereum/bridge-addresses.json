@@ -1,0 +1,7 @@
+{
+  "chain_id": "1",
+  "deployer_address": "",
+  "verifier_address": "",
+  "gateway_address": "",
+  "notes": "Placeholder - deploy contract with scripts/mainnet/deploy_ethereum_bridge.sh before use"
+}

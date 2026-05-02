@@ -1,0 +1,15 @@
+{
+  "chain_id": "1",
+  "assets": [
+    {
+      "asset_id": "eth",
+      "source_chain_id": "1",
+      "source_asset_kind": "native_eth",
+      "denom": "ueth",
+      "decimals": 18,
+      "display_name": "Ether",
+      "display_symbol": "ETH",
+      "enabled": true
+    }
+  ]
+}
