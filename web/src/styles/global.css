@@ -492,6 +492,7 @@ button {
   background: none;
   border: none;
   padding: 0;
+  pointer-events: auto;
 }
 
 .progress-route__checkpoint--interactive:hover::before {
@@ -640,7 +641,7 @@ button {
 }
 
 .about-wormhole .progress-scene {
-  height: 260px;
+  height: 180px;
   border-radius: 0;
 }
 
@@ -648,54 +649,86 @@ button {
   border-radius: 0;
 }
 
-.about-stage-tabs {
-  display: flex;
-  gap: 0;
+/* ── About hover panel (replaces click modal + tabs) ── */
+.about-hover-panel {
   background: #0e0e10;
-  padding: 10px 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 20px 24px 18px;
+  min-height: 116px;
+  animation: fade-in 160ms ease;
 }
 
-.about-stage-tabs::-webkit-scrollbar {
-  display: none;
+.about-hover-panel__prompt {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 28px 0;
+  margin: 0;
 }
 
-.about-stage-tab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--muted-strong);
+.about-hover-panel__head {
+  margin-bottom: 14px;
+}
+
+.about-hover-panel__eyebrow {
+  margin-bottom: 3px !important;
+}
+
+.about-hover-panel__eyebrow--pink   { color: #ff82be; }
+.about-hover-panel__eyebrow--violet { color: #a78bfa; }
+.about-hover-panel__eyebrow--gold   { color: #ffd278; }
+
+.about-hover-panel__title {
+  margin: 0 0 3px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.about-hover-panel__summary {
   font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
-  text-align: left;
+  color: var(--muted);
+  margin: 0;
 }
 
-.about-stage-tab:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
+.about-hover-panel__sections {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
-.about-stage-tab--active {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.about-stage-tab__num {
+.about-hover-panel__section small {
+  display: block;
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  opacity: 0.5;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.about-hover-panel__section p {
+  font-size: 12px;
+  color: var(--muted-strong);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.about-hover-panel__tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.about-hover-panel__tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted-strong);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .about-section__intro {

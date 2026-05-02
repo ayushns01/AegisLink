@@ -156,6 +156,9 @@ describe("App", () => {
       screen.getByRole("link", { name: /system architecture/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/stage inspector/i)).not.toBeInTheDocument();
+
+    // Hover first stage to reveal panel content
+    await user.hover(screen.getByRole("button", { name: /deposit signed/i }));
     expect(screen.getByText(/what's happening now/i)).toBeInTheDocument();
     expect(screen.getByText(/inside aegislink/i)).toBeInTheDocument();
     expect(screen.getByText(/why this matters/i)).toBeInTheDocument();

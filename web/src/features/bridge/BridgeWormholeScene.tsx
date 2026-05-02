@@ -95,12 +95,14 @@ type BridgeWormholeSceneProps = {
   activeStageId: TransferVisualStageId;
   stages: TransferVisualStage[];
   onCheckpointClick?: (stageId: TransferVisualStageId) => void;
+  onCheckpointEnter?: (stageId: TransferVisualStageId) => void;
 };
 
 export function BridgeWormholeScene({
   activeStageId,
   stages,
   onCheckpointClick,
+  onCheckpointEnter,
 }: BridgeWormholeSceneProps) {
   const stageConfig = STAGE_CONFIG[activeStageId];
 
@@ -177,27 +179,34 @@ export function BridgeWormholeScene({
         </div>
 
         <div className="progress-route-corridor" aria-label="Bridge route checkpoints">
-          {stages.map((stage, index) =>
-            onCheckpointClick ? (
-              <button
-                aria-label={stage.label}
-                className={[
-                  "progress-route__checkpoint",
-                  `progress-route__checkpoint--${stage.state}`,
-                  "progress-route__checkpoint--interactive",
-                ].join(" ")}
-                data-label={stage.label}
-                key={stage.id}
-                onClick={() => onCheckpointClick(stage.id)}
-                style={
-                  {
-                    "--checkpoint-x": CHECKPOINT_POSITIONS[stage.id],
-                    "--checkpoint-index": String(index + 1).padStart(2, "0"),
-                  } as CSSProperties
-                }
-                type="button"
-              />
-            ) : (
+          {stages.map((stage, index) => {
+            const isInteractive = Boolean(onCheckpointClick || onCheckpointEnter);
+            const sharedStyle = {
+              "--checkpoint-x": CHECKPOINT_POSITIONS[stage.id],
+              "--checkpoint-index": String(index + 1).padStart(2, "0"),
+            } as CSSProperties;
+
+            if (isInteractive) {
+              return (
+                <button
+                  aria-label={stage.label}
+                  aria-pressed={stage.state === "current"}
+                  className={[
+                    "progress-route__checkpoint",
+                    `progress-route__checkpoint--${stage.state}`,
+                    "progress-route__checkpoint--interactive",
+                  ].join(" ")}
+                  data-label={stage.label}
+                  key={stage.id}
+                  onClick={onCheckpointClick ? () => onCheckpointClick(stage.id) : undefined}
+                  onMouseEnter={onCheckpointEnter ? () => onCheckpointEnter(stage.id) : undefined}
+                  style={sharedStyle}
+                  type="button"
+                />
+              );
+            }
+
+            return (
               <span
                 aria-label={stage.label}
                 className={[
@@ -206,15 +215,10 @@ export function BridgeWormholeScene({
                 ].join(" ")}
                 data-label={stage.label}
                 key={stage.id}
-                style={
-                  {
-                    "--checkpoint-x": CHECKPOINT_POSITIONS[stage.id],
-                    "--checkpoint-index": String(index + 1).padStart(2, "0"),
-                  } as CSSProperties
-                }
+                style={sharedStyle}
               />
-            )
-          )}
+            );
+          })}
         </div>
 
         {/* ── Core node ── */}
