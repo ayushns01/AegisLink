@@ -7,7 +7,7 @@ const useBridgeWalletMock = vi.fn();
 const useWalletClientMock = vi.fn();
 
 vi.mock("../features/wallet/useBridgeWallet", () => ({
-  useBridgeWallet: () => useBridgeWalletMock(),
+  useBridgeWallet: (...args: unknown[]) => useBridgeWalletMock(...args),
 }));
 
 vi.mock("wagmi", async () => {
@@ -200,7 +200,7 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: /transfer in progress/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /ibc relayed/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /ibc handoff/i })).toBeInTheDocument();
     expect(screen.queryByTestId("progress-energy-packet")).not.toBeInTheDocument();
     expect(screen.queryByTestId("progress-flow-lane")).not.toBeInTheDocument();
     expect(

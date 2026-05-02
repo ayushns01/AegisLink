@@ -1,0 +1,12 @@
+{
+  "chain_name": "osmosis",
+  "chain_id": "osmosis-1",
+  "bech32_prefix": "osmo",
+  "fees": {
+    "fee_tokens": [{ "denom": "uosmo", "fixed_min_gas_price": 0.025 }]
+  },
+  "apis": {
+    "rpc": [{ "address": "https://rpc.osmosis.zone:443" }],
+    "grpc": [{ "address": "https://grpc.osmosis.zone:443" }]
+  }
+}

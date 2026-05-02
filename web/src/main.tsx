@@ -4,16 +4,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { App } from "./app/App";
-import { sourceChain } from "./lib/evm/chains";
+import { TESTNET_SOURCE_CHAIN, MAINNET_SOURCE_CHAIN } from "./lib/evm/chains";
 import "./styles/tokens.css";
 import "./styles/global.css";
 
 const queryClient = new QueryClient();
 const config = createConfig({
-  chains: [sourceChain],
+  chains: [TESTNET_SOURCE_CHAIN, MAINNET_SOURCE_CHAIN],
   connectors: [injected()],
   transports: {
-    [sourceChain.id]: http(),
+    [TESTNET_SOURCE_CHAIN.id]: http(),
+    [MAINNET_SOURCE_CHAIN.id]: http(),
   },
 });
 

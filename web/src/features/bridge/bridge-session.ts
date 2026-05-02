@@ -12,6 +12,7 @@ export type BridgeSession = {
   recipient: string;
   sourceAddress: string;
   sourceTxHash: string;
+  sourceChainId: number;
   status: BridgeSessionStatus;
   createdAt: number;
   destinationTxHash?: string;
@@ -25,6 +26,7 @@ type CreateBridgeSessionArgs = {
   recipient: string;
   sourceAddress: string;
   sourceTxHash: string;
+  sourceChainId: number;
   createdAt?: number;
 };
 
@@ -34,6 +36,7 @@ export function createSubmittedBridgeSession({
   recipient,
   sourceAddress,
   sourceTxHash,
+  sourceChainId,
   createdAt = Date.now(),
 }: CreateBridgeSessionArgs): BridgeSession {
   return {
@@ -42,6 +45,7 @@ export function createSubmittedBridgeSession({
     recipient,
     sourceAddress,
     sourceTxHash,
+    sourceChainId,
     status: "deposit_submitted",
     createdAt,
   };

@@ -22,11 +22,11 @@ type TransferProgressModel = {
 };
 
 const stageDefinitions: Array<{ id: TransferVisualStageId; label: string }> = [
-  { id: "sepolia", label: "Sepolia Secured" },
-  { id: "verify", label: "Proof Verified" },
-  { id: "accounting", label: "Ledger Synced" },
-  { id: "handoff", label: "IBC Relayed" },
-  { id: "receipt", label: "Osmosis Minted" },
+  { id: "sepolia", label: "Sepolia confirmed" },
+  { id: "verify", label: "Verifier checks" },
+  { id: "accounting", label: "Bridge accounting" },
+  { id: "handoff", label: "IBC handoff" },
+  { id: "receipt", label: "Osmosis receipt" },
 ];
 
 export function deriveTransferProgressModel(

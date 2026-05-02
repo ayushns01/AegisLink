@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "source_chain_id": "aegislink-public-mainnet-1",
+  "destination_chain_id": "neutron-1",
+  "provider": "hermes",
+  "wallet_prefix": "neutron",
+  "channel_id": "channel-public-neutron-mainnet",
+  "port_id": "transfer",
+  "route_id": "neutron-mainnet-wallet",
+  "allowed_memo_prefixes": ["swap:", "stake:", "bridge:"],
+  "allowed_action_types": ["swap", "stake", "bridge"],
+  "assets": [
+    {
+      "asset_id": "eth",
+      "source_denom": "ueth",
+      "destination_denom": "ibc/ueth"
+    }
+  ]
+}

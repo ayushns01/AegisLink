@@ -3,7 +3,8 @@ import { parseEther } from "viem";
 import type { Address } from "viem";
 import { useWalletClient } from "wagmi";
 import { registerBridgeDeliveryIntent } from "../../lib/bridge/delivery-intent";
-import { frontendEnv } from "../../lib/config/env";
+import { frontendEnv, isMainnetGatewayConfigured } from "../../lib/config/env";
+import { type NetworkMode, getSourceChainForMode } from "../../lib/evm/chains";
 import { submitEthDeposit } from "../../lib/evm/gateway";
 import { useBridgeWallet } from "../wallet/useBridgeWallet";
 import { createSubmittedBridgeSession, type BridgeSession } from "./bridge-session";
@@ -20,6 +21,7 @@ type Destination = {
   enabled: boolean;
   prefix: string;
   routeId: string;
+  network: NetworkMode;
 };
 
 const destinations: Destination[] = [
@@ -33,6 +35,7 @@ const destinations: Destination[] = [
     enabled: true,
     prefix: "osmo1",
     routeId: "osmosis-public-wallet",
+    network: "testnet",
   },
   {
     id: "neutron-testnet-ntrn",
@@ -44,27 +47,7 @@ const destinations: Destination[] = [
     enabled: true,
     prefix: "neutron1",
     routeId: "neutron-public-wallet",
-  },
-  {
-    id: "osmosis-mainnet-osmo",
-    label: "Osmosis Mainnet (OSMO)",
-    shortName: "Osmosis Mainnet",
-    symbol: "OSMO",
-    color: "#5E12A0",
-    logo: "/chains/osmo.svg",
-    enabled: false,
-    prefix: "osmo1",
-    routeId: "",
-  },
-  {
-    id: "celestia-mainnet-tia",
-    label: "Celestia Mainnet (TIA)",
-    shortName: "Celestia Mainnet",
-    symbol: "TIA",
-    color: "#7c3aed",
-    enabled: false,
-    prefix: "celestia1",
-    routeId: "",
+    network: "testnet",
   },
   {
     id: "celestia-mocha-testnet-tia",
@@ -75,16 +58,7 @@ const destinations: Destination[] = [
     enabled: false,
     prefix: "celestia1",
     routeId: "",
-  },
-  {
-    id: "injective-mainnet-inj",
-    label: "Injective Mainnet (INJ)",
-    shortName: "Injective Mainnet",
-    symbol: "INJ",
-    color: "#0ea5e9",
-    enabled: false,
-    prefix: "inj1",
-    routeId: "",
+    network: "testnet",
   },
   {
     id: "injective-testnet-inj",
@@ -95,16 +69,7 @@ const destinations: Destination[] = [
     enabled: false,
     prefix: "inj1",
     routeId: "",
-  },
-  {
-    id: "dydx-mainnet-dydx",
-    label: "dYdX Mainnet (DYDX)",
-    shortName: "dYdX Mainnet",
-    symbol: "DYDX",
-    color: "#22c55e",
-    enabled: false,
-    prefix: "dydx1",
-    routeId: "",
+    network: "testnet",
   },
   {
     id: "dydx-testnet-dydx",
@@ -115,16 +80,7 @@ const destinations: Destination[] = [
     enabled: false,
     prefix: "dydx1",
     routeId: "",
-  },
-  {
-    id: "akash-mainnet-akt",
-    label: "Akash Mainnet (AKT)",
-    shortName: "Akash Mainnet",
-    symbol: "AKT",
-    color: "#f97316",
-    enabled: false,
-    prefix: "akash1",
-    routeId: "",
+    network: "testnet",
   },
   {
     id: "akash-sandbox-akt",
@@ -135,11 +91,77 @@ const destinations: Destination[] = [
     enabled: false,
     prefix: "akash1",
     routeId: "",
+    network: "testnet",
+  },
+  {
+    id: "osmosis-mainnet-osmo",
+    label: "Osmosis Mainnet (OSMO)",
+    shortName: "Osmosis Mainnet",
+    symbol: "OSMO",
+    color: "#5E12A0",
+    logo: "/chains/osmo.svg",
+    enabled: true,
+    prefix: "osmo1",
+    routeId: "osmosis-mainnet-wallet",
+    network: "mainnet",
+  },
+  {
+    id: "neutron-mainnet-ntrn",
+    label: "Neutron Mainnet (NTRN)",
+    shortName: "Neutron Mainnet",
+    symbol: "NTRN",
+    color: "#1a1a2e",
+    logo: "/chains/ntrn.svg",
+    enabled: true,
+    prefix: "neutron1",
+    routeId: "neutron-mainnet-wallet",
+    network: "mainnet",
+  },
+  {
+    id: "celestia-mainnet-tia",
+    label: "Celestia Mainnet (TIA)",
+    shortName: "Celestia Mainnet",
+    symbol: "TIA",
+    color: "#7c3aed",
+    enabled: false,
+    prefix: "celestia1",
+    routeId: "",
+    network: "mainnet",
+  },
+  {
+    id: "injective-mainnet-inj",
+    label: "Injective Mainnet (INJ)",
+    shortName: "Injective Mainnet",
+    symbol: "INJ",
+    color: "#0ea5e9",
+    enabled: false,
+    prefix: "inj1",
+    routeId: "",
+    network: "mainnet",
+  },
+  {
+    id: "dydx-mainnet-dydx",
+    label: "dYdX Mainnet (DYDX)",
+    shortName: "dYdX Mainnet",
+    symbol: "DYDX",
+    color: "#22c55e",
+    enabled: false,
+    prefix: "dydx1",
+    routeId: "",
+    network: "mainnet",
+  },
+  {
+    id: "akash-mainnet-akt",
+    label: "Akash Mainnet (AKT)",
+    shortName: "Akash Mainnet",
+    symbol: "AKT",
+    color: "#f97316",
+    enabled: false,
+    prefix: "akash1",
+    routeId: "",
+    network: "mainnet",
   },
 ];
-
-const liveDestinations = destinations.filter((d) => d.enabled);
-const soonDestinations = destinations.filter((d) => !d.enabled);
 
 function ChainAvatar({
   destination,
@@ -177,14 +199,17 @@ function ChainAvatar({
 }
 
 export function TransferPage() {
-  const wallet = useBridgeWallet();
+  const [networkMode, setNetworkMode] = useState<NetworkMode>("testnet");
+  const wallet = useBridgeWallet(networkMode);
   const { data: walletClient } = useWalletClient();
   const [amount, setAmount] = useState("0.250");
   const [recipient, setRecipient] = useState(
     "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
   );
   const [selectedDestinationId, setSelectedDestinationId] = useState(
-    () => destinations.find((destination) => destination.enabled)?.id ?? destinations[0].id,
+    () =>
+      destinations.find((destination) => destination.network === "testnet" && destination.enabled)?.id ??
+      destinations[0].id,
   );
   const [isDestinationMenuOpen, setIsDestinationMenuOpen] = useState(false);
   const [session, setSession] = useState<BridgeSession | null>(null);
@@ -195,8 +220,13 @@ export function TransferPage() {
     pollError,
     session: resolvedSession,
   } = useBridgeSessionStatus(session);
+  const networkDestinations = destinations.filter((entry) => entry.network === networkMode);
+  const liveDestinations = networkDestinations.filter((entry) => entry.enabled);
+  const soonDestinations = networkDestinations.filter((entry) => !entry.enabled);
   const destination =
-    destinations.find((entry) => entry.id === selectedDestinationId) ?? destinations[0];
+    networkDestinations.find((entry) => entry.id === selectedDestinationId) ??
+    liveDestinations[0] ??
+    networkDestinations[0];
   const recipientIsValid = useMemo(
     () => recipient.startsWith(destination.prefix) && recipient.length > destination.prefix.length + 8,
     [destination.prefix, recipient],
@@ -213,21 +243,38 @@ export function TransferPage() {
     !wallet.isWrongChain &&
     Boolean(wallet.address) &&
     Boolean(walletClient) &&
+    (networkMode === "testnet" || isMainnetGatewayConfigured()) &&
     !isSubmitting;
+
+  function handleNetworkModeChange(mode: NetworkMode) {
+    setNetworkMode(mode);
+    const firstLiveDestination = destinations.find(
+      (entry) => entry.network === mode && entry.enabled,
+    );
+    setSelectedDestinationId(firstLiveDestination?.id ?? destinations[0].id);
+    setRecipient("");
+    setSubmissionError(null);
+    setIsDestinationMenuOpen(false);
+  }
 
   async function handleSubmit() {
     if (!walletClient || !wallet.address) {
-      setSubmissionError("Connect a Sepolia wallet extension to continue.");
+      const chainLabel = networkMode === "mainnet" ? "Ethereum mainnet" : "Sepolia";
+      setSubmissionError(`Connect a ${chainLabel} wallet extension to continue.`);
       return;
     }
 
     setIsSubmitting(true);
     setSubmissionError(null);
+    const gatewayAddress =
+      networkMode === "mainnet"
+        ? frontendEnv.mainnetGatewayAddress
+        : frontendEnv.gatewayAddress;
 
     try {
       const txHash = await submitEthDeposit({
         walletClient,
-        gatewayAddress: frontendEnv.gatewayAddress,
+        gatewayAddress,
         account: wallet.address as Address,
         amountEth: amount,
         recipient: frontendEnv.aegislinkDepositRecipient,
@@ -248,6 +295,7 @@ export function TransferPage() {
           recipient,
           sourceAddress: wallet.address,
           sourceTxHash: txHash,
+          sourceChainId: getSourceChainForMode(networkMode).id,
         }),
       );
     } catch (error) {
@@ -268,19 +316,41 @@ export function TransferPage() {
     );
   }
 
+  const sourceChainLabel = networkMode === "mainnet" ? "Ethereum" : "Sepolia";
+
   return (
     <div className="transfer-card">
       <div className="transfer-card__header">
         <div>
-          <p className="eyebrow eyebrow--dark">Sepolia → Cosmos</p>
+          <p className="eyebrow eyebrow--dark">{sourceChainLabel} → Cosmos</p>
           <h2>Transfer</h2>
         </div>
-        <div className={`wallet-chip${wallet.isWrongChain ? " wallet-chip--warning" : ""}`}>
-          {wallet.isWrongChain
-            ? "Wrong chain"
-            : wallet.address
-              ? `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}`
-              : "—"}
+        <div className="transfer-card__header-right">
+          <div className="network-toggle" role="group" aria-label="Network mode">
+            <button
+              aria-pressed={networkMode === "testnet"}
+              className={`network-toggle__btn${networkMode === "testnet" ? " network-toggle__btn--active" : ""}`}
+              onClick={() => handleNetworkModeChange("testnet")}
+              type="button"
+            >
+              Testnet
+            </button>
+            <button
+              aria-pressed={networkMode === "mainnet"}
+              className={`network-toggle__btn${networkMode === "mainnet" ? " network-toggle__btn--active" : ""}`}
+              onClick={() => handleNetworkModeChange("mainnet")}
+              type="button"
+            >
+              Mainnet
+            </button>
+          </div>
+          <div className={`wallet-chip${wallet.isWrongChain ? " wallet-chip--warning" : ""}`}>
+            {wallet.isWrongChain
+              ? "Wrong chain"
+              : wallet.address
+                ? `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}`
+                : "—"}
+          </div>
         </div>
       </div>
 
@@ -435,9 +505,15 @@ export function TransferPage() {
           <span className="transfer-summary__to">{destination.label}</span>
         </div>
       ) : !wallet.isConnected ? (
-        <p className="submit-hint">Connect your Sepolia wallet to continue.</p>
+        <p className="submit-hint">Connect your {sourceChainLabel} wallet to continue.</p>
       ) : wallet.isWrongChain ? (
-        <p className="submit-hint submit-hint--warn">Switch to Sepolia to bridge.</p>
+        <p className="submit-hint submit-hint--warn">
+          Switch to {networkMode === "mainnet" ? "Ethereum mainnet" : "Sepolia"} to bridge.
+        </p>
+      ) : networkMode === "mainnet" && !isMainnetGatewayConfigured() ? (
+        <p className="submit-hint submit-hint--warn">
+          Configure the Ethereum mainnet gateway address before submitting a mainnet transfer.
+        </p>
       ) : !amountIsValid ? (
         <p className="submit-hint">Enter a valid ETH amount above.</p>
       ) : !recipientIsValid ? (

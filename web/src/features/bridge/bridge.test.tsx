@@ -12,6 +12,7 @@ const fetchMock = vi.fn();
 
 const originalStatusApiBaseUrl = frontendEnv.statusApiBaseUrl;
 const originalAegislinkDepositRecipient = frontendEnv.aegislinkDepositRecipient;
+const originalMainnetGatewayAddress = frontendEnv.mainnetGatewayAddress;
 
 Object.defineProperty(globalThis, "fetch", {
   configurable: true,
@@ -19,7 +20,7 @@ Object.defineProperty(globalThis, "fetch", {
 });
 
 vi.mock("../wallet/useBridgeWallet", () => ({
-  useBridgeWallet: () => useBridgeWalletMock(),
+  useBridgeWallet: (...args: unknown[]) => useBridgeWalletMock(...args),
 }));
 
 vi.mock("wagmi", async () => {
@@ -43,6 +44,7 @@ vi.mock("../../lib/bridge/delivery-intent", () => ({
 afterEach(() => {
   frontendEnv.statusApiBaseUrl = originalStatusApiBaseUrl;
   frontendEnv.aegislinkDepositRecipient = originalAegislinkDepositRecipient;
+  frontendEnv.mainnetGatewayAddress = originalMainnetGatewayAddress;
   fetchMock.mockReset();
   registerBridgeDeliveryIntentMock.mockReset();
 });
@@ -69,6 +71,28 @@ describe("TransferPage", () => {
     });
   }
 
+  function seedMainnetWallet() {
+    useBridgeWalletMock.mockReturnValue({
+      address: "0x2977e40f9FD046840ED10c09fbf5F0DC63A09f1d",
+      chainId: 1,
+      chainName: "Ethereum",
+      connectionError: undefined,
+      hasInjectedWallet: true,
+      isConnected: true,
+      isConnecting: false,
+      isWrongChain: false,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      switchToSourceChain: vi.fn(),
+    });
+    useWalletClientMock.mockReturnValue({
+      data: {
+        chain: { id: 1, name: "Ethereum" },
+      },
+    });
+    frontendEnv.mainnetGatewayAddress = "0x1111111111111111111111111111111111111111";
+  }
+
   it("shows Osmosis enabled and future chains disabled", () => {
     seedConnectedWallet();
     render(<TransferPage />);
@@ -80,7 +104,7 @@ describe("TransferPage", () => {
     expect(within(triggerButton).getByText("Osmosis Testnet")).toBeInTheDocument();
   });
 
-  it("shows mainnet and testnet destination options in the dropdown", async () => {
+  it("shows only testnet destinations in testnet mode dropdown", async () => {
     seedConnectedWallet();
     const user = userEvent.setup();
     render(<TransferPage />);
@@ -92,14 +116,12 @@ describe("TransferPage", () => {
     );
 
     expect(screen.getByRole("menuitem", { name: /osmosis testnet \(osmo\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /osmosis mainnet \(osmo\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /celestia mainnet \(tia\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /neutron testnet \(ntrn\)/i })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /osmosis mainnet \(osmo\)/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /neutron mainnet \(ntrn\)/i })).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /celestia mocha testnet \(tia\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /injective mainnet \(inj\)/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /injective testnet \(inj\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /dydx mainnet \(dydx\)/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /dydx testnet \(dydx\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /akash mainnet \(akt\)/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /akash sandbox \(akt\)/i })).toBeInTheDocument();
     expect(screen.getByRole("menu")).toHaveClass("chain-menu");
     expect(
@@ -460,6 +482,166 @@ describe("TransferPage", () => {
           routeId: "neutron-public-wallet",
           receiver: "neutron1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
         }),
+      );
+    });
+  });
+
+  it("shows the Testnet toggle button as active by default", () => {
+    seedConnectedWallet();
+    render(<TransferPage />);
+
+    expect(screen.getByRole("button", { name: /^testnet$/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^mainnet$/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("switches to mainnet mode and shows only mainnet destinations", async () => {
+    seedConnectedWallet();
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /^mainnet$/i }));
+
+    expect(screen.getByRole("button", { name: /^mainnet$/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis mainnet \(osmo\)/i,
+      }),
+    );
+
+    expect(screen.getByRole("menuitem", { name: /osmosis mainnet \(osmo\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /neutron mainnet \(ntrn\)/i })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /osmosis testnet \(osmo\)/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /neutron testnet \(ntrn\)/i })).not.toBeInTheDocument();
+  });
+
+  it("resets recipient address when switching network mode", async () => {
+    seedConnectedWallet();
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.clear(screen.getByLabelText(/recipient/i));
+    await user.type(
+      screen.getByLabelText(/recipient/i),
+      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+
+    expect(screen.getByLabelText(/recipient/i)).toHaveValue(
+      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+
+    await user.click(screen.getByRole("button", { name: /^mainnet$/i }));
+
+    expect(screen.getByLabelText(/recipient/i)).toHaveValue("");
+  });
+
+  it("shows Ethereum to Cosmos eyebrow in mainnet mode", async () => {
+    seedConnectedWallet();
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    expect(screen.getByText(/sepolia → cosmos/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^mainnet$/i }));
+
+    expect(screen.getByText(/ethereum → cosmos/i)).toBeInTheDocument();
+    expect(screen.queryByText(/sepolia → cosmos/i)).not.toBeInTheDocument();
+  });
+
+  it("shows Switch to Ethereum mainnet hint when isWrongChain in mainnet mode", async () => {
+    useBridgeWalletMock.mockReturnValue({
+      address: "0x2977e40f9FD046840ED10c09fbf5F0DC63A09f1d",
+      chainId: 11155111,
+      chainName: "Sepolia",
+      hasInjectedWallet: true,
+      isConnected: true,
+      isConnecting: false,
+      isWrongChain: true,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      switchToSourceChain: vi.fn(),
+    });
+    useWalletClientMock.mockReturnValue({
+      data: {
+        chain: { id: 11155111, name: "Sepolia" },
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /^mainnet$/i }));
+
+    expect(screen.getByText(/switch to ethereum mainnet/i)).toBeInTheDocument();
+  });
+
+  it("passes osmosis-mainnet-wallet routeId in mainnet mode", async () => {
+    seedMainnetWallet();
+    submitEthDepositMock.mockResolvedValue(
+      "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /^mainnet$/i }));
+
+    await user.clear(screen.getByLabelText(/recipient/i));
+    await user.type(
+      screen.getByLabelText(/recipient/i),
+      "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+
+    await user.click(screen.getByRole("button", { name: /bridge.*osmo/i }));
+
+    await waitFor(() => {
+      expect(registerBridgeDeliveryIntentMock).toHaveBeenCalledWith(
+        expect.objectContaining({ routeId: "osmosis-mainnet-wallet" }),
+      );
+    });
+  });
+
+  it("passes neutron-mainnet-wallet routeId when mainnet and Neutron mainnet selected", async () => {
+    seedMainnetWallet();
+    submitEthDepositMock.mockResolvedValue(
+      "0x422d075a86656b27694780b3ad553abee1dded6f3fb5bfa805137a3da64f30b8",
+    );
+    registerBridgeDeliveryIntentMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<TransferPage />);
+
+    await user.click(screen.getByRole("button", { name: /^mainnet$/i }));
+    await user.click(
+      screen.getByRole("button", {
+        name: /destination chain: osmosis mainnet \(osmo\)/i,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: /neutron mainnet \(ntrn\)/i }),
+    );
+
+    await user.clear(screen.getByLabelText(/recipient/i));
+    await user.type(
+      screen.getByLabelText(/recipient/i),
+      "neutron1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
+    );
+
+    await user.click(screen.getByRole("button", { name: /bridge.*ntrn/i }));
+
+    await waitFor(() => {
+      expect(registerBridgeDeliveryIntentMock).toHaveBeenCalledWith(
+        expect.objectContaining({ routeId: "neutron-mainnet-wallet" }),
       );
     });
   });

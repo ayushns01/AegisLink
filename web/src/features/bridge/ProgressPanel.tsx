@@ -11,6 +11,13 @@ function resolveDestinationShortName(destinationChain: string): string {
   return destinationChain.split(" ")[0];
 }
 
+const destinationExplorerBaseUrls: Record<string, string> = {
+  "Osmosis Testnet (OSMO)": "https://www.mintscan.io/osmosis-testnet",
+  "Osmosis Mainnet (OSMO)": "https://www.mintscan.io/osmosis",
+  "Neutron Testnet (NTRN)": "https://www.mintscan.io/neutron-testnet",
+  "Neutron Mainnet (NTRN)": "https://www.mintscan.io/neutron",
+};
+
 type ProgressPanelProps = {
   isPolling?: boolean;
   onReset: () => void;
@@ -31,6 +38,11 @@ export function ProgressPanel({
   const destKey = resolveDestinationKey(session.destinationChain);
   const destShortName = resolveDestinationShortName(session.destinationChain);
   const rightRgb = DESTINATION_RIGHT_RGB[destKey] ?? DESTINATION_RIGHT_RGB.osmosis;
+  const sourceChainLabel = session.sourceChainId === 1 ? "Ethereum" : "Sepolia";
+  const sourceExplorerBaseUrl =
+    session.sourceChainId === 1
+      ? frontendEnv.ethereumExplorerBaseUrl
+      : frontendEnv.sepoliaExplorerBaseUrl;
 
   return (
     <div className="transfer-card transfer-card--progress transfer-card--progress-expanded transfer-card--progress-obsidian transfer-card--progress-contained">
@@ -41,8 +53,8 @@ export function ProgressPanel({
             <h2>Transfer in progress</h2>
             <small>Transfer route</small>
             <strong>{session.amountEth} ETH</strong>
-            <div className="progress-manifest__route" aria-label={`Sepolia to ${destShortName} route`}>
-              <span>Sepolia</span>
+            <div className="progress-manifest__route" aria-label={`${sourceChainLabel} to ${destShortName} route`}>
+              <span>{sourceChainLabel}</span>
               <i aria-hidden="true" />
               <span>{destShortName}</span>
             </div>
@@ -70,7 +82,7 @@ export function ProgressPanel({
             <small>Source transaction</small>
             <a
               className="tx-link"
-              href={`${frontendEnv.sepoliaExplorerBaseUrl}/tx/${session.sourceTxHash}`}
+              href={`${sourceExplorerBaseUrl}/tx/${session.sourceTxHash}`}
               rel="noreferrer"
               target="_blank"
             >
@@ -128,11 +140,9 @@ function resolveDestinationTxUrl(session: BridgeSession) {
   if (session.destinationTxUrl) {
     return normalizeDestinationTxUrl(session.destinationTxUrl);
   }
-  if (session.destinationChain === "Osmosis Testnet (OSMO)") {
-    return `https://www.mintscan.io/osmosis-testnet/tx/${session.destinationTxHash}`;
-  }
-  if (session.destinationChain === "Osmosis Mainnet (OSMO)") {
-    return `https://www.mintscan.io/osmosis/tx/${session.destinationTxHash}`;
+  const explorerBaseUrl = destinationExplorerBaseUrls[session.destinationChain];
+  if (explorerBaseUrl) {
+    return `${explorerBaseUrl}/tx/${session.destinationTxHash}`;
   }
   return undefined;
 }

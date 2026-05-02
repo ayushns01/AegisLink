@@ -1,0 +1,12 @@
+{
+  "chain_name": "neutron",
+  "chain_id": "neutron-1",
+  "bech32_prefix": "neutron",
+  "fees": {
+    "fee_tokens": [{ "denom": "untrn", "fixed_min_gas_price": 0.025 }]
+  },
+  "apis": {
+    "rpc": [{ "address": "https://rpc-kralum.neutron-1.neutron.org:443" }],
+    "grpc": [{ "address": "https://grpc-kralum.neutron-1.neutron.org:443" }]
+  }
+}
