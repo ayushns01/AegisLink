@@ -5,7 +5,10 @@ import {
   useDisconnect,
   useSwitchChain,
 } from "wagmi";
-import { sourceChain } from "../../lib/evm/chains";
+import {
+  type NetworkMode,
+  getSourceChainForMode,
+} from "../../lib/evm/chains";
 
 export type BridgeWalletState = {
   address?: string;
@@ -21,11 +24,14 @@ export type BridgeWalletState = {
   switchToSourceChain: () => Promise<void>;
 };
 
-export function useBridgeWallet(): BridgeWalletState {
+export function useBridgeWallet(
+  networkMode: NetworkMode = "testnet",
+): BridgeWalletState {
   const { address, chain, isConnected } = useAccount();
   const { connectAsync, connectors, error, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
+  const sourceChain = getSourceChainForMode(networkMode);
   const injectedConnector = connectors.find(
     (connector) => connector.type === "injected",
   );
@@ -48,7 +54,6 @@ export function useBridgeWallet(): BridgeWalletState {
         if (!injectedConnector) {
           throw new Error("No wallet extension is available.");
         }
-
         await connectAsync({
           connector: injectedConnector,
           chainId: sourceChain.id,
@@ -71,6 +76,7 @@ export function useBridgeWallet(): BridgeWalletState {
       injectedConnector,
       isConnected,
       isPending,
+      sourceChain.id,
       switchChainAsync,
     ],
   );
