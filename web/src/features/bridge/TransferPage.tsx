@@ -357,6 +357,7 @@ export function TransferPage() {
                   <p className="chain-menu__group">Live now</p>
                   {liveDestinations.map((option) => (
                     <button
+                      aria-label={option.label}
                       className={`chain-option${option.id === destination.id ? " chain-option--active" : ""}`}
                       key={option.id}
                       onClick={() => {
@@ -381,6 +382,7 @@ export function TransferPage() {
                   <p className="chain-menu__group">Coming soon</p>
                   {soonDestinations.map((option) => (
                     <button
+                      aria-label={option.label}
                       className="chain-option chain-option--soon"
                       disabled
                       key={option.id}

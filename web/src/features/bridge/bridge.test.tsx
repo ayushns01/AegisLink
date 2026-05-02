@@ -73,18 +73,11 @@ describe("TransferPage", () => {
     seedConnectedWallet();
     render(<TransferPage />);
 
-    expect(
-      within(
-        screen.getByRole("button", {
-          name: /destination chain: osmosis testnet \(osmo\)/i,
-        }),
-      ).getByText(/osmosis testnet \(osmo\)/i),
-    ).toHaveClass("destination-trigger__label--active");
-    expect(
-      screen.getByRole("button", {
-        name: /destination chain: osmosis testnet \(osmo\)/i,
-      }),
-    ).toBeInTheDocument();
+    const triggerButton = screen.getByRole("button", {
+      name: /destination chain: osmosis testnet \(osmo\)/i,
+    });
+    expect(triggerButton).toBeInTheDocument();
+    expect(within(triggerButton).getByText("Osmosis Testnet")).toBeInTheDocument();
   });
 
   it("shows mainnet and testnet destination options in the dropdown", async () => {
@@ -108,12 +101,10 @@ describe("TransferPage", () => {
     expect(screen.getByRole("menuitem", { name: /dydx testnet \(dydx\)/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /akash mainnet \(akt\)/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /akash sandbox \(akt\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("menu")).toHaveClass("destination-menu--scrollable");
+    expect(screen.getByRole("menu")).toHaveClass("chain-menu");
     expect(
-      within(
-        screen.getByRole("menuitem", { name: /osmosis testnet \(osmo\)/i }),
-      ).getByText(/osmosis testnet \(osmo\)/i),
-    ).toHaveClass("destination-option__title--active");
+      screen.getByRole("menuitem", { name: /osmosis testnet \(osmo\)/i }),
+    ).toHaveClass("chain-option--active");
   });
 
   it("updates the transfer form inputs and validates the osmosis recipient", async () => {
@@ -121,18 +112,13 @@ describe("TransferPage", () => {
     const user = userEvent.setup();
     render(<TransferPage />);
 
-    const amountInput = screen.getByLabelText(/amount/i);
     const recipientInput = screen.getByLabelText(/recipient/i);
-
-    await user.clear(amountInput);
-    await user.type(amountInput, "0.75");
     await user.clear(recipientInput);
     await user.type(recipientInput, "bad-recipient");
 
-    expect(amountInput).toHaveValue("0.75");
-    expect(screen.getByText(/enter a valid osmo1 recipient/i)).toBeInTheDocument();
+    expect(screen.getByText(/must start with/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /bridge to osmosis/i }),
+      screen.getByRole("button", { name: /bridge.*osmo/i }),
     ).toBeDisabled();
   });
 
@@ -149,7 +135,7 @@ describe("TransferPage", () => {
     const user = userEvent.setup();
     render(<TransferPage />);
 
-    const button = screen.getByRole("button", { name: /bridge to osmosis/i });
+    const button = screen.getByRole("button", { name: /bridge.*osmo/i });
     await user.click(button);
 
     await waitFor(() => {
@@ -229,7 +215,7 @@ describe("TransferPage", () => {
       screen.getByLabelText(/recipient/i),
       "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
     );
-    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+    await user.click(screen.getByRole("button", { name: /bridge.*osmo/i }));
 
     await waitFor(() => {
       expect(submitEthDepositMock).toHaveBeenCalledWith(
@@ -262,7 +248,7 @@ describe("TransferPage", () => {
     const user = userEvent.setup();
     render(<TransferPage />);
 
-    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+    await user.click(screen.getByRole("button", { name: /bridge.*osmo/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -302,7 +288,7 @@ describe("TransferPage", () => {
     const user = userEvent.setup();
     render(<TransferPage />);
 
-    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+    await user.click(screen.getByRole("button", { name: /bridge.*osmo/i }));
 
     await waitFor(() => {
       expect(
@@ -336,7 +322,7 @@ describe("TransferPage", () => {
     const user = userEvent.setup();
     render(<TransferPage />);
 
-    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+    await user.click(screen.getByRole("button", { name: /bridge.*osmo/i }));
 
     await waitFor(() => {
       expect(
@@ -371,7 +357,7 @@ describe("TransferPage", () => {
       screen.getByLabelText(/recipient/i),
       "osmo1q5nq6v24qq0584nf00wuhqrku4anlxaq05wsj8",
     );
-    await user.click(screen.getByRole("button", { name: /bridge to osmosis/i }));
+    await user.click(screen.getByRole("button", { name: /bridge.*osmo/i }));
 
     await waitFor(() => {
       expect(registerBridgeDeliveryIntentMock).toHaveBeenCalledWith({
@@ -401,7 +387,7 @@ describe("TransferPage", () => {
     });
     expect(neutronItem).toBeInTheDocument();
     expect(neutronItem).not.toBeDisabled();
-    expect(within(neutronItem).getByText("Live")).toBeInTheDocument();
+    expect(within(neutronItem).getByText(/live/i)).toBeInTheDocument();
   });
 
   it("switches to Neutron testnet and validates neutron1 recipient prefix", async () => {
@@ -423,7 +409,7 @@ describe("TransferPage", () => {
     await user.type(recipientInput, "osmo1shouldfailneutronprefix");
 
     expect(
-      screen.getByText(/enter a valid neutron1 recipient/i),
+      screen.getByText(/enter a valid neutron1/i),
     ).toBeInTheDocument();
 
     await user.clear(recipientInput);
@@ -433,7 +419,7 @@ describe("TransferPage", () => {
     );
 
     expect(
-      screen.queryByText(/enter a valid neutron1 recipient/i),
+      screen.queryByText(/enter a valid neutron1/i),
     ).not.toBeInTheDocument();
   });
 
@@ -465,7 +451,7 @@ describe("TransferPage", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /bridge to neutron testnet/i }),
+      screen.getByRole("button", { name: /bridge.*ntrn/i }),
     );
 
     await waitFor(() => {

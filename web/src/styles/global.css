@@ -486,6 +486,222 @@ button {
   width: min(1180px, 100%);
 }
 
+/* ── Interactive checkpoints (about mode) ── */
+.progress-route__checkpoint--interactive {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.progress-route__checkpoint--interactive:hover::before {
+  transform: translate(-50%, -50%) scale(1.5);
+  opacity: 1;
+}
+
+.progress-route__checkpoint--interactive:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.5);
+  outline-offset: 6px;
+  border-radius: 50%;
+}
+
+/* ── Stage detail modal ── */
+.stage-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  animation: fade-in 180ms ease;
+}
+
+.stage-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 51;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: #111113;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  padding: 32px;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6);
+  animation: modal-enter 220ms cubic-bezier(0.2, 0.95, 0.2, 1);
+}
+
+.stage-modal--pink  { border-color: rgba(255, 130, 190, 0.35); }
+.stage-modal--violet { border-color: rgba(139, 92, 246, 0.35); }
+.stage-modal--gold  { border-color: rgba(255, 210, 120, 0.35); }
+
+.stage-modal__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.stage-modal__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.stage-modal__eyebrow {
+  margin-bottom: 6px !important;
+}
+
+.stage-modal__title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.stage-modal--pink  .stage-modal__title { color: #ff82be; }
+.stage-modal--violet .stage-modal__title { color: #a78bfa; }
+.stage-modal--gold  .stage-modal__title { color: #ffd278; }
+
+.stage-modal__summary {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.stage-modal__sections {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.stage-modal__section small {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+  margin-bottom: 6px;
+}
+
+.stage-modal__section p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.stage-modal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stage-modal__tag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-enter {
+  from { opacity: 0; transform: translate(-50%, -46%); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* ── About section wormhole ── */
+.about-wormhole {
+  margin: 0 0 32px;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.about-wormhole .progress-scene {
+  height: 260px;
+  border-radius: 0;
+}
+
+.about-wormhole .progress-scene__viewport {
+  border-radius: 0;
+}
+
+.about-stage-tabs {
+  display: flex;
+  gap: 0;
+  background: #0e0e10;
+  padding: 10px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.about-stage-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.about-stage-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+  text-align: left;
+}
+
+.about-stage-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.about-stage-tab--active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.about-stage-tab__num {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  opacity: 0.5;
+}
+
+.about-section__intro {
+  margin-bottom: 24px;
+}
+
 .about-section {
   width: 100%;
   border: 1px solid rgba(146, 171, 255, 0.1);

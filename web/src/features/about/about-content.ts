@@ -1,5 +1,8 @@
+import type { TransferVisualStageId } from "../bridge/transfer-progress";
+
 export type BridgeStage = {
   id: "deposit" | "verify" | "credit" | "route" | "deliver";
+  visualId: TransferVisualStageId;
   title: string;
   eyebrow: string;
   summary: string;
@@ -16,6 +19,7 @@ export type BridgeStage = {
 export const bridgeStages: BridgeStage[] = [
   {
     id: "deposit",
+    visualId: "sepolia",
     title: "Deposit signed",
     eyebrow: "01 · Sepolia",
     summary: "Source transaction broadcast",
@@ -33,6 +37,7 @@ export const bridgeStages: BridgeStage[] = [
   },
   {
     id: "verify",
+    visualId: "verify",
     title: "Verifier checks",
     eyebrow: "02 · Verify",
     summary: "Evidence and replay safety",
@@ -50,6 +55,7 @@ export const bridgeStages: BridgeStage[] = [
   },
   {
     id: "credit",
+    visualId: "accounting",
     title: "Bridge accounting",
     eyebrow: "03 · Zone",
     summary: "Value enters the bridge zone",
@@ -67,6 +73,7 @@ export const bridgeStages: BridgeStage[] = [
   },
   {
     id: "route",
+    visualId: "handoff",
     title: "IBC handoff",
     eyebrow: "04 · IBC",
     summary: "Live destination delivery begins",
@@ -84,6 +91,7 @@ export const bridgeStages: BridgeStage[] = [
   },
   {
     id: "deliver",
+    visualId: "receipt",
     title: "Osmosis receipt",
     eyebrow: "05 · Receipt",
     summary: "Destination settlement and proof",
