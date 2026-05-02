@@ -80,7 +80,7 @@ export function LandingPage() {
         ) : (
           <>
             <p className="eyebrow">Ethereum → Cosmos Bridge</p>
-            <h1>Bridge ETH to any IBC‑enabled Cosmos chain.</h1>
+            <h1>Send ETH anywhere in the Cosmos ecosystem.</h1>
             <p className="hero-copy">
               Connect your Sepolia wallet, pick a Cosmos destination, and bridge.
               AegisLink handles verification, IBC routing, and live delivery tracking end-to-end.
