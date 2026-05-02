@@ -52,6 +52,7 @@ export function AboutSection() {
           stages={visualStages}
           onCheckpointClick={setHoveredStageId}
           onCheckpointEnter={setHoveredStageId}
+          onPortalEnter={setHoveredStageId}
         />
 
         {/* Hover panel — lives inside the container so mouseleave fires only when leaving the whole block */}

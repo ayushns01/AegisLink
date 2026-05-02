@@ -76,10 +76,13 @@ export const STAGE_CONFIG: Record<TransferVisualStageId, {
 const SEGMENT_COLOR: Record<ParticleSegment, string> = {
   left:   "rgba(255, 130, 190, VAR)",
   center: "rgba(138, 198, 255, VAR)",
-  right:  "rgba(255, 210, 120, VAR)",
+  right:  "rgba(VAR_RGB, VAR_A)",
 };
 
-function makeColor(segment: ParticleSegment, opacity: number): string {
+function makeColor(segment: ParticleSegment, opacity: number, rightRgb: string): string {
+  if (segment === "right") {
+    return `rgba(${rightRgb}, ${opacity.toFixed(2)})`;
+  }
   return SEGMENT_COLOR[segment].replace("VAR", String(opacity.toFixed(2)));
 }
 
@@ -91,11 +94,21 @@ export const CHECKPOINT_POSITIONS: Record<TransferVisualStageId, string> = {
   receipt: "89%",
 };
 
+// "r, g, b" string keyed by first word of destinationChain (lowercased)
+export const DESTINATION_RIGHT_RGB: Record<string, string> = {
+  osmosis: "255, 210, 120",
+  neutron: "90, 140, 255",
+};
+const DEFAULT_RIGHT_RGB = DESTINATION_RIGHT_RGB.osmosis;
+
 type BridgeWormholeSceneProps = {
   activeStageId: TransferVisualStageId;
   stages: TransferVisualStage[];
   onCheckpointClick?: (stageId: TransferVisualStageId) => void;
   onCheckpointEnter?: (stageId: TransferVisualStageId) => void;
+  onPortalEnter?: (stageId: TransferVisualStageId) => void;
+  /** "r, g, b" string for the destination (right) portal colour */
+  rightRgb?: string;
 };
 
 export function BridgeWormholeScene({
@@ -103,6 +116,8 @@ export function BridgeWormholeScene({
   stages,
   onCheckpointClick,
   onCheckpointEnter,
+  onPortalEnter,
+  rightRgb = DEFAULT_RIGHT_RGB,
 }: BridgeWormholeSceneProps) {
   const stageConfig = STAGE_CONFIG[activeStageId];
 
@@ -114,7 +129,11 @@ export function BridgeWormholeScene({
   ].join(" ");
 
   return (
-    <div aria-label="Bridge tunnel" className={progressSceneClassName}>
+    <div
+      aria-label="Bridge tunnel"
+      className={progressSceneClassName}
+      style={{ "--right-rgb": rightRgb } as { [key: string]: string }}
+    >
       <div
         className="progress-scene__viewport"
         data-testid="progress-scene-viewport"
@@ -143,8 +162,8 @@ export function BridgeWormholeScene({
           {PARTICLES.map((p, i) => {
             const cfg = stageConfig[p.segment];
             const duration = p.baseDuration * cfg.speed;
-            const color = makeColor(p.segment, cfg.opacity * 0.85);
-            const glowColor = makeColor(p.segment, cfg.opacity * 0.55);
+            const color = makeColor(p.segment, cfg.opacity * 0.85, rightRgb);
+            const glowColor = makeColor(p.segment, cfg.opacity * 0.55, rightRgb);
             return (
               <span
                 key={i}
@@ -166,10 +185,18 @@ export function BridgeWormholeScene({
         </div>
 
         {/* ── Left portal (Sepolia — pink) ── */}
-        <div className="progress-scene__portal progress-scene__portal--left" />
+        <div
+          className={`progress-scene__portal progress-scene__portal--left${onPortalEnter ? " progress-scene__portal--interactive" : ""}`}
+          onClick={onPortalEnter ? () => onPortalEnter("sepolia") : undefined}
+          onMouseEnter={onPortalEnter ? () => onPortalEnter("sepolia") : undefined}
+        />
 
         {/* ── Right portal (Osmosis — gold) ── */}
-        <div className="progress-scene__portal progress-scene__portal--right" />
+        <div
+          className={`progress-scene__portal progress-scene__portal--right${onPortalEnter ? " progress-scene__portal--interactive" : ""}`}
+          onClick={onPortalEnter ? () => onPortalEnter("receipt") : undefined}
+          onMouseEnter={onPortalEnter ? () => onPortalEnter("receipt") : undefined}
+        />
 
         {/* ── Bridge glow bands ── */}
         <div aria-hidden="true" className="progress-scene__bridge-glow" data-testid="progress-bridge-glow">

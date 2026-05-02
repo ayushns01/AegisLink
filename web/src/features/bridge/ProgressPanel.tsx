@@ -1,7 +1,15 @@
 import { frontendEnv } from "../../lib/config/env";
 import type { BridgeSession } from "./bridge-session";
 import { deriveTransferProgressModel, type TransferVisualStageId } from "./transfer-progress";
-import { BridgeWormholeScene } from "./BridgeWormholeScene";
+import { BridgeWormholeScene, DESTINATION_RIGHT_RGB } from "./BridgeWormholeScene";
+
+function resolveDestinationKey(destinationChain: string): string {
+  return destinationChain.split(" ")[0].toLowerCase();
+}
+
+function resolveDestinationShortName(destinationChain: string): string {
+  return destinationChain.split(" ")[0];
+}
 
 type ProgressPanelProps = {
   isPolling?: boolean;
@@ -20,6 +28,9 @@ export function ProgressPanel({
   const progress = deriveTransferProgressModel(session, isPolling);
   const currentStageId =
     (progress.stages.find((stage) => stage.state === "current")?.id ?? "sepolia") as TransferVisualStageId;
+  const destKey = resolveDestinationKey(session.destinationChain);
+  const destShortName = resolveDestinationShortName(session.destinationChain);
+  const rightRgb = DESTINATION_RIGHT_RGB[destKey] ?? DESTINATION_RIGHT_RGB.osmosis;
 
   return (
     <div className="transfer-card transfer-card--progress transfer-card--progress-expanded transfer-card--progress-obsidian transfer-card--progress-contained">
@@ -30,10 +41,10 @@ export function ProgressPanel({
             <h2>Transfer in progress</h2>
             <small>Transfer route</small>
             <strong>{session.amountEth} ETH</strong>
-            <div className="progress-manifest__route" aria-label="Sepolia to Osmosis route">
+            <div className="progress-manifest__route" aria-label={`Sepolia to ${destShortName} route`}>
               <span>Sepolia</span>
               <i aria-hidden="true" />
-              <span>Osmosis</span>
+              <span>{destShortName}</span>
             </div>
             <p>{session.recipient}</p>
           </div>
@@ -51,6 +62,7 @@ export function ProgressPanel({
         <BridgeWormholeScene
           activeStageId={currentStageId}
           stages={progress.stages}
+          rightRgb={rightRgb}
         />
 
         <div className="progress-proof-grid">
@@ -88,7 +100,7 @@ export function ProgressPanel({
             <span>
               {session.destinationTxHash
                 ? "Confirmed by the configured bridge status source."
-                : "This appears as soon as the operator tracking endpoint observes the Osmosis receipt."}
+                : `This appears as soon as the operator tracking endpoint observes the ${destShortName} receipt.`}
             </span>
           </div>
         </div>

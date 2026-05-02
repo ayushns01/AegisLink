@@ -39,6 +39,7 @@ NEUTRON_LCD_BASE_URL="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_LCD_BASE_URL:-https://r
 NEUTRON_ACCOUNT_PREFIX="${AEGISLINK_RLY_NEUTRON_ACCOUNT_PREFIX:-neutron}"
 NEUTRON_GAS_PRICE_DENOM="${AEGISLINK_RLY_NEUTRON_GAS_PRICE_DENOM:-untrn}"
 NEUTRON_GAS_PRICE_AMOUNT="${AEGISLINK_RLY_NEUTRON_GAS_PRICE_AMOUNT:-1.3}"
+NEUTRON_GAS_ADJUSTMENT="${AEGISLINK_RLY_NEUTRON_GAS_ADJUSTMENT:-3.0}"
 NEUTRON_KEY_NAME="${AEGISLINK_RLY_NEUTRON_KEY_NAME:-neutron-demo}"
 NEUTRON_MNEMONIC="${AEGISLINK_RLY_NEUTRON_MNEMONIC:-}"
 NEUTRON_PATH_NAME="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_PATH_NAME:-live-ntrn-ui-$RUN_ID}"
@@ -151,7 +152,7 @@ chains:
       grpc-addr: $NEUTRON_GRPC_ADDR
       account-prefix: $NEUTRON_ACCOUNT_PREFIX
       keyring-backend: test
-      gas-adjustment: 1.3
+      gas-adjustment: $NEUTRON_GAS_ADJUSTMENT
       gas-prices: ${NEUTRON_GAS_PRICE_AMOUNT}${NEUTRON_GAS_PRICE_DENOM}
       debug: false
       timeout: ${RLY_TIMEOUT_SECONDS}s
@@ -261,13 +262,16 @@ destination_key_has_funds() {
 neutron_key_has_funds() {
   local rly_home="$1"
   local neutron_key_name="$2"
+  local neutron_address=""
   local balance_output=""
 
-  balance_output="$(
-    ./bin/relayer query balance "$NEUTRON_CHAIN_NAME" "$neutron_key_name" --home "$rly_home" -o json 2>/dev/null || true
-  )"
-  [[ "$balance_output" =~ \"amount\":\"[1-9][0-9]*\" ]] || \
-    [[ "$balance_output" =~ \"balance\":\"[1-9][0-9]*[[:alpha:]]+\" ]]
+  neutron_address="$(./bin/relayer keys show "$NEUTRON_CHAIN_NAME" "$neutron_key_name" --home "$rly_home" 2>/dev/null | tr -d '\r\n')" || true
+  if [[ -z "$neutron_address" ]]; then
+    return 1
+  fi
+
+  balance_output="$(curl -fsS "$NEUTRON_LCD_BASE_URL/cosmos/bank/v1beta1/balances/$neutron_address" 2>/dev/null || true)"
+  [[ "$balance_output" =~ \"amount\":\"[1-9][0-9]*\" ]]
 }
 
 run() {
@@ -323,6 +327,15 @@ EOF
 source_required_env "$REPO_ROOT/.env.sepolia.deploy.local"
 source_required_env "$REPO_ROOT/.env.public-bridge.local"
 source_required_env "$REPO_ROOT/.env.public-ibc.local"
+if [[ -f "$REPO_ROOT/.env.public-ibc.neutron.local" ]]; then
+  source_required_env "$REPO_ROOT/.env.public-ibc.neutron.local"
+  # Re-read neutron vars that were captured before sourcing
+  NEUTRON_MNEMONIC="${AEGISLINK_RLY_NEUTRON_MNEMONIC:-}"
+  NEUTRON_KEY_NAME="${AEGISLINK_RLY_NEUTRON_KEY_NAME:-neutron-demo}"
+  NEUTRON_RPC_ADDR="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_RPC_ADDR:-https://rpc-falcron.pion-1.ntrn.tech:443}"
+  NEUTRON_GRPC_ADDR="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_GRPC_ADDR:-https://grpc-falcron.pion-1.ntrn.tech:443}"
+  NEUTRON_LCD_BASE_URL="${AEGISLINK_PUBLIC_BACKEND_NEUTRON_LCD_BASE_URL:-https://rest-falcron.pion-1.ntrn.tech}"
+fi
 
 AEGISLINK_RELAYER_EVM_RPC_URL="$(
   resolve_public_bridge_evm_rpc_url \

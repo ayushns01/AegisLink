@@ -174,7 +174,7 @@ describe("App", () => {
     );
     expect(screen.getByText(/what's happening now/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/aegislink initiates the outbound route toward osmosis/i),
+      screen.getByText(/aegislink initiates the outbound route toward the destination cosmos chain/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/route, timeout policy, and packet state are created/i),

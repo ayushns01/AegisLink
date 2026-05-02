@@ -495,6 +495,17 @@ button {
   pointer-events: auto;
 }
 
+/* ── Interactive portals (about mode) ── */
+.progress-scene__portal--interactive {
+  cursor: pointer;
+  pointer-events: auto;
+  transition: filter 0.2s;
+}
+
+.progress-scene__portal--interactive:hover {
+  filter: brightness(1.25);
+}
+
 .progress-route__checkpoint--interactive:hover::before {
   transform: translate(-50%, -50%) scale(1.5);
   opacity: 1;
@@ -641,12 +652,17 @@ button {
 }
 
 .about-wormhole .progress-scene {
-  height: 180px;
+  min-height: clamp(330px, 46vh, 420px);
   border-radius: 0;
 }
 
 .about-wormhole .progress-scene__viewport {
   border-radius: 0;
+}
+
+.about-wormhole .progress-scene__portal {
+  width: clamp(101px, 8.5vw, 135px);
+  height: clamp(118px, 10.1vw, 152px);
 }
 
 /* ── About hover panel (replaces click modal + tabs) ── */
@@ -2205,18 +2221,18 @@ button {
   right: 18.02%;
   transform: translate(50%, -50%);
   box-shadow:
-    0 0 60px rgba(255, 210, 122, 0.15),
-    0 0 120px rgba(255, 210, 122, 0.08);
+    0 0 60px rgba(var(--right-rgb, 255, 210, 122), 0.15),
+    0 0 120px rgba(var(--right-rgb, 255, 210, 122), 0.08);
 }
 
 .progress-scene__portal--right::before {
   background: conic-gradient(
     from 0deg,
     transparent 0%,
-    rgba(255, 210, 122, 0.6) 20%,
+    rgba(var(--right-rgb, 255, 210, 122), 0.6) 20%,
     transparent 45%,
     transparent 50%,
-    rgba(255, 210, 122, 0.6) 70%,
+    rgba(var(--right-rgb, 255, 210, 122), 0.6) 70%,
     transparent 95%
   );
   animation-duration: 65s;
@@ -2356,7 +2372,7 @@ button {
   right: 0;
   animation-delay: -4s;
   background:
-    radial-gradient(circle at 15% 50%, rgba(255, 212, 132, 0.18), rgba(255, 212, 132, 0.04) 48%, transparent 76%);
+    radial-gradient(circle at 15% 50%, rgba(var(--right-rgb, 255, 212, 132), 0.18), rgba(var(--right-rgb, 255, 212, 132), 0.04) 48%, transparent 76%);
 }
 
 .progress-scene__bridge-glow--core {
@@ -2367,7 +2383,7 @@ button {
   animation-delay: -8s;
   background:
     radial-gradient(circle at 50% 50%, rgba(142, 164, 255, 0.18), rgba(142, 164, 255, 0.08) 34%, transparent 72%),
-    linear-gradient(90deg, rgba(255, 132, 188, 0.08), rgba(142, 164, 255, 0.16) 48%, rgba(255, 212, 132, 0.08));
+    linear-gradient(90deg, rgba(255, 132, 188, 0.08), rgba(142, 164, 255, 0.16) 48%, rgba(var(--right-rgb, 255, 212, 132), 0.08));
 }
 
 .progress-route-corridor {

@@ -79,7 +79,7 @@ export const bridgeStages: BridgeStage[] = [
     summary: "Live destination delivery begins",
     nowTitle: "What's happening now",
     nowBody:
-      "AegisLink initiates the outbound route toward Osmosis and turns the transfer into a real cross-chain delivery leg.",
+      "AegisLink initiates the outbound route toward the destination Cosmos chain and turns the transfer into a real cross-chain delivery leg.",
     systemTitle: "Inside AegisLink",
     systemBody:
       "Route, timeout policy, and packet state are created so the delivery leaves the bridge zone with concrete destination instructions.",
@@ -92,19 +92,19 @@ export const bridgeStages: BridgeStage[] = [
   {
     id: "deliver",
     visualId: "receipt",
-    title: "Osmosis receipt",
+    title: "Chain receipt",
     eyebrow: "05 · Receipt",
     summary: "Destination settlement and proof",
     nowTitle: "What's happening now",
     nowBody:
-      "The transfer lands on Osmosis and resolves into the final destination transaction and receipt.",
+      "The transfer lands on the destination Cosmos chain and resolves into the final destination transaction and receipt.",
     systemTitle: "Inside AegisLink",
     systemBody:
       "The bridge session is matched back to the destination transaction so the frontend can show the final receipt with confidence.",
     whyTitle: "Why this matters",
     whyBody:
       "The user can inspect real settlement directly instead of trusting a generic completed state or an internal-only status.",
-    footerTags: ["Osmosis", "Destination tx", "Settlement proof"],
+    footerTags: ["Cosmos chain", "Destination tx", "Settlement proof"],
     accent: "gold",
   },
 ];
